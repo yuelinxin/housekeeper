@@ -112,15 +112,37 @@ Every execution outcome refreshes inventory. No automatic restart is performed.
 ## Updates page and batches
 
 The Updates navigation row stays below the scrollable source list. Its first activation
-requests a check after inventory scanning finishes; the page refresh action requests
-subsequent checks. Filesystem/focus refreshes only read inventory and invalidate changed
+requests a check after inventory scanning finishes when no saved result exists or
+the last successful check is at least 24 hours old. The page refresh action can request
+earlier checks. Filesystem/focus refreshes only read inventory and invalidate changed
 rows. They never initiate a background update check. Selection and source filters are
 independent. The page uses GTK 4/libadwaita widgets and wraps actions at narrow widths.
+Action buttons keep their natural width at the bottom right, with selection status
+at the bottom left. This footer stays visible while the application list scrolls. The header
+shows the update count and last check time; Details contains separate-updater guidance
+and check errors, and the timestamp tooltip explains the 24-hour refresh rule.
+
+`UpdateCache` saves successful reports, including empty reports, in the XDG cache
+directory using a bounded JSON file and atomic replacement. Failures and cancelled
+checks leave the previous successful file intact. Cache schema and application versions
+must match; malformed files are ignored. Restoring a report requires an unchanged local
+app snapshot for each retained item. New or changed inventory shows a refresh reminder
+without network access. The last successful check time remains visible, and navigation
+preserves checkbox selection. Expiry is evaluated on page entry, including when an
+entry request waits for the initial inventory. Cache loading, focus refreshes, and
+leaving the page before that inventory completes do not initiate checks. No background
+timer runs; failed or cancelled checks do not renew the 24-hour lifetime.
+Completed management attempts invalidate stored previews
+because dependencies can overlap. Cached plans still undergo normal provider validation
+before execution; a saved preview never authorizes an update on its own.
 
 `UpdateBatch` runs as one task on the existing executor. It groups RPM name/architecture
 and Flatpak installation/full-ref identities, retaining all application names. RPM
 metadata refresh is shared within a check. Provider failures are collected separately
-from successful no-update results; cancellation retains partial check results. A locked
+from successful no-update results. Cancellation returns any partial check results to
+the caller, but the page preserves its previous list, selection, status, and check time
+instead of presenting that incomplete snapshot. A brief toast acknowledges cancellation.
+A locked
 cancellation controller follows provider changes without opening gaps between tasks.
 
 Execution re-previews each selected installation and stops at the first error. A preceding

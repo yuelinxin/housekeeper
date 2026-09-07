@@ -593,6 +593,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             halign=Gtk.Align.CENTER,
             activate_on_single_click=False,
         )
+        actions.add_css_class("detail-actions")
         self.update_button = Gtk.Button(
             label=_("Check for Updates")
             if app.update_action == UpdateAction.CHECK
@@ -609,6 +610,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.manage_button.add_css_class("destructive-action")
         self.manage_button.connect("clicked", lambda _b: self.manage(app))
         actions.append(self.manage_button)
+        for button in (self.update_button, self.manage_button):
+            button.get_parent().set_focusable(False)
         self.manage_button.set_sensitive(not self.operation_active)
         self.update_button.set_sensitive(not self.operation_active)
         hero.append(actions)
@@ -935,16 +938,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         box.append(self.task_label)
         self.task_progress = Gtk.ProgressBar()
         box.append(self.task_progress)
-        self.cancel_button = Gtk.Button(label=_("Cancel Operation"), sensitive=False)
+        self.cancel_button = Gtk.Button(label=_("Cancel"), sensitive=False)
         self.cancel_button.connect("clicked", self._cancel_operation)
         box.append(self.cancel_button)
-        self.cancel_notice = Gtk.Label(
-            label=_("Cancellation requested. Waiting for the application manager to stop safely."),
-            wrap=True,
-            visible=False,
-        )
-        self.cancel_notice.add_css_class("dim-label")
-        box.append(self.cancel_notice)
         toolbar.set_content(box)
         self.task_dialog.set_content(toolbar)
         self.task_dialog.connect("close-request", lambda *_: self.operation_active)
@@ -958,9 +954,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         ):
             return
         self.cancel_requested = True
-        self.cancel_button.set_label(_("Cancelling"))
         self.cancel_button.set_sensitive(False)
-        self.cancel_notice.set_visible(True)
         self.service.cancel()
 
     def _progress(self, message, fraction, can_cancel):
@@ -976,6 +970,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _operation_finished(self, result):
         update = self.operation_kind == "update"
         self._end_operation()
+        self.updates_page.invalidate()
         title = {
             Outcome.SUCCESS: _("Update Complete") if update else _("Removal Complete"),
             Outcome.PARTIAL: _("Partially Completed"),

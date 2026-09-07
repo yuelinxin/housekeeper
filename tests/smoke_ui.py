@@ -3,15 +3,19 @@
 import os
 import resource
 import sys
+import tempfile
 import time
 import traceback
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = Path(os.environ.get("HOUSEKEEPER_BUILD_DIR", ROOT / "build"))
 os.environ["GSETTINGS_SCHEMA_DIR"] = str(BUILD / "data")
 os.environ["GSETTINGS_BACKEND"] = "memory"
+cache_directory = tempfile.TemporaryDirectory(prefix="housekeeper-smoke-cache-")
+os.environ["XDG_CACHE_HOME"] = cache_directory.name
 sys.path.insert(0, str(ROOT / "src"))
 
 import gi
@@ -40,6 +44,7 @@ from housekeeper.models import (
 from housekeeper.services import InventoryService
 
 Gio.resources_register(Gio.Resource.load(str(BUILD / "data/housekeeper.gresource")))
+from housekeeper.ui.updates import UpdatesPage
 from housekeeper.ui.window import HousekeeperWindow
 
 
@@ -163,10 +168,61 @@ def activate(app):
         window._search_changed(window.search)
         window.view_buttons["grid"].set_active(True)
 
+    def hover_list():
+        row = window.scrolls["list"].get_child().get_first_child()
+        assert row.get_first_child().has_css_class("app-row")
+        row.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+
+    def hover_list_dark():
+        capture(window, "list-hover-light.png")
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+
+    def finish_list_hover():
+        capture(window, "list-hover-dark.png")
+        window.scrolls["list"].get_child().get_first_child().unset_state_flags(
+            Gtk.StateFlags.PRELIGHT
+        )
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+
     def check_grid():
         assert window.views.get_visible_child_name() == "grid"
         capture(window, "grid-light.png")
         window.show_details(window.records[0])
+
+    def hover_grid():
+        grid = window.scrolls["grid"].get_child()
+        child = grid.get_first_child()
+        tile = child.get_first_child()
+        assert tile.has_css_class("app-tile")
+        child.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+        tile.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+
+    def hover_grid_dark():
+        capture(window, "grid-hover-light.png")
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+
+    def finish_grid_hover():
+        capture(window, "grid-hover-dark.png")
+        window.selection.set_selected(0)
+
+    def selected_grid_hover():
+        child = window.scrolls["grid"].get_child().get_first_child()
+        assert child.get_state_flags() & Gtk.StateFlags.SELECTED
+        capture(window, "grid-selected-hover-dark.png")
+        child.set_state_flags(Gtk.StateFlags.ACTIVE, False)
+
+    def pressed_grid():
+        capture(window, "grid-selected-pressed-dark.png")
+        child = window.scrolls["grid"].get_child().get_first_child()
+        child.unset_state_flags(Gtk.StateFlags.ACTIVE)
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+
+    def finish_selected_grid():
+        capture(window, "grid-selected-hover-light.png")
+        child = window.scrolls["grid"].get_child().get_first_child()
+        child.unset_state_flags(Gtk.StateFlags.PRELIGHT)
+        child.get_first_child().unset_state_flags(Gtk.StateFlags.PRELIGHT)
+        window.selection.unselect_all()
 
     def check_details():
         assert window.detail_app.name == "Boxes"
@@ -188,6 +244,24 @@ def activate(app):
         window.navigation.pop_to_tag("overview")
         window.view_buttons["list"].set_active(True)
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+
+    def hover_details_light():
+        for button in (window.update_button, window.manage_button):
+            button.get_parent().set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+            button.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+
+    def hover_details_dark():
+        capture(window, "details-hover-light.png")
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+
+    def finish_details_hover():
+        capture(window, "details-hover-dark.png")
+        for button in (window.update_button, window.manage_button):
+            button.unset_state_flags(Gtk.StateFlags.PRELIGHT)
+            button.get_parent().unset_state_flags(Gtk.StateFlags.PRELIGHT)
+            button.grab_focus()
+            assert window.get_focus() is button
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
 
     def check_dark():
         capture(window, "list-dark.png")
@@ -305,8 +379,8 @@ def activate(app):
         assert window.cancel_button.get_sensitive()
         window.cancel_button.emit("clicked")
         assert cancelled == [True]
-        assert window.cancel_button.get_label() == "Cancelling"
-        assert window.cancel_notice.get_visible()
+        assert window.cancel_button.get_label() == "Cancel"
+        assert window.task_label.get_label() == "Testing an operation window"
         window._progress("A late download callback", 0.6, True)
         assert not window.cancel_button.get_sensitive()
         window.cancel_button.emit("clicked")
@@ -340,16 +414,113 @@ def activate(app):
                 "Update this app and its dependencies.",
             )
             items.append(UpdateItem(record, plan, (record.name,)))
-        window.service.check_updates = lambda _p, done, _f: done(UpdateReport(tuple(items)))
+        check_calls = []
+
+        def check(_progress, done, _failed):
+            check_calls.append(True)
+            done(UpdateReport(tuple(items), unsupported=19))
+
+        window.service.check_updates = check
         window.updates_sidebar.emit("row-activated", window.updates_row)
         page = window.updates_page
         assert window.navigation.get_visible_page() is page
         assert window.sidebar.get_selected_row() is None
         assert len(page.items) == 3 and page.all_button.get_sensitive()
+        assert page.status.get_label() == "3 updates available"
+        assert page.errors_button.get_visible() and "19 apps" in page.details
         assert not page.selected_button.get_sensitive()
         page.checks[0][1].set_active(True)
         page.checks[0][1].grab_focus()
         assert page.selected_button.get_sensitive() and len(page.selected()) == 1
+        for _ in range(3):
+            window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
+            window.updates_sidebar.emit("row-activated", window.updates_row)
+        page.inventory_ready()
+        assert len(check_calls) == 1 and len(page.selected()) == 1
+        assert page.last_checked.get_visible()
+        # Recreate the page to exercise a new window's disk-cache restoration.
+        restored = UpdatesPage(window)
+        restored.check_when_ready = True
+        restored.inventory_ready()
+        restored.enter()
+        assert restored.items == page.items and len(check_calls) == 1
+        assert restored.last_checked.get_visible()
+        # An empty successful cache also suppresses automatic checks after restart.
+        empty = UpdatesPage(window)
+        empty.cache.path = Path(cache_directory.name) / "empty.json"
+        empty.cache.save(UpdateReport(()), window.records, time.time())
+        empty.inventory_ready()
+        empty.enter()
+        assert not empty.items and empty.empty.get_title() == "You're Up to Date"
+        assert len(check_calls) == 1
+        page.render(page.items)
+        page.refresh_button.emit("clicked")
+        assert len(check_calls) == 2 and len(page.selected()) == 1
+        # Cancelling a refresh must leave the old list, widgets, selection and TTL intact.
+        previous = (page.items, page.selected(), page.status.get_label(), page.checked_at)
+        previous_checks = list(page.checks)
+        cache_bytes = page.cache.path.read_bytes()
+        cancel = window.service.cancel
+        for partial in ((), tuple(items[:1])):
+            pending = []
+            window.service.check_updates = lambda _p, done, _f, pending=pending: pending.append(
+                done
+            )
+            window.service.cancel = lambda pending=pending, partial=partial: pending[0](
+                UpdateReport(partial, ("Interrupted check",), cancelled=True)
+            )
+            page.refresh_button.emit("clicked")
+            assert window.operation_active
+            window._progress("Checking synthetic updates", 0.2, True)
+            window.cancel_button.emit("clicked")
+            assert not window.operation_active and window.task_dialog is None
+            assert (
+                page.items,
+                page.selected(),
+                page.status.get_label(),
+                page.checked_at,
+            ) == previous
+            assert page.checks == previous_checks and page.selected_button.get_sensitive()
+            assert page.cache.path.read_bytes() == cache_bytes
+        window.service.cancel = cancel
+        window.service.check_updates = check
+        # A previous successful empty result is also retained on cancellation.
+        empty.checked(UpdateReport(tuple(items[:1]), cancelled=True))
+        assert not empty.items and empty.empty.get_title() == "You're Up to Date"
+        checked_at = page.checked_at
+        with patch("housekeeper.ui.updates.time.time", return_value=checked_at + 86399):
+            page.enter()
+            assert len(check_calls) == 2
+        with patch("housekeeper.ui.updates.time.time", return_value=checked_at + 86400):
+            # Inventory/focus refresh alone must not start an expired-cache check.
+            page.inventory_ready()
+            assert len(check_calls) == 2
+            window.service.scanning = True
+            page.enter()
+            page.enter()
+            assert page.check_when_ready and len(check_calls) == 2
+            window.service.scanning = False
+            page.inventory_ready()
+            assert len(check_calls) == 3 and page.checked_at == checked_at + 86400
+            page.enter()
+            assert len(check_calls) == 3
+        # Loading an expired empty cache at startup remains offline until entry.
+        expired = UpdatesPage(window)
+        expired.cache.path = Path(cache_directory.name) / "expired.json"
+        expired.cache.save(UpdateReport(()), window.records, time.time() - 86401)
+        expired.inventory_ready()
+        assert len(check_calls) == 3
+        expired.enter()
+        assert len(check_calls) == 4
+        # Leaving while the initial inventory is pending cancels the entry request.
+        expired.checked_at -= 86401
+        window.service.scanning = True
+        expired.enter()
+        window.section = "apps"
+        window.service.scanning = False
+        expired.inventory_ready()
+        assert len(check_calls) == 4 and not expired.check_when_ready
+        window.section = "updates"
         page.selected_button.emit("clicked")
         assert window.confirm_dialog.get_default_response() == "cancel"
         assert window.confirm_dialog.get_heading() == "Update Boxes?"
@@ -364,16 +535,29 @@ def activate(app):
         assert not window.split.get_collapsed()
         capture(window, "updates-light.png")
         page = window.updates_page
+        assert_updates_footer()
         assert window.updates_row.compute_bounds(window)[1].get_y() > window.get_height() / 2
         page.all_button.emit("clicked")
         assert window.confirm_dialog.get_heading() == "Update 3 apps?"
         window.confirm_dialog.response("cancel")
+        window.set_size_request(1200, 720)
+        window.set_default_size(1200, 720)
+
+    def check_updates_wide():
+        capture(window, "updates-wide.png")
+        page = window.updates_page
+        assert_updates_footer()
+        assert window.get_width() >= 1150  # GTK excludes the window decoration from this size.
+        for button in (page.all_button, page.selected_button):
+            assert button.get_width() < 220
+        assert page.actions.get_width() < 450
         window.set_size_request(360, 420)
         window.set_default_size(360, 640)
 
     def check_updates_batch():
         capture(window, "updates-narrow.png")
         page = window.updates_page
+        assert_updates_footer()
         assert window.split.get_collapsed()
         for button in (page.all_button, page.selected_button):
             bounds = button.compute_bounds(window)[1]
@@ -391,13 +575,27 @@ def activate(app):
         window.confirm_dialog.response("update")
         assert len(calls[0]) == 3 and not window.operation_active and not page.items
         close_messages()
+        status = page.status.get_label()
         page.checked(UpdateReport((), ("Offline",), cancelled=True))
+        assert page.status.get_label() == status
+        page.checked(UpdateReport((), ("Offline",)))
         assert "incomplete" in page.status.get_label() and page.errors_button.get_visible()
         page.checked(UpdateReport(()))
         assert page.empty.get_title() == "You're Up to Date"
         window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
         assert window.navigation.get_visible_page() is window.overview_page
         assert window.updates_sidebar.get_selected_row() is None
+
+    def assert_updates_footer():
+        page = window.updates_page
+        actions = page.actions.compute_bounds(window)[1]
+        selection = page.selection_label.compute_bounds(window)[1]
+        content = page.stack.compute_bounds(window)[1]
+        assert actions.get_y() > window.get_height() - 130
+        assert actions.get_y() + actions.get_height() <= window.get_height() - 8
+        assert window.get_width() - actions.get_x() - actions.get_width() < 30
+        assert selection.get_y() >= content.get_y() + content.get_height()
+        assert selection.get_x() + selection.get_width() <= actions.get_x()
 
     def check_performance():
         assert window.source == "all", "Focus restoration changed the selected source"
@@ -432,8 +630,20 @@ def activate(app):
 
     steps.extend(
         [
+            hover_list,
+            hover_list_dark,
+            finish_list_hover,
             check_list,
+            hover_grid,
+            hover_grid_dark,
+            finish_grid_hover,
+            selected_grid_hover,
+            pressed_grid,
+            finish_selected_grid,
             check_grid,
+            hover_details_light,
+            hover_details_dark,
+            finish_details_hover,
             check_details,
             check_dark,
             check_narrow,
@@ -443,6 +653,7 @@ def activate(app):
             check_operation,
             check_updates_page,
             check_updates_narrow,
+            check_updates_wide,
             check_updates_batch,
             check_performance,
             finish,

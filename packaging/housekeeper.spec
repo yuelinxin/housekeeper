@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.3
+Version:        0.1.4
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -59,6 +59,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Mon Sep 07 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.4-1
+- Cache update checks with a 24-hour TTL and retain results after cancellation.
+- Move update actions to a compact adaptive footer and simplify page text.
+- Unify list and grid highlights and remove extra hover layers from pill buttons.
+
 * Mon Sep 07 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.3-1
 - Add RPM and Flatpak updates, dependency previews, and selected/all-app updates.
 - Fix system Flatpak authorization and enable cooperative download cancellation.

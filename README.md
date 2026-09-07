@@ -39,11 +39,19 @@ then choose **Update**. Flatpak commits are shown when a release version is unav
 When no update is available, Housekeeper reports that separately from a failed check.
 
 For multiple apps, open **Updates** at the bottom of the sidebar. Opening this page
-for the first time checks supported RPM and Flatpak installations. Tick the apps
+for the first time checks supported RPM and Flatpak installations if there is no
+saved result. Later visits, including after restarting Housekeeper, reuse the last
+successful check and display its time. Results are valid for 24 hours: entering
+Updates after that time automatically checks again. Tick the apps
 you want and choose **Update Selected**, or choose **Update All**. Review the app,
 package, and runtime changes together before confirming. Apps provided by the same
 installation are grouped to avoid duplicate updates. The refresh button checks again;
 startup, inventory refreshes, and returning focus do not trigger network checks.
+Use the refresh button, F5, or Ctrl+R to check before the 24-hour expiry.
+Inventory changes discard affected entries and show a refresh reminder; every update
+plan is still revalidated before installation.
+Cancelling a check keeps the previous list, selection, and check time, including
+when the previous result had no available updates.
 
 Batches run in order and stop on failure, cancellation, or unexpected plan changes.
 Completed items remain visible in the result. Check again to review remaining updates.
@@ -104,7 +112,7 @@ saving preferences, launch it with `GSETTINGS_BACKEND=memory`.
 To install a downloaded release package:
 
 ```sh
-sudo dnf install ./housekeeper-0.1.3-1.fc44.noarch.rpm
+sudo dnf install ./housekeeper-0.1.4-1.fc44.noarch.rpm
 ```
 
 Install the build matching your Fedora release. GitHub release packages do not
@@ -140,7 +148,10 @@ system; their harness explicitly requires a disposable container.
 
 ## Privacy and behavior
 
-Housekeeper keeps its inventory in memory and preferences in GSettings. It has no
+Housekeeper keeps its inventory in memory and preferences in GSettings. Successful
+update checks are cached locally in `$XDG_CACHE_HOME/housekeeper/updates.json`
+(normally `~/.cache/housekeeper/updates.json`), including app identities and previews.
+Deleting this cache resets the saved update results. It has no
 telemetry, account, background service, or automatic network scan. Package managers
 and explicitly opened external managers may use their own network connections.
 

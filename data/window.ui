@@ -44,7 +44,6 @@
                         </property>
                       </object>
                     </child>
-                    <child><object class="GtkSeparator"/></child>
                     <child>
                       <object class="GtkListBox" id="updates_sidebar">
                         <property name="selection-mode">single</property>

@@ -1,10 +1,13 @@
 """Updates navigation page; checks are initiated only by explicit user interaction."""
 
+import time
+
 from gi.repository import Adw, GLib, GObject, Gtk
 
 from housekeeper.i18n import _
 from housekeeper.models import Outcome
 from housekeeper.ui.icons import icon_image
+from housekeeper.update_cache import UpdateCache, cache_expired
 from housekeeper.updates import authorization_notice
 
 
@@ -16,6 +19,10 @@ class UpdatesPage(Adw.NavigationPage):
         self.checks = []
         self.visited = False
         self.check_when_ready = False
+        self.cache = UpdateCache()
+        self.cache_loaded = False
+        self.checked_at = None
+        self.inventory_snapshot = None
         toolbar = Adw.ToolbarView()
         self.set_child(toolbar)
         header = Adw.HeaderBar(show_back_button=False)
@@ -41,39 +48,32 @@ class UpdatesPage(Adw.NavigationPage):
             margin_bottom=16,
         )
         toolbar.set_content(content)
-        title = Gtk.Label(label=_("Keep your apps up to date"), xalign=0, wrap=True)
-        title.add_css_class("title-2")
-        content.append(title)
-        self.status = Gtk.Label(
-            label=_("Check your configured software sources for updates."), xalign=0, wrap=True
-        )
-        self.status.add_css_class("dim-label")
+        self.status = Gtk.Label(label=_("Check for Updates"), xalign=0, wrap=True)
+        self.status.add_css_class("title-2")
         content.append(self.status)
-        self.errors_button = Gtk.Button(
-            label=_("Check Details"), halign=Gtk.Align.START, visible=False
-        )
+        metadata = Gtk.Box(spacing=12, halign=Gtk.Align.START)
+        content.append(metadata)
+        self.last_checked = Gtk.Label(xalign=0, visible=False)
+        self.last_checked.add_css_class("dim-label")
+        self.last_checked.set_tooltip_text(_("Checks refresh on entry after 24 hours."))
+        metadata.append(self.last_checked)
+        self.errors_button = Gtk.Button(label=_("Details"), halign=Gtk.Align.START, visible=False)
+        self.errors_button.add_css_class("flat")
         self.errors_button.connect(
             "clicked", lambda _b: window.message(_("Update Check Details"), self.details)
         )
-        content.append(self.errors_button)
-        self.actions = Gtk.FlowBox(
-            selection_mode=Gtk.SelectionMode.NONE,
-            homogeneous=True,
-            min_children_per_line=1,
-            max_children_per_line=2,
-            column_spacing=8,
-            row_spacing=8,
-        )
+        metadata.append(self.errors_button)
+        self.actions = Gtk.Box(spacing=8, homogeneous=True, halign=Gtk.Align.END)
         self.selected_button = Gtk.Button(label=_("Update Selected"))
         self.all_button = Gtk.Button(label=_("Update All"))
         self.all_button.add_css_class("suggested-action")
         self.selected_button.connect("clicked", lambda _b: self.confirm(self.selected()))
         self.all_button.connect("clicked", lambda _b: self.confirm(self.items))
         for button in (self.selected_button, self.all_button):
-            self.actions.insert(button, -1)
-        content.append(self.actions)
-        self.selection_label = Gtk.Label(label=_("No apps selected"), xalign=0)
-        content.append(self.selection_label)
+            self.actions.append(button)
+        self.selection_label = Gtk.Label(
+            label=_("No apps selected"), xalign=0, wrap=True, hexpand=True
+        )
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.list.add_css_class("boxed-list")
         self.list.set_valign(Gtk.Align.START)
@@ -88,28 +88,83 @@ class UpdatesPage(Adw.NavigationPage):
             Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER), "list"
         )
         content.append(self.stack)
+        footer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.footer = Gtk.Box(
+            spacing=12,
+            margin_start=16,
+            margin_end=16,
+            margin_top=12,
+            margin_bottom=16,
+        )
+        self.footer.append(self.selection_label)
+        self.footer.append(self.actions)
+        footer.append(self.footer)
+        footer_bin = Adw.BreakpointBin(
+            child=footer,
+            width_request=280,
+            height_request=footer.measure(Gtk.Orientation.VERTICAL, -1)[0],
+        )
+        breakpoint = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 480sp"))
+        breakpoint.add_setter(self.actions, "orientation", Gtk.Orientation.VERTICAL)
+        footer_bin.add_breakpoint(breakpoint)
+        toolbar.add_bottom_bar(footer_bin)
         self.details = ""
         self._selection_changed()
 
     def enter(self):
-        if not self.visited:
+        if not self.visited or (self.checked_at is not None and cache_expired(self.checked_at)):
             if self.window.service.scanning:
+                if not self.check_when_ready:
+                    self.window.toast(_("Waiting for the application inventory."))
                 self.check_when_ready = True
-                self.status.set_label(_("Waiting for the application inventory."))
             else:
                 self.check()
 
     def inventory_ready(self):
+        if not self.cache_loaded:
+            self.cache_loaded = True
+            cached = self.cache.load(self.window.records)
+            if cached is not None:
+                self.visited = True
+                self._show_report(cached.report)
+                self._set_checked_at(cached.checked_at)
+                if cached.stale:
+                    self._show_stale()
         current = {a.key: a for a in self.window.records}
         kept = tuple(item for item in self.items if current.get(item.app.key) == item.app)
+        changed = self.inventory_snapshot is not None and self.inventory_snapshot != current
+        self.inventory_snapshot = current
         if kept != self.items:
             self.render(kept)
-            self.status.set_label(
-                _("Installed applications changed. Check again for remaining updates.")
-            )
+        if self.visited and changed:
+            self._show_stale()
         if self.check_when_ready:
             self.check_when_ready = False
-            self.check()
+            if self.window.section == "updates":
+                # Re-evaluate after loading the cache: a fresh saved result may
+                # satisfy the entry request without contacting a provider.
+                self.enter()
+
+    def _show_stale(self):
+        text = _("Installed applications changed. Refresh to check for remaining updates.")
+        self.status.set_label(text)
+        self.empty.set_title(_("Check for Updates"))
+        self.empty.set_description(text)
+
+    def _set_checked_at(self, timestamp):
+        self.checked_at = timestamp
+        date = GLib.DateTime.new_from_unix_local(int(timestamp))
+        if date is None:
+            return
+        self.last_checked.set_label(_("Last checked: %s") % date.format("%x %H:%M"))
+        self.last_checked.set_visible(True)
+
+    def invalidate(self):
+        self.cache.clear()
+        self.cache_loaded = True
+        self.check_when_ready = False
+        self.render(())
+        self._show_stale()
 
     def selected(self):
         return tuple(item for item, check in self.checks if check.get_active())
@@ -137,31 +192,36 @@ class UpdatesPage(Adw.NavigationPage):
 
     def checked(self, report):
         self.window._end_operation()
-        self.render(report.items)
-        self.details = "\n\n".join(report.errors)
-        self.errors_button.set_visible(bool(report.errors))
         if report.cancelled:
-            text = _("Check cancelled. Results below may be incomplete.")
-            empty_title = _("Check Cancelled")
-        elif report.errors:
-            text = _("Some apps could not be checked. Results below may be incomplete.")
+            # A cancelled check is not a replacement snapshot, even if some
+            # providers returned results before cancellation was acknowledged.
+            self.window.toast(_("Update check cancelled."))
+            return
+        self._show_report(report)
+        if not report.errors:
+            checked_at = time.time()
+            self._set_checked_at(checked_at)
+            self.cache.save(report, self.window.records, checked_at)
+
+    def _show_report(self, report):
+        self.render(report.items)
+        details = list(report.errors)
+        if report.errors:
+            text = _("Update check incomplete")
             empty_title = _("Could Not Check All Apps")
         elif report.items:
-            text = _(
-                "%d updates available. Select apps or update all, then review the changes."
-            ) % len(report.items)
+            text = _("%d updates available") % len(report.items)
             empty_title = _("Updates Available")
         else:
-            text = _("No updates are available from the configured software sources.")
+            text = _("No updates available")
             empty_title = _("You're Up to Date")
         if report.unsupported:
-            text += (
-                "\n"
-                + _(
-                    "%d apps require their own updater. Open their details for update instructions."
-                )
+            details.append(
+                _("%d apps require their own updater. Open their details for update instructions.")
                 % report.unsupported
             )
+        self.details = "\n\n".join(details)
+        self.errors_button.set_visible(bool(details))
         self.status.set_label(text)
         self.empty.set_title(empty_title)
         self.empty.set_description(text)
@@ -285,7 +345,7 @@ class UpdatesPage(Adw.NavigationPage):
     def finished(self, result):
         self.window._end_operation()
         # Dependencies and app identities can overlap: refresh before another explicit check.
-        self.render(())
+        self.invalidate()
         self.status.set_label(_("Check again to find any remaining updates."))
         self.empty.set_title(_("Update Results"))
         self.empty.set_description(self.status.get_label())

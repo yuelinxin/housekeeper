@@ -25,6 +25,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.4" date="2026-09-07" type="development">
+      <description>
+        <p>Reuse update results and enjoy a simpler, more consistent interface.</p>
+        <ul>
+          <li>Save update checks across restarts and refresh on page entry after 24 hours.</li>
+          <li>Keep previous results and selections when a check is cancelled, with simpler Cancel feedback.</li>
+          <li>Move update actions and selection status to an adaptive footer and shorten page descriptions.</li>
+          <li>Use single-layer grid highlights, rounded list highlights, and native pill-button hover effects.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.3" date="2026-09-07" type="development">
       <description>
         <p>Review and apply application updates from the details page or the new Updates sidebar page.</p>

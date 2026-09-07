@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.4 — 2026-09-07
+
+- Cache successful update checks across page navigation and application restarts,
+  including empty results. Show the last check time and recheck on page entry after
+  24 hours, with manual refresh available anytime. Invalidate affected entries when
+  installed applications change.
+- Keep the previous update list and selection when a check is cancelled, including
+  when providers have returned partial results. Preserve the cached check time.
+- Simplify Cancel Operation to Cancel and omit the intermediate cancellation-request notice.
+- Keep Updates actions compact at wide window sizes and shorten the header to an
+  update count and check time. Move updater guidance into Details and cache timing
+  guidance into the timestamp tooltip.
+- Place update actions at the bottom right and selection status at the bottom left,
+  in a footer that remains visible while scrolling the update list. Remove separators
+  above the footer and the Updates sidebar row.
+- Remove the rectangular hover background around detail-page pill buttons while
+  preserving their native hover, pressed, and keyboard-focus styling.
+- Draw grid selection, hover, and pressed backgrounds on the tile alone, give list
+  rows subtle rounded corners, and share the same state colors across both views.
+
 ## 0.1.3 — 2026-09-07
 
 - Add RPM and Flatpak update checks beside the removal action, with current/target

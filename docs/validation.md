@@ -1,9 +1,53 @@
-# v0.1.3 development validation
+# v0.1.4 development validation
 
 Updated on September 7, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.4 release validation — September 7, 2026
+
+- Application, Meson, RPM, AppStream, and source archive versions agree on 0.1.4.
+  Offline AppStream validation, Ruff lint/format, mypy, and whitespace checks pass.
+- Fedora 43 and 44 offline containers pass clean source builds, Meson tests, GTK
+  smoke, and repeated SVG startup checks. RPM and SRPM builds, installation,
+  same-version replacement, version output, and removal pass on both releases.
+- The system Python suite passes 136 tests. The conservative Ubuntu runtime passes
+  135 tests with one optional RPM-binding skip, and its clean build and GTK smoke pass.
+- GTK coverage includes cache expiry, cancellation retaining previous results,
+  the adaptive footer, and list/grid and pill-button hover in both color schemes.
+  Grid selection plus hover/pressed states are exercised explicitly so the outer
+  highlight cannot be missed by testing only unselected cards.
+- No personal application was updated or removed. This release changes caching
+  and presentation; existing real-transaction validation and its limitations below
+  still apply.
+
+## Update cache validation — September 7, 2026
+
+- Updates header layout passes GTK smoke on the conservative Ubuntu runtime at
+  normal, 1200-pixel wide, and 360-pixel narrow window sizes. Buttons remain compact
+  at the bottom right and stack at narrow sizes, with selection status at the bottom
+  left. Footer bounds are checked against the list and window edges; check metadata
+  and Details remain visible.
+  Updated screenshots use synthetic records.
+- The system Python suite passes 136 tests, including cache round trips, empty
+  results, changed installation paths/versions, incomplete checks, malformed files,
+  invalidation, unavailable cache storage, and the exact 24-hour expiry boundary.
+- Clean Meson tests and synthetic GTK smoke pass on Fedora 44 and the conservative
+  Ubuntu runtime. GTK checks verify repeated navigation preserves selection without
+  another check, new pages restore saved results, and the refresh button checks again.
+  The Ubuntu smoke also verifies empty-result restoration and suppression of a queued
+  first check when saved results exist. Smoke uses a temporary isolated cache.
+- Fedora 44 GTK smoke also covers expired-cache entry, deferral during inventory
+  scans, unchanged inventory without automatic checks, expired empty results after
+  restart, and leaving the page before a deferred check starts. Successful checks
+  renew the 24-hour TTL; revisiting within that interval reuses the results.
+- Cancellation regression smoke clicks the real Cancel button with both empty and
+  partial provider results. The previous rows, checkbox selection, status, cached
+  file, and successful-check time remain unchanged; the progress window closes and
+  actions become available again. A prior successful empty result is also retained.
+- Ruff lint/format, mypy, and whitespace checks pass. These tests use synthetic
+  update reports and do not update any installed application.
 
 ## v0.1.3 packaging validation — September 7, 2026
 
@@ -21,8 +65,9 @@ sections below preserve the results and limitations known at each stage.
 
 The update provider previously marked every execution progress callback non-cancellable,
 including extra-data downloads. It now exposes cooperative cancellation through the
-transaction's `GCancellable`. The UI sends one request, keeps its cancelling indicator
+transaction's `GCancellable`. The UI sends one request, keeps further clicks disabled
 through late progress callbacks, and waits for installed-state verification before closing.
+The Cancel label stays unchanged and no intermediate cancellation-request notice is shown.
 
 - 119 unit tests, clean Meson tests, GTK smoke, Ruff and mypy pass.
 - The offline Fedora 44 system Flatpak fixture cancels an actual slow localhost extra-data
