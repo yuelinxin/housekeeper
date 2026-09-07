@@ -1,6 +1,12 @@
 #!/usr/bin/python3
 import os
+import subprocess
 import sys
+
+# Python runs from the source tree, so rebuild resources before importing its UI.
+result = subprocess.run(['@MESON_COMMAND@', 'compile', '-C', '@BUILD_DIR@'])
+if result.returncode:
+    raise SystemExit(result.returncode)
 
 sys.path.insert(0, '@SOURCE_DIR@')
 os.environ['HOUSEKEEPER_RESOURCE_FILE'] = '@BUILD_DIR@/data/housekeeper.gresource'

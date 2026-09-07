@@ -1,6 +1,5 @@
 """Application startup and installed/build-tree resource resolution."""
 
-import logging
 import os
 import sys
 from pathlib import Path
@@ -12,6 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, Gtk
 
 from housekeeper import APP_ID, VERSION
+from housekeeper.diagnostics import configure_logging
 
 
 def main(argv=None):
@@ -22,9 +22,7 @@ def main(argv=None):
     if os.geteuid() == 0:
         print("Run Housekeeper as a regular desktop user, not as root.", file=sys.stderr)
         return 1
-    logging.basicConfig(
-        level=logging.DEBUG if os.environ.get("HOUSEKEEPER_DEBUG") else logging.WARNING
-    )
+    configure_logging()
     if Gtk.get_major_version() != 4 or Gtk.get_minor_version() < 12:
         print("Housekeeper requires GTK 4.12 or newer.", file=sys.stderr)
         return 1

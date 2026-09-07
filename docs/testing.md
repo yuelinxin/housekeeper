@@ -14,7 +14,7 @@ mypy
 ```
 
 `tests/smoke_ui.py` uses synthetic records and does not invoke real uninstall
-providers. It exercises list/grid switching, search, details, narrow layout, themes,
+or update providers. It exercises list/grid switching, search, details, narrow layout, themes,
 preferences, and About. The output is captured from Housekeeper's own rendered widget,
 not the desktop or another application. Set `HOUSEKEEPER_SCREENSHOT_DIR` to choose
 the output directory. The custom D-Bus configuration avoids activating unrelated
@@ -34,6 +34,13 @@ same D-Bus wrapper as the smoke test, adding `xvfb-run -a` without a real displa
 CI runs five repetitions on each tested GTK runtime. See [the startup crash
 investigation](startup-crash.md) for the original failure and mitigation.
 
+Update tests also cover candidate identity, dependency and repository changes,
+stale PackageKit inventory, update cancellation, Flatpak commit pinning, partial
+completion, and task submission failures. GTK smoke verifies the adjacent actions,
+stacked narrow layout, keyboard focus, current/cancelled checks, confirmation defaults,
+stale callbacks, deferred refresh, and update progress. Its additional screenshots
+are `details-narrow.png` and `update-preview.png`.
+
 ## Disposable Fedora environments
 
 The container image contains build and test dependencies, not personal applications.
@@ -42,7 +49,7 @@ container. Integration scripts require a container marker and an explicit test f
 
 ```sh
 podman build --build-arg FEDORA_VERSION=44 -t housekeeper-test:44 -f tests/Containerfile .
-python3 build-aux/source_archive.py dist/housekeeper-0.1.0.tar.gz
+python3 build-aux/source_archive.py
 mkdir -p dist/packages
 podman run --rm --network none \
   -v "$PWD:/source:ro" -v "$PWD/dist/packages:/artifacts" \
@@ -68,6 +75,19 @@ Flatpak repository supplies a tiny test app, so removal needs no downloaded runt
 The harness verifies that application data survives uninstall. A temporary AppImage
 and launcher exercise the real GIO Trash implementation and preservation of unrelated
 application data. See [the validation record](validation.md) for observed results.
+
+The update fixtures create a temporary signing key and a local RPM repository with
+two application/dependency versions. They verify preview without installation, a
+real signed update, a current-version check, and authorization denial. Update and
+removal fallback results are recorded separately. Flatpak fixtures export a tiny
+runtime and several application commits, then verify updating both, data preservation,
+and rejection when dependencies change after preview. No fixture application is run.
+
+PackageKit is started with `--keep-environment` and `GIO_USE_NETWORK_MONITOR=base`
+only inside the disposable harness. This lets DNF5 read uncached `file://` payloads
+instead of forcing all-cache mode when netlink sees no network interface. Containers
+still run with `--network none`; no external network is available and no production
+daemon configuration is changed.
 
 ## Manual desktop checks
 
@@ -95,3 +115,42 @@ building the app locally does not create a release.
 Review installation instructions, platform claims, known limitations, and attached
 files before publishing. GitHub releases are the initial distribution channel;
 there is no application self-updater or configured COPR repository.
+
+## Updates page and batch regression checks
+
+`test_batch_updates.py` covers duplicate installation grouping, separate installations,
+incomplete checks, cancellation, shared dependencies, changed sources or targets, and
+stopping a batch after partial completion. Service tests cover batch task exclusivity
+and cancellation before submission completes. Synthetic GTK smoke exercises the bottom
+sidebar row, per-app checkboxes, Update Selected/Update All confirmation, narrow layout,
+partial results, and navigation back to the inventory without executing package updates.
+
+The offline Flatpak integration fixture publishes two applications sharing a runtime.
+Both previews include that runtime; the batch must update it once, reconcile the second
+preview, and verify both applications' exact target commits and retained personal data.
+
+The signed RPM fixture also installs two version-1 applications with a shared strict
+versioned dependency, then checks and updates both in a batch. Version queries must
+show version 2 for both applications and the dependency. A package already updated
+as part of the preceding transaction is not executed again.
+
+## System Flatpak authorization regression
+
+`integration_flatpak_system_update.py` builds a signed local system repository and
+runs the client as an unprivileged user. It reproduces the explicit-commit root
+permission error, verifies that policy denial and a stale target cannot deploy,
+and checks that the normal system-helper update reaches the confirmed commit while
+preserving personal data. The harness starts the helper directly because container
+D-Bus service activation cannot use its normal setuid launcher. Without `/dev/fuse`,
+the fixture sets `FLATPAK_REVOKEFS_FUSE=/usr/bin/false` to exercise Flatpak's signed
+child-repository fallback. Production helper and FUSE configuration remain unchanged.
+Graphical password/fingerprint prompts still require a desktop authentication agent;
+the fixture exercises Polkit allow/deny rules rather than collecting credentials.
+
+The system Flatpak fixture also serves a deliberately slow extra-data payload over
+localhost in the network-isolated container. After transfer begins, it requests
+cancellation, checks that the payload was only partially transferred, and verifies
+the app commit and personal data remain unchanged. The client runs in a worker with
+a GLib main loop, matching the desktop. Unit tests cover cancellation before any
+component changes and after a runtime completes; GTK smoke checks single-request
+cancellation, its pending indicator and immunity to late progress callbacks.

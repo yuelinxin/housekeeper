@@ -40,6 +40,32 @@ of a successful real RPM removal or graphical Polkit authentication.
 - Hidden and auxiliary entries are opt-in. Explicit hidden overrides continue to
   suppress matching synthetic Flatpak entries.
 
+## Application updates
+
+RPM update capability is checked independently of removal capability. Fedora 43
+and 44 ordinary systems use PackageKit to refresh metadata and simulate an exact
+application update with its dependencies. Unsupported roles, incomplete previews,
+stale installed metadata, extra removals, or downgrades produce management guidance.
+The RPM database is checked independently of PackageKit's cached installed inventory.
+Immutable/declarative systems and other distributions retain external native management.
+Both Fedora backends pass signed local application/dependency upgrades and denied
+authorization fixtures; these successful update tests do not change the removal
+limitations documented above.
+
+Flatpak update previews require libflatpak 1.9.1 or newer. User, system, and named
+installations retain their own paths, refs, branches, and origins. Real local update
+fixtures currently exercise user scope; system and custom installation authorization
+still require desktop acceptance checks. Missing optional bindings do not prevent
+startup or source-specific instructions.
+
+Single-app and selected/all-app batches use the same provider restrictions. Only
+explicitly requested application updates are supported. Dependencies and
+extensions can be installed or updated after preview; new source configuration,
+application migration, runtime cleanup, release upgrades, and automatic restart are
+outside this feature. An application with no configured update source cannot be
+updated from its package file or release website automatically. AppImage, web apps,
+Steam games, and Housekeeper itself provide update instructions.
+
 ## Expansion policy
 
 First add DEB ownership and validate PackageKit on Ubuntu and Debian. Then add
@@ -51,3 +77,10 @@ A future Flatpak distribution of Housekeeper needs a separate host-access design
 and review. The v0.1 RPM build is not a sandboxed frontend. Older GNOME installations
 below the runtime floor require a suitable bundled runtime or a later compatibility
 project; supporting GNOME does not imply every historical library version is supported.
+
+System Flatpak updates use the standard system-helper path: Flatpak rejects explicit
+commit requests from an unprivileged client before normal update authorization.
+Housekeeper verifies every resolved commit against the preview before deployment;
+changed targets still require another preview. User installations retain explicit
+commit pinning. Polkit handles system authorization with the desktop agent and its
+configured password/fingerprint methods; system policy may authorize without prompting.

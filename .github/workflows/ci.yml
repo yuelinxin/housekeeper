@@ -19,7 +19,7 @@ jobs:
       - name: Build test environment
         run: podman build --build-arg FEDORA_VERSION=${{ matrix.fedora }} -t housekeeper-test -f tests/Containerfile .
       - name: Create clean source archive
-        run: python3 build-aux/source_archive.py dist/housekeeper-0.1.0.tar.gz
+        run: python3 build-aux/source_archive.py
       - name: Build, exercise GTK, and test RPM packaging
         run: |
           mkdir -p artifacts

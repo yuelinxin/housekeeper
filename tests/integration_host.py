@@ -13,6 +13,9 @@ if (
 ):
     raise SystemExit("This script requires root inside the disposable test container.")
 root = Path(__file__).resolve().parents[1]
+# This affects only disposable daemons, including services activated by system D-Bus.
+# Package payloads come exclusively from the fixture's file:// repository.
+os.environ["GIO_USE_NETWORK_MONITOR"] = "base"
 
 
 def run(*args, **kwargs):
@@ -59,12 +62,24 @@ for name, dependency in (
     run("rpmbuild", "-bb", "--define", f"_topdir {top}", str(spec))
 packages = [str(p) for p in (top / "RPMS/noarch").glob("*.rpm")]
 run("rpm", "-i", *packages)
+run(
+    "/usr/bin/python3",
+    str(root / "tests/integration_rpm_update.py"),
+    "setup",
+    env={**os.environ, "PYTHONPATH": str(root / "src")},
+)
 daemons = []
 for command, bus_name in (
     (["/usr/lib/polkit-1/polkitd", "--no-debug"], "org.freedesktop.PolicyKit1"),
-    (["/usr/libexec/packagekitd"], "org.freedesktop.PackageKit"),
+    (["/usr/libexec/packagekitd", "--keep-environment"], "org.freedesktop.PackageKit"),
     (["/usr/libexec/accounts-daemon"], "org.freedesktop.Accounts"),
+    (
+        ["/usr/libexec/flatpak-system-helper", "--no-idle-exit"],
+        "org.freedesktop.Flatpak.SystemHelper",
+    ),
 ):
+    # Allow file:// package payloads even though the container has no external network.
+    # The netlink monitor otherwise makes DNF5 force cache-only mode for all downloads.
     daemons.append(subprocess.Popen(command))
     run("gdbus", "wait", "--system", "--timeout=15", bus_name)
 run("pkcon", "--filter=installed", "resolve", "housekeeper-fixture")
@@ -112,6 +127,18 @@ if Path("/home/hk-test/native-removal-result").read_text() == "removed":
     as_user("integration_rpm.py", "denied")
 else:
     print("NOT VERIFIED: native removal authorization; this backend cannot provide a safe preview.")
+run(
+    "/usr/bin/python3",
+    str(root / "tests/integration_rpm_update.py"),
+    "run",
+    env={**os.environ, "PYTHONPATH": str(root / "src")},
+)
 as_user("integration_flatpak.py")
+as_user("integration_flatpak_update.py")
+run(
+    "/usr/bin/python3",
+    str(root / "tests/integration_flatpak_system_update.py"),
+    env={**os.environ, "PYTHONPATH": str(root / "src")},
+)
 as_user("integration_appimage.py")
 print("PASS: isolated integration suite")

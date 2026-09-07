@@ -4,5 +4,6 @@ RUN dnf -y install python3 python3-gobject python3-pytest python3-rpm \
     python3-pip gtk4 libadwaita glib2-devel meson ninja-build gettext \
     desktop-file-utils appstream rpm-build rpmdevtools flatpak flatpak-libs \
     PackageKit PackageKit-glib polkit dbus-daemon xorg-x11-server-Xvfb \
+    createrepo_c rpm-sign gnupg2 \
     xauth adwaita-icon-theme git procps-ng util-linux-core shadow-utils accountsservice \
     && dnf clean all

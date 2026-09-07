@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.0
+Version:        0.1.3
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -29,7 +29,8 @@ Recommends:     flatpak-libs
 %description
 Housekeeper provides a searchable GTK application inventory with installation
 sources, file locations, and source-appropriate removal or management actions.
-It supports RPM, Flatpak, AppImage, browser web apps, and Steam shortcuts.
+It supports RPM and Flatpak update previews and selected or all-app updates,
+plus management of AppImages, browser web apps, and Steam shortcuts.
 
 %prep
 %autosetup
@@ -58,5 +59,14 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Mon Sep 07 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.3-1
+- Add RPM and Flatpak updates, dependency previews, and selected/all-app updates.
+- Fix system Flatpak authorization and enable cooperative download cancellation.
+- Add diagnostics and automatically rebuild development resources before startup.
+
+* Mon Sep 07 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.2-1
+- Fix SVG icon-loading crashes and rename System Packages to RPM.
+- Add repeated icon startup regression checks.
+
 * Sun Sep 06 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.0-1
 - Initial development release.

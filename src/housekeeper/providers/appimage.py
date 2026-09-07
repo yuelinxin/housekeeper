@@ -98,7 +98,7 @@ class AppImageProvider:
         completed, errors = [], []
         for index, item in enumerate(plan.files):
             path = Path(item.path)
-            progress("Moving files to Trash…", index / len(plan.files), False)
+            progress("Moving files to Trash", index / len(plan.files), False)
             try:
                 if self._validate(path) != item:
                     raise ManagementError("The file changed during removal.")

@@ -12,6 +12,8 @@
       <li>Browse applications in a list or an icon grid.</li>
       <li>Inspect installation sources, package identities, and file locations.</li>
       <li>Review removal plans for RPM packages, Flatpak applications, and independent AppImages.</li>
+      <li>Check for RPM and Flatpak updates, then confirm versions and dependency changes before updating.</li>
+      <li>Select applications in Updates or update all available applications together.</li>
       <li>Find browser and Steam management instructions.</li>
     </ul>
     <p>System package removal requires a compatible PackageKit backend and a verified removal preview. Unsupported operations provide manual management guidance. Other sources remain available when their integration is installed. Personal application data is kept.</p>
@@ -22,6 +24,28 @@
   <url type="vcs-browser">https://github.com/yuelinxin/housekeeper</url>
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
-  <releases><release version="0.1.0" date="2026-09-06" type="development"/></releases>
+  <releases>
+    <release version="0.1.3" date="2026-09-07" type="development">
+      <description>
+        <p>Review and apply application updates from the details page or the new Updates sidebar page.</p>
+        <ul>
+          <li>Preview RPM and Flatpak updates, including dependencies, then update selected apps or all available apps.</li>
+          <li>Support system Flatpak authorization and cancellation during extra-data downloads, with verified and partial results.</li>
+          <li>Add system authentication guidance and local diagnostic logs, and keep development resources current at startup.</li>
+          <li>Improve narrow-window controls and remove ellipses from interface text.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.1.2" date="2026-09-07" type="development">
+      <description>
+        <ul>
+          <li>Fix SVG icon-loading startup crashes while preserving icon themes and scaling.</li>
+          <li>Rename System Packages to RPM to distinguish installation source from scope.</li>
+          <li>Add repeated icon startup regression checks and refresh screenshots.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-09-06" type="development"/>
+  </releases>
   <supports><control>pointing</control><control>keyboard</control><control>touch</control></supports>
 </component>

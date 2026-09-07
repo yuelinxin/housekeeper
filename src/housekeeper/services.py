@@ -6,7 +6,15 @@ from pathlib import Path
 
 from housekeeper.discovery import application_roots, scan_entries
 from housekeeper.identity import classify, merge_records
-from housekeeper.models import Action, ManagementError, OperationResult, Outcome, Source
+from housekeeper.models import (
+    Action,
+    ManagementError,
+    OperationCancelled,
+    OperationResult,
+    Outcome,
+    Source,
+)
+from housekeeper.updates import assign_update_action
 
 LOG = logging.getLogger(__name__)
 
@@ -16,7 +24,7 @@ def collect(partial=None, roots=None):
     records = [classify(entry) for entry in entries]
     if partial:
         partial(merge_records(records))
-    from housekeeper.providers.flatpak import FlatpakIndex
+    from housekeeper.providers.flatpak import FlatpakIndex, FlatpakProvider
     from housekeeper.providers.rpm import RpmIndex, RpmProvider
 
     flatpaks, rpms = FlatpakIndex(), RpmIndex()
@@ -60,7 +68,9 @@ def collect(partial=None, roots=None):
     from housekeeper.providers.appimage import AppImageProvider
 
     image_provider = AppImageProvider()
+    update_capabilities = {"rpm": rpm_capability, "flatpak": FlatpakProvider().capabilities()}
     for record in output:
+        assign_update_action(record, update_capabilities)
         if record.source == Source.APPIMAGE:
             try:
                 image_provider.prepare(record, output)
@@ -92,14 +102,21 @@ class InventoryService:
         self.busy = False
         self.scanning = False
         self.active_provider = None
+        self.closed = False
 
     def scan(self, partial, completed, failed):
-        if self.scanning or self.busy:
+        if self.closed or self.scanning or self.busy:
             return False
         self.scanning = True
-        future = self.executor.submit(collect, lambda apps: self.dispatch(partial, apps))
+        try:
+            future = self.executor.submit(collect, lambda apps: self.dispatch(partial, apps))
+        except Exception as error:
+            self.scanning = False
+            self.dispatch(failed, str(error))
+            return False
 
         def done(result):
+            self.scanning = False
             try:
                 apps, warnings, roots, installations = result.result()
                 self.inventory = apps
@@ -107,8 +124,6 @@ class InventoryService:
             except Exception as error:
                 LOG.debug("Inventory scan failed", exc_info=True)
                 self.dispatch(failed, str(error))
-            finally:
-                self.scanning = False
 
         future.add_done_callback(done)
         return True
@@ -129,33 +144,60 @@ class InventoryService:
         raise ManagementError("This application is managed by another tool.")
 
     def prepare(self, app, completed, failed):
-        if self.busy or self.scanning:
-            failed("Wait for the current scan or operation to finish.")
-            return
-        self.busy = True
-        provider = self._provider(app)
         inventory = list(self.inventory)
-        future = self.executor.submit(provider.prepare, app, inventory)
+        self._submit(app, lambda provider: provider.prepare(app, inventory), completed, failed)
 
-        def done(result):
-            self.busy = False
-            try:
-                self.dispatch(completed, result.result())
-            except Exception as error:
-                LOG.debug("Removal preview failed", exc_info=True)
-                self.dispatch(failed, str(error))
+    def prepare_update(self, app, progress, completed, failed):
+        inventory = list(self.inventory)
+        self._submit(
+            app,
+            lambda provider: provider.prepare_update(
+                app, inventory, lambda *args: self.dispatch(progress, *args)
+            ),
+            completed,
+            failed,
+            preserve_error=True,
+        )
 
-        future.add_done_callback(done)
+    def execute_update(self, app, plan, progress, completed):
+        self._submit(
+            app,
+            lambda provider: provider.execute_update(
+                app, plan, lambda *args: self.dispatch(progress, *args)
+            ),
+            completed,
+            lambda error: completed(self._failure(error)),
+            preserve_error=True,
+        )
+
+    def check_updates(self, progress, completed, failed):
+        from housekeeper.batch_updates import UpdateBatch
+
+        batch = UpdateBatch(self._provider, list(self.inventory))
+        self._submit(
+            None,
+            lambda worker: worker.check(lambda *args: self.dispatch(progress, *args)),
+            completed,
+            failed,
+            preserve_error=True,
+            worker=batch,
+        )
+
+    def execute_updates(self, items, progress, completed):
+        from housekeeper.batch_updates import UpdateBatch
+
+        batch = UpdateBatch(self._provider, list(self.inventory))
+        self._submit(
+            None,
+            lambda worker: worker.execute(items, lambda *args: self.dispatch(progress, *args)),
+            completed,
+            lambda error: completed(self._failure(error)),
+            preserve_error=True,
+            worker=batch,
+        )
 
     def execute(self, app, plan, progress, completed):
-        if self.busy or self.scanning:
-            completed(OperationResult(Outcome.FAILED, "Wait for the current task to finish."))
-            return
-        self.busy = True
-        self.active_provider = self._provider(app)
-        provider = self.active_provider
-
-        def run():
+        def run(provider):
             # Repeat ownership and shared-file checks against a fresh inventory before file removal.
             if app.provider == "appimage":
                 current, *_ = collect()
@@ -169,15 +211,53 @@ class InventoryService:
                     raise ManagementError("The files changed. Review a new preview.")
             return provider.execute(app, plan, lambda *args: self.dispatch(progress, *args))
 
-        future = self.executor.submit(run)
+        self._submit(
+            app, run, completed, lambda error: completed(self._failure(error)), preserve_error=True
+        )
+
+    @staticmethod
+    def _failure(error):
+        outcome = Outcome.CANCELLED if isinstance(error, OperationCancelled) else Outcome.FAILED
+        return OperationResult(outcome, str(error))
+
+    def _submit(self, app, run, completed, failed, preserve_error=False, worker=None):
+        def failure(error):
+            self.dispatch(failed, error if preserve_error else str(error))
+
+        if self.closed or self.busy or self.scanning:
+            failure(ManagementError("Wait for the current scan or operation to finish."))
+            return
+        self.busy = True
+        try:
+            self.active_provider = worker if worker is not None else self._provider(app)
+            future = self.executor.submit(run, self.active_provider)
+        except Exception as error:
+            self.busy, self.active_provider = False, None
+            failure(error)
+            return
 
         def done(result):
             self.busy, self.active_provider = False, None
             try:
                 outcome = result.result()
             except Exception as error:
-                LOG.debug("Management operation failed", exc_info=True)
-                outcome = OperationResult(Outcome.FAILED, str(error))
+                LOG.warning(
+                    "Management operation failed for %s",
+                    app.identity if app else "update batch",
+                    exc_info=True,
+                )
+                failure(error)
+                return
+            if isinstance(outcome, OperationResult):
+                LOG.log(
+                    logging.INFO if outcome.outcome == Outcome.SUCCESS else logging.WARNING,
+                    "Operation result for %s: %s; %s; completed=%s; errors=%s",
+                    app.identity if app else "update batch",
+                    outcome.outcome.value,
+                    outcome.message,
+                    outcome.completed,
+                    outcome.errors,
+                )
             self.dispatch(completed, outcome)
 
         future.add_done_callback(done)
@@ -187,4 +267,5 @@ class InventoryService:
             self.active_provider.request_cancel()
 
     def close(self):
+        self.closed = True
         self.executor.shutdown(wait=False, cancel_futures=True)

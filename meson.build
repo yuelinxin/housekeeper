@@ -1,4 +1,4 @@
-project('housekeeper', version: '0.1.0', meson_version: '>= 0.63.0', license: 'MIT')
+project('housekeeper', version: '0.1.3', meson_version: '>= 0.63.0', license: 'MIT')
 
 gnome = import('gnome')
 i18n = import('i18n')
@@ -21,6 +21,7 @@ configuration.set('RESOURCE_FILE', app_dir / 'housekeeper.gresource')
 configuration.set('LOCALE_DIR', get_option('prefix') / get_option('localedir'))
 configuration.set('SOURCE_DIR', meson.project_source_root() / 'src')
 configuration.set('BUILD_DIR', meson.project_build_root())
+configuration.set('MESON_COMMAND', find_program('meson').full_path())
 configuration.set('ICON_DIR', meson.project_source_root() / 'data/icons')
 
 configure_file(input: 'build-aux/housekeeper.in', output: 'housekeeper',

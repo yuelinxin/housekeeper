@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+
+housekeeper_version=$(PYTHONPATH=/source/src /usr/bin/python3 -c 'from housekeeper import VERSION; print(VERSION)')
 mkdir -p /tmp/housekeeper-baseline
-tar -xzf /source/dist/housekeeper-0.1.0.tar.gz -C /tmp/housekeeper-baseline
-cd /tmp/housekeeper-baseline/housekeeper-0.1.0
+tar -xzf "/source/dist/housekeeper-${housekeeper_version}.tar.gz" -C /tmp/housekeeper-baseline
+cd "/tmp/housekeeper-baseline/housekeeper-${housekeeper_version}"
 meson setup build --prefix=/usr
 meson compile -C build
 PYTHONPATH=src /usr/bin/python3 -m pytest -q

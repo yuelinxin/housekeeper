@@ -12,9 +12,18 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from housekeeper import APP_ID, VERSION
 from housekeeper.i18n import _
-from housekeeper.models import Action, Outcome, Source
+from housekeeper.models import (
+    Action,
+    OperationCancelled,
+    Outcome,
+    Source,
+    UpdateAction,
+    UpdateState,
+)
 from housekeeper.services import InventoryService
 from housekeeper.ui.icons import icon_image, set_icon
+from housekeeper.ui.updates import UpdatesPage
+from housekeeper.updates import authorization_notice, update_instructions
 
 SOURCES = {
     "all": (_("All Apps"), "view-app-grid-symbolic"),
@@ -62,6 +71,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     split = Gtk.Template.Child()
     sidebar = Gtk.Template.Child()
     sidebar_button = Gtk.Template.Child()
+    updates_sidebar = Gtk.Template.Child()
+    updates_row = Gtk.Template.Child()
+    updates_count = Gtk.Template.Child()
     navigation = Gtk.Template.Child()
     overview_page = Gtk.Template.Child()
     overview_box = Gtk.Template.Child()
@@ -82,12 +94,21 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.initialized = False
         self.closed = False
         self.operation_active = False
+        self.cancel_requested = False
+        self.operation_kind = "remove"
+        self.operation_serial = 0
+        self.operation_key = None
+        self.task_dialog = None
+        self.confirm_dialog = None
         self.detail_app = None
         self.warnings = []
         self.set_default_size(settings.get_int("window-width"), settings.get_int("window-height"))
         if settings.get_boolean("maximized"):
             self.maximize()
+        self.section = "apps"
         self._build_overview()
+        self.updates_page = UpdatesPage(self)
+        self.updates_sidebar.connect("row-activated", self._updates_activated)
         self._actions()
         # Focus restoration can change selection; only activation changes the source.
         self.sidebar_handler = self.sidebar.connect("row-activated", self._source_activated)
@@ -117,7 +138,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.status_box = Gtk.Box(spacing=8, margin_start=20, margin_end=20, margin_bottom=8)
         self.spinner = Gtk.Spinner(spinning=True)
         self.summary = label(
-            _("Finding your applications…"), hexpand=True, ellipsize=Pango.EllipsizeMode.END
+            _("Finding your applications"), hexpand=True, ellipsize=Pango.EllipsizeMode.END
         )
         self.summary.add_css_class("dim-label")
         self.status_box.append(self.spinner)
@@ -194,7 +215,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
     def _actions(self):
         for name, callback in (
-            ("refresh", lambda *_: self.refresh()),
+            (
+                "refresh",
+                lambda *_: (
+                    self.updates_page.check() if self.section == "updates" else self.refresh()
+                ),
+            ),
             ("search", lambda *_: self.search.grab_focus()),
             ("preferences", lambda *_: self.preferences()),
             ("about", lambda *_: self.about()),
@@ -316,15 +342,31 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 box.append(count)
                 row.set_child(box)
                 self.sidebar.append(row)
-                if key == self.source:
+                if key == self.source and self.section == "apps":
                     self.sidebar.select_row(row)
         finally:
             self.sidebar.handler_unblock(self.sidebar_handler)
         self.overview_page.set_title(SOURCES[self.source][0])
 
+    def _updates_activated(self, _list, row):
+        if row is None:
+            return
+        self.section = "updates"
+        self.detail_app = None
+        self.sidebar.unselect_all()
+        self.updates_sidebar.select_row(self.updates_row)
+        self.navigation.replace([self.updates_page])
+        if self.split.get_collapsed():
+            self.split.set_show_sidebar(False)
+        self.updates_page.enter()
+
     def _source_activated(self, _list, row):
         if row is None:
             return
+        if self.section == "updates":
+            self.navigation.replace([self.overview_page])
+        self.section = "apps"
+        self.updates_sidebar.unselect_all()
         self.source = row.source
         self.overview_page.set_title(SOURCES[self.source][0])
         self.filter.changed(Gtk.FilterChange.DIFFERENT)
@@ -369,7 +411,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.refresh_pending = False
         self.spinner.set_visible(True)
         self.spinner.start()
-        self.summary.set_label(_("Reading installed applications…"))
+        self.summary.set_label(_("Reading installed applications"))
         self.service.scan(self._partial, self._complete, self._scan_failed)
 
     def _replace(self, records):
@@ -387,7 +429,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _partial(self, records):
         if not self.initialized:
             self._replace(records)
-            self.summary.set_label(_("Identifying installation sources…"))
+            self.summary.set_label(_("Identifying installation sources"))
 
     def _complete(self, records, warnings, roots, installations):
         if self.closed:
@@ -408,9 +450,11 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 self.detail_notice.set_title(_("This application is no longer in the inventory."))
                 self.detail_notice.set_revealed(True)
                 self.manage_button.set_sensitive(False)
+                self.update_button.set_sensitive(False)
             else:
                 if self.detail_app != match:
                     self.show_details(match, replace=True)
+        self.updates_page.inventory_ready()
         if self.refresh_pending:
             self.refresh_pending = False
             self._schedule_refresh()
@@ -420,6 +464,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             return
         self.spinner.stop()
         self.spinner.set_visible(False)
+        self.updates_page.check_when_ready = False
+        self.updates_page.status.set_label(_("Inventory could not be refreshed. Try again."))
         self.summary.set_label(_("Inventory could not be refreshed"))
         self.warnings = [error]
         self.banner.set_revealed(True)
@@ -529,8 +575,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         subtitle.add_css_class("dim-label")
         hero.append(subtitle)
         action_titles = {
-            Action.UNINSTALL: _("Uninstall…"),
-            Action.TRASH: _("Move to Trash…"),
+            Action.UNINSTALL: _("Uninstall"),
+            Action.TRASH: _("Move to Trash"),
             Action.CHROME: _("Manage in Chrome")
             if "chromium" not in app.metadata.get("browser", "")
             else _("Manage in Chromium"),
@@ -538,14 +584,34 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             Action.INSTRUCTIONS: _("Show Management Instructions"),
             Action.NONE: _("Show Management Instructions"),
         }
-        self.manage_button = Gtk.Button(label=action_titles[app.action], halign=Gtk.Align.CENTER)
+        actions = Gtk.FlowBox(
+            selection_mode=Gtk.SelectionMode.NONE,
+            min_children_per_line=1,
+            max_children_per_line=2,
+            row_spacing=8,
+            column_spacing=8,
+            halign=Gtk.Align.CENTER,
+            activate_on_single_click=False,
+        )
+        self.update_button = Gtk.Button(
+            label=_("Check for Updates")
+            if app.update_action == UpdateAction.CHECK
+            else _("Update Instructions"),
+            valign=Gtk.Align.CENTER,
+        )
+        self.update_button.add_css_class("pill")
+        self.update_button.add_css_class("suggested-action")
+        self.update_button.connect("clicked", lambda _b: self.check_update(app))
+        actions.append(self.update_button)
+        self.manage_button = Gtk.Button(label=action_titles[app.action], valign=Gtk.Align.CENTER)
         self.manage_button.add_css_class("pill")
         if app.action in {Action.UNINSTALL, Action.TRASH}:
             self.manage_button.add_css_class("destructive-action")
-        else:
-            self.manage_button.add_css_class("suggested-action")
         self.manage_button.connect("clicked", lambda _b: self.manage(app))
-        hero.append(self.manage_button)
+        actions.append(self.manage_button)
+        self.manage_button.set_sensitive(not self.operation_active)
+        self.update_button.set_sensitive(not self.operation_active)
+        hero.append(actions)
         body.append(hero)
         if app.status:
             status = Gtk.Label(label=app.status, wrap=True)
@@ -636,10 +702,17 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.message(_("Could Not Open Location"), str(error))
 
     def manage(self, app):
+        if self.operation_active:
+            return
         if app.action in {Action.UNINSTALL, Action.TRASH}:
-            self.manage_button.set_sensitive(False)
-            self.toast(_("Preparing a removal preview…"))
-            self.service.prepare(app, lambda plan: self._confirm(app, plan), self._preview_failed)
+            if not self._begin_operation(app, "remove"):
+                return
+            self._show_task(_("Preparing a removal preview"))
+            self.service.prepare(
+                app,
+                self._guard(lambda plan: self._confirm(app, plan)),
+                self._guard(self._preview_failed),
+            )
         elif app.action == Action.CHROME:
             try:
                 Gio.Subprocess.new(list(app.management), Gio.SubprocessFlags.NONE)
@@ -667,6 +740,86 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 else None,
             )
 
+    def _begin_operation(self, app, kind):
+        if self.closed or self.operation_active or self.service.busy or self.service.scanning:
+            self.toast(_("Wait for the current scan or operation to finish."))
+            return False
+        self.operation_active = True
+        self.cancel_requested = False
+        self.operation_kind = kind
+        self.operation_key = app.key if app is not None else "updates"
+        self.operation_serial += 1
+        if self.detail_app:
+            self.manage_button.set_sensitive(False)
+            self.update_button.set_sensitive(False)
+        return True
+
+    def _guard(self, callback):
+        serial, key = self.operation_serial, self.operation_key
+
+        def guarded(*args):
+            if (
+                not self.closed
+                and self.operation_active
+                and self.operation_serial == serial
+                and self.operation_key == key
+            ):
+                callback(*args)
+
+        return guarded
+
+    def _end_operation(self):
+        self.operation_active = False
+        self.operation_serial += 1
+        if self.task_dialog:
+            self.task_dialog.destroy()
+            self.task_dialog = None
+        self.confirm_dialog = None
+        self.updates_page._selection_changed()
+        if self.detail_app:
+            available = any(app.key == self.detail_app.key for app in self.records)
+            self.manage_button.set_sensitive(available)
+            self.update_button.set_sensitive(available)
+        if self.refresh_pending:
+            self._schedule_refresh()
+
+    def check_update(self, app):
+        if self.operation_active:
+            return
+        if app.update_action != UpdateAction.CHECK:
+            self.message(_("Update Instructions"), update_instructions(app))
+            return
+        if not self._begin_operation(app, "update"):
+            return
+        self._show_task(_("Checking Updates for %s") % app.name)
+        self.service.prepare_update(
+            app,
+            self._guard(self._progress),
+            self._guard(lambda result: self._update_checked(app, result)),
+            self._guard(lambda error: self._update_failed(app, error)),
+        )
+
+    def _update_checked(self, app, result):
+        if result.state == UpdateState.CURRENT:
+            self._end_operation()
+            self.message(
+                _("No Updates Available"),
+                _("No updates are available from the configured software sources."),
+            )
+        elif result.plan is not None:
+            self._confirm(app, result.plan, update=True)
+        else:
+            self._update_failed(
+                app, _("The application manager did not provide an update preview.")
+            )
+
+    def _update_failed(self, app, error):
+        self._end_operation()
+        if isinstance(error, OperationCancelled):
+            self.message(_("Update Check Cancelled"), str(error))
+        else:
+            self.message(_("Update Unavailable"), str(error) + "\n\n" + update_instructions(app))
+
     def _uri_opened(self, launcher, result):
         try:
             launcher.launch_finish(result)
@@ -676,7 +829,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _preview_failed(self, error):
         if self.closed:
             return
-        self.manage_button.set_sensitive(True)
+        self._end_operation()
         if self.detail_app and self.detail_app.provider == "rpm":
             package = self.detail_app.metadata.get("name")
             if package:
@@ -686,14 +839,37 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         if self.refresh_pending:
             self._schedule_refresh()
 
-    def _confirm(self, app, plan):
+    def _confirm(self, app, plan, update=False):
         if self.closed:
             return
-        self.manage_button.set_sensitive(True)
+        if self.task_dialog:
+            self.task_dialog.destroy()
+            self.task_dialog = None
         dialog = Adw.MessageDialog(
-            transient_for=self, heading=_("Remove %s?") % app.name, body=plan.message
+            transient_for=self,
+            heading=(_("Update %s?") if update else _("Remove %s?")) % app.name,
+            body="\n\n".join(filter(None, (plan.message, authorization_notice(app))))
+            if update
+            else plan.message,
+            modal=True,
         )
-        affected = Gtk.Label(label="\n".join(plan.affected), wrap=True, selectable=True, xalign=0)
+        self.confirm_dialog = dialog
+        if update:
+            lines = [_("Installation: %s") % app.scope]
+            for change in plan.changes:
+                old, new = change.current_version, change.target_version
+                if app.provider == "flatpak":
+                    old, new = old[:12], new[:12]
+                operation = _("Install") if change.operation == "install" else _("Update")
+                lines.append(
+                    f"{operation}: {change.identity}\n{old or _('Not installed')} → {new}\n{change.source}"
+                )
+            if plan.download_size is not None:
+                lines.append(_("Estimated download: %s") % GLib.format_size(plan.download_size))
+            details = "\n\n".join(lines)
+        else:
+            details = "\n".join(plan.affected)
+        affected = Gtk.Label(label=details, wrap=True, selectable=True, xalign=0)
         scroll = Gtk.ScrolledWindow(
             child=affected,
             max_content_height=220,
@@ -702,26 +878,44 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         )
         dialog.set_extra_child(scroll)
         dialog.add_response("cancel", _("Cancel"))
+        response_id = "update" if update else "remove"
         dialog.add_response(
-            "remove", _("Move to Trash") if app.action == Action.TRASH else _("Uninstall")
+            response_id,
+            _("Update")
+            if update
+            else (_("Move to Trash") if app.action == Action.TRASH else _("Uninstall")),
         )
-        dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_response_appearance(
+            response_id,
+            Adw.ResponseAppearance.SUGGESTED if update else Adw.ResponseAppearance.DESTRUCTIVE,
+        )
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
 
         def response(_dialog, result):
-            if result == "remove":
-                self._execute(app, plan)
+            self.confirm_dialog = None
+            if result == response_id:
+                self._execute(app, plan, update=update)
+            else:
+                self._end_operation()
 
-        dialog.connect("response", response)
+        dialog.connect("response", self._guard(response))
         dialog.present()
 
-    def _execute(self, app, plan):
-        self.operation_active = True
+    def _execute(self, app, plan, update=False):
+        if not self.operation_active and not self._begin_operation(
+            app, "update" if update else "remove"
+        ):
+            return
+        self._show_task((_("Updating %s") if update else _("Removing %s")) % app.name)
+        execute = self.service.execute_update if update else self.service.execute
+        execute(app, plan, self._guard(self._progress), self._guard(self._operation_finished))
+
+    def _show_task(self, title):
         self.task_dialog = Adw.Window(
             transient_for=self,
             modal=True,
-            title=_("Removing %s") % app.name,
+            title=title,
             default_width=420,
             resizable=False,
         )
@@ -737,41 +931,66 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             margin_top=24,
             margin_bottom=24,
         )
-        self.task_label = Gtk.Label(label=_("Waiting for the application manager…"), wrap=True)
+        self.task_label = Gtk.Label(label=_("Waiting for the application manager"), wrap=True)
         box.append(self.task_label)
         self.task_progress = Gtk.ProgressBar()
         box.append(self.task_progress)
         self.cancel_button = Gtk.Button(label=_("Cancel Operation"), sensitive=False)
-        self.cancel_button.connect("clicked", lambda _b: self.service.cancel())
+        self.cancel_button.connect("clicked", self._cancel_operation)
         box.append(self.cancel_button)
+        self.cancel_notice = Gtk.Label(
+            label=_("Cancellation requested. Waiting for the application manager to stop safely."),
+            wrap=True,
+            visible=False,
+        )
+        self.cancel_notice.add_css_class("dim-label")
+        box.append(self.cancel_notice)
         toolbar.set_content(box)
         self.task_dialog.set_content(toolbar)
         self.task_dialog.connect("close-request", lambda *_: self.operation_active)
         self.task_dialog.present()
-        self.service.execute(app, plan, self._progress, self._operation_finished)
+
+    def _cancel_operation(self, _button):
+        if (
+            not self.operation_active
+            or self.cancel_requested
+            or not self.cancel_button.get_sensitive()
+        ):
+            return
+        self.cancel_requested = True
+        self.cancel_button.set_label(_("Cancelling"))
+        self.cancel_button.set_sensitive(False)
+        self.cancel_notice.set_visible(True)
+        self.service.cancel()
 
     def _progress(self, message, fraction, can_cancel):
+        if not self.task_dialog:
+            return
         self.task_label.set_label(message)
         if fraction is None:
             self.task_progress.pulse()
         else:
             self.task_progress.set_fraction(fraction)
-        self.cancel_button.set_sensitive(can_cancel)
+        self.cancel_button.set_sensitive(can_cancel and not self.cancel_requested)
 
     def _operation_finished(self, result):
-        self.operation_active = False
-        self.task_dialog.destroy()
+        update = self.operation_kind == "update"
+        self._end_operation()
         title = {
-            Outcome.SUCCESS: _("Removal Complete"),
+            Outcome.SUCCESS: _("Update Complete") if update else _("Removal Complete"),
             Outcome.PARTIAL: _("Partially Completed"),
             Outcome.CANCELLED: _("Operation Cancelled"),
-            Outcome.FAILED: _("Removal Failed"),
+            Outcome.FAILED: _("Update Failed") if update else _("Removal Failed"),
         }[result.outcome]
         body = result.message
         if result.completed:
             body += "\n\n" + _("Completed:") + "\n" + "\n".join(result.completed)
         if result.errors:
             body += "\n\n" + "\n".join(result.errors)
+        if result.restart_hint:
+            body += "\n\n" + result.restart_hint
+        if update and result.outcome == Outcome.FAILED and self.detail_app:
+            body += "\n\n" + update_instructions(self.detail_app)
         self.message(title, body)
         self.refresh()
 

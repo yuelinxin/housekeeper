@@ -24,6 +24,11 @@ class Action(str, Enum):
     INSTRUCTIONS = "instructions"
 
 
+class UpdateAction(str, Enum):
+    CHECK = "check"
+    INSTRUCTIONS = "instructions"
+
+
 @dataclass(frozen=True)
 class DesktopEntry:
     desktop_id: str
@@ -47,6 +52,9 @@ class ProviderCapabilities:
     preview: bool = False
     execute: bool = False
     reason: str = ""
+    update_preview: bool = False
+    update_execute: bool = False
+    update_reason: str = ""
 
 
 @dataclass
@@ -67,6 +75,8 @@ class AppRecord:
     action: Action = Action.NONE
     management: tuple[str, ...] = ()
     metadata: dict[str, str] = field(default_factory=dict)
+    update_action: UpdateAction = UpdateAction.INSTRUCTIONS
+    update_reason: str = ""
 
     @property
     def search_text(self) -> str:
@@ -105,6 +115,41 @@ class RemovalPlan:
     metadata: tuple[tuple[str, str], ...] = ()
 
 
+@dataclass(frozen=True)
+class UpdateChange:
+    identity: str
+    target: str
+    operation: str
+    source: str
+    current_version: str
+    target_version: str
+
+
+@dataclass(frozen=True)
+class UpdatePlan:
+    app_key: str
+    provider: str
+    target: str
+    installation: str
+    current_version: str
+    changes: tuple[UpdateChange, ...]
+    fingerprint: str
+    message: str
+    download_size: int | None = None
+    environment: str = ""
+
+
+class UpdateState(str, Enum):
+    AVAILABLE = "available"
+    CURRENT = "current"
+
+
+@dataclass(frozen=True)
+class UpdateCheckResult:
+    state: UpdateState
+    plan: UpdatePlan | None = None
+
+
 class Outcome(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
@@ -118,6 +163,7 @@ class OperationResult:
     message: str
     completed: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+    restart_hint: str = ""
 
 
 class Progress(Protocol):
@@ -132,5 +178,20 @@ class Provider(Protocol):
     def execute(self, app: AppRecord, plan: RemovalPlan, progress: Progress) -> OperationResult: ...
 
 
+class UpdateProvider(Protocol):
+    def capabilities(self) -> ProviderCapabilities: ...
+    def prepare_update(
+        self, app: AppRecord, inventory: list[AppRecord], progress: Progress
+    ) -> UpdateCheckResult: ...
+    def execute_update(
+        self, app: AppRecord, plan: UpdatePlan, progress: Progress
+    ) -> OperationResult: ...
+    def request_cancel(self) -> None: ...
+
+
 class ManagementError(Exception):
     """An actionable error that is safe to display without a traceback."""
+
+
+class OperationCancelled(ManagementError):
+    """Cancellation acknowledged by the provider before completion."""
