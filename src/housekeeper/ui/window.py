@@ -14,10 +14,11 @@ from housekeeper import APP_ID, VERSION
 from housekeeper.i18n import _
 from housekeeper.models import Action, Outcome, Source
 from housekeeper.services import InventoryService
+from housekeeper.ui.icons import icon_image, set_icon
 
 SOURCES = {
     "all": (_("All Apps"), "view-app-grid-symbolic"),
-    "rpm": (_("System Packages"), "package-x-generic-symbolic"),
+    "rpm": (_("RPM"), "package-x-generic-symbolic"),
     "flatpak": (_("Flatpak"), "application-x-addon-symbolic"),
     "web": (_("Web Apps"), "web-browser-symbolic"),
     "appimage": (_("AppImage"), "application-x-executable-symbolic"),
@@ -40,21 +41,6 @@ def dispatch(callback, *args):
         return GLib.SOURCE_REMOVE
 
     GLib.idle_add(invoke)
-
-
-def icon_image(icon, size):
-    image = Gtk.Image(pixel_size=size)
-    set_icon(image, icon)
-    return image
-
-
-def set_icon(image, icon):
-    if icon and Path(icon).is_absolute() and Path(icon).is_file():
-        image.set_from_file(icon)
-    else:
-        theme = Gtk.IconTheme.get_for_display(image.get_display())
-        name = icon if icon and theme.has_icon(icon) else "application-x-executable"
-        image.set_from_icon_name(name)
 
 
 def label(text, **kwargs):

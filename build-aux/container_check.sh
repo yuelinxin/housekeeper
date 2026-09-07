@@ -16,6 +16,9 @@ meson test -C build --print-errorlogs
 GTK_A11Y=none GIO_USE_VFS=local GSK_RENDERER=cairo \
     xvfb-run -a dbus-run-session --config-file=tests/session.conf -- \
     /usr/bin/python3 tests/smoke_ui.py
+GTK_A11Y=none GIO_USE_VFS=local GSK_RENDERER=cairo \
+    xvfb-run -a dbus-run-session --config-file=tests/session.conf -- \
+    /usr/bin/python3 tests/stress_icons.py --runs 5
 cp /source/dist/housekeeper-0.1.0.tar.gz /tmp/housekeeper-rpm/SOURCES/
 rpmbuild -ba --define '_topdir /tmp/housekeeper-rpm' packaging/housekeeper.spec
 package=$(find /tmp/housekeeper-rpm/RPMS -name 'housekeeper-*.rpm' -print -quit)

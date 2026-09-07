@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Rename the System Packages sidebar category to RPM to distinguish source from
+  installation scope.
+- Avoid GTK's background SVG icon preloading path, which can crash during startup
+  while rendering text in application icons. Preserve icon themes, scaling, and fallbacks.
+- Add repeated SVG startup regression tests with generated fixtures.
+
 ## 0.1.0 — development
 
 - Add a unified inventory of desktop applications and supported installations.

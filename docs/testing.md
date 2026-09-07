@@ -27,6 +27,13 @@ Timing starts before GTK imports and excludes process creation. The synthetic sm
 test separately measures filtering with 1,000 records; its peak RSS includes rendering
 screenshots and is not an idle-memory measurement.
 
+`tests/stress_icons.py --runs 20` starts fresh GTK processes with generated SVG icons
+containing text. It checks themed and file icons, missing-icon fallbacks, resizing,
+theme refresh, and signal cleanup. It never reads the application inventory. Use the
+same D-Bus wrapper as the smoke test, adding `xvfb-run -a` without a real display.
+CI runs five repetitions on each tested GTK runtime. See [the startup crash
+investigation](startup-crash.md) for the original failure and mitigation.
+
 ## Disposable Fedora environments
 
 The container image contains build and test dependencies, not personal applications.

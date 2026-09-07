@@ -19,6 +19,10 @@ Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
 - Move precisely identified, user-owned AppImage files and launchers to Trash.
 - Open the appropriate browser or Steam manager for externally managed applications.
 
+Sidebar categories such as **RPM** and **Flatpak** identify installation sources.
+The separate **System** and **User** labels describe installation scope; Flatpak
+applications can use either scope.
+
 Housekeeper does not install or update software, clean application data, or list
 every command-line package. It never scans the entire disk looking for executables.
 

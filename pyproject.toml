@@ -15,6 +15,7 @@ ignore = ["E501"]
 "src/housekeeper/application.py" = ["E402"]
 "src/housekeeper/discovery.py" = ["E402"]
 "src/housekeeper/ui/window.py" = ["E402"]
+"src/housekeeper/ui/icons.py" = ["E402"]
 "tests/smoke_ui.py" = ["E402"]
 "tests/benchmark_startup.py" = ["E402"]
 

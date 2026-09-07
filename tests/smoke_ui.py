@@ -117,7 +117,9 @@ def activate(app):
     steps = []
 
     def check_list():
-        assert window.filtered.get_n_items() == 10
+        assert window.filtered.get_n_items() == 10, (
+            f"source={window.source}, query={window.query}, count={window.filtered.get_n_items()}"
+        )
         assert window.views.get_visible_child_name() == "list"
         capture(window, "list-light.png")
         all_row = window.sidebar.get_row_at_index(0)
@@ -241,6 +243,8 @@ def activate(app):
         if failed:
             app.quit()
             return False
+        if not window.initialized:
+            return True
         try:
             steps.pop(0)()
         except Exception as error:
