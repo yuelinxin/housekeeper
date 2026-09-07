@@ -1,0 +1,5 @@
+src/housekeeper/ui/window.py
+data/window.ui
+data/io.github.yuelinxin.housekeeper.desktop
+data/io.github.yuelinxin.housekeeper.metainfo.xml
+data/io.github.yuelinxin.housekeeper.gschema.xml

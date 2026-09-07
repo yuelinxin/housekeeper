@@ -1,0 +1,57 @@
+name: Draft release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    strategy:
+      matrix:
+        fedora: [43, 44]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag and application version
+        run: |
+          version=$(PYTHONPATH=src python3 -c 'from housekeeper import VERSION; print(VERSION)')
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Build and validate release packages
+        run: |
+          python3 build-aux/source_archive.py dist/housekeeper-0.1.0.tar.gz
+          podman build --build-arg FEDORA_VERSION=${{ matrix.fedora }} -t housekeeper-test -f tests/Containerfile .
+          mkdir -p artifacts
+          podman run --rm --network none -v "$PWD:/source:ro" -v "$PWD/artifacts:/artifacts" \
+            housekeeper-test bash /source/build-aux/container_check.sh
+          podman run --rm --network none -v "$PWD:/source:ro" -w /source \
+            -e HOUSEKEEPER_DISPOSABLE_TEST=1 housekeeper-test python3 tests/integration_host.py
+          mkdir -p release-files
+          cp artifacts/*.rpm dist/*.tar.gz release-files/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-fedora-${{ matrix.fedora }}
+          path: release-files/*
+          if-no-files-found: error
+
+  draft:
+    needs: packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: release-assets
+        run: sha256sum *.rpm *.tar.gz > SHA256SUMS
+      - name: Create a draft for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* --draft \
+            --title "Housekeeper $GITHUB_REF_NAME" --notes-file CHANGELOG.md

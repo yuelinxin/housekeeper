@@ -1,0 +1,28 @@
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/housekeeper/application.py" = ["E402"]
+"src/housekeeper/discovery.py" = ["E402"]
+"src/housekeeper/ui/window.py" = ["E402"]
+"tests/smoke_ui.py" = ["E402"]
+"tests/benchmark_startup.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/housekeeper/models.py", "src/housekeeper/identity.py"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["gi", "gi.*", "rpm"]
+ignore_missing_imports = true

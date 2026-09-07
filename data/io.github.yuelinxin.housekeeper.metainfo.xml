@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.yuelinxin.housekeeper</id>
+  <name>Housekeeper</name>
+  <summary>Understand and manage installed applications</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.yuelinxin"><name>Yuelin Xin</name></developer>
+  <description>
+    <p>Housekeeper brings desktop applications from different installation sources into one native, searchable inventory.</p>
+    <ul>
+      <li>Browse applications in a list or an icon grid.</li>
+      <li>Inspect installation sources, package identities, and file locations.</li>
+      <li>Review removal plans for RPM packages, Flatpak applications, and independent AppImages.</li>
+      <li>Find browser and Steam management instructions.</li>
+    </ul>
+    <p>System package removal requires a compatible PackageKit backend and a verified removal preview. Unsupported operations provide manual management guidance. Other sources remain available when their integration is installed. Personal application data is kept.</p>
+  </description>
+  <launchable type="desktop-id">io.github.yuelinxin.housekeeper.desktop</launchable>
+  <url type="homepage">https://github.com/yuelinxin/housekeeper</url>
+  <url type="bugtracker">https://github.com/yuelinxin/housekeeper/issues</url>
+  <url type="vcs-browser">https://github.com/yuelinxin/housekeeper</url>
+  <provides><binary>housekeeper</binary></provides>
+  <content_rating type="oars-1.1"/>
+  <releases><release version="0.1.0" date="2026-09-06" type="development"/></releases>
+  <supports><control>pointing</control><control>keyboard</control><control>touch</control></supports>
+</component>

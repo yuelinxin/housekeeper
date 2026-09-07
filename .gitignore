@@ -1,0 +1,14 @@
+/build*/
+!/build-aux/
+/.venv/
+/.tools/
+/.pytest_cache/
+/.ruff_cache/
+/.mypy_cache/
+__pycache__/
+*.py[cod]
+/dist/
+/artifacts/
+/release-files/
+/release-assets/
+/work/

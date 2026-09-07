@@ -1,0 +1,5 @@
+FROM ubuntu:24.04
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-gi python3-pytest gir1.2-gtk-4.0 gir1.2-adw-1 \
+    meson ninja-build libglib2.0-dev gettext desktop-file-utils \
+    xvfb xauth dbus-daemon libgtk-4-bin && rm -rf /var/lib/apt/lists/*

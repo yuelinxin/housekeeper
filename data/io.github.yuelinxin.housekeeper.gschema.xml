@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="housekeeper">
+  <schema id="io.github.yuelinxin.housekeeper" path="/io/github/yuelinxin/housekeeper/">
+    <key name="view-mode" type="s">
+      <choices><choice value="list"/><choice value="grid"/></choices>
+      <default>'list'</default>
+      <summary>Application view mode</summary>
+    </key>
+    <key name="show-hidden" type="b"><default>false</default><summary>Show hidden and auxiliary entries</summary></key>
+    <key name="window-width" type="i"><range min="360" max="10000"/><default>1040</default><summary>Window width</summary></key>
+    <key name="window-height" type="i"><range min="420" max="10000"/><default>720</default><summary>Window height</summary></key>
+    <key name="maximized" type="b"><default>false</default><summary>Whether the window is maximized</summary></key>
+  </schema>
+</schemalist>

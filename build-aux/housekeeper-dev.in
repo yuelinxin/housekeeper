@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+import os
+import sys
+
+sys.path.insert(0, '@SOURCE_DIR@')
+os.environ['HOUSEKEEPER_RESOURCE_FILE'] = '@BUILD_DIR@/data/housekeeper.gresource'
+os.environ['GSETTINGS_SCHEMA_DIR'] = '@BUILD_DIR@/data'
+os.environ['HOUSEKEEPER_ICON_DIR'] = '@ICON_DIR@'
+from housekeeper.application import main
+
+raise SystemExit(main())

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Housekeeper
+Comment=Find where your applications come from and manage them
+Exec=housekeeper
+Icon=io.github.yuelinxin.housekeeper
+Terminal=false
+Type=Application
+Categories=GTK;System;PackageManager;
+Keywords=apps;applications;uninstall;packages;flatpak;appimage;pwa;
+StartupNotify=true
