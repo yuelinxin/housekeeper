@@ -152,3 +152,51 @@ def test_xdg_cache_location(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", "relative")
     monkeypatch.setenv("HOME", str(tmp_path))
     assert cache_path() == tmp_path / ".cache/housekeeper/updates.json"
+
+
+def test_completed_update_keeps_remaining_cache_and_original_check_time(cached):
+    cache, app, report = cached
+    other = replace(app, key="other", identity="other", name=app.name)
+    other_item = UpdateItem(other, replace(report.items[0].plan, app_key=other.key), (other.name,))
+    report = replace(report, items=(*report.items, other_item))
+    cache.save(report, [app, other], 1_700_000_000)
+    cache.reconcile([app, other], completed_keys=(app.key,))
+    result = cache.load([app, other])
+    assert result.report.items == (other_item,)
+    assert result.report.unsupported == 2 and result.checked_at == 1_700_000_000
+    updated = replace(app, version="2")
+    cache.reconcile([updated, other], updated_keys=(app.key,))
+    result = UpdateCache(cache.path).load([updated, other])
+    assert result.report.items == (other_item,) and not result.stale
+    assert result.checked_at == 1_700_000_000
+
+
+def test_runtime_only_completion_persists_empty_cache(cached):
+    cache, app, _ = cached
+    cache.reconcile([app], completed_keys=(app.key,))
+    cache.reconcile([app], updated_keys=(app.key,))
+    result = cache.load([app])
+    assert not result.report.items and not result.stale
+    assert result.checked_at == 1_700_000_000
+
+
+def test_reconciliation_keeps_unrelated_inventory_changes_stale(cached):
+    cache, app, _ = cached
+    added = replace(app, key="added")
+    cache.reconcile([app, added], completed_keys=(app.key,))
+    assert cache.load([app, added]).stale
+    updated = replace(app, version="2")
+    cache.reconcile([updated, added], updated_keys=(app.key,))
+    result = cache.load([updated, added])
+    assert result.stale and not result.report.items
+    assert result.checked_at == 1_700_000_000
+
+
+def test_reconciliation_does_not_create_cache_or_cross_provider_settings(cached):
+    cache, app, _ = cached
+    before = cache.path.read_bytes()
+    cache.reconcile([app], completed_keys=(app.key,), providers=("rpm",))
+    assert cache.path.read_bytes() == before
+    cache.clear()
+    cache.reconcile([app], completed_keys=(app.key,))
+    assert not cache.path.exists()

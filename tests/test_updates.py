@@ -70,6 +70,8 @@ class Results:
 @pytest.fixture
 def rpm_update(monkeypatch):
     provider = RpmProvider()
+    # Launcher evidence is exercised separately; this fixture isolates PackageKit updates.
+    monkeypatch.setattr(provider, "_validate_app", lambda _app: None)
     app = AppRecord(
         "rpm",
         "Example",
@@ -453,7 +455,9 @@ def test_flatpak_ambiguous_dependency_origin_is_not_chosen(flatpak_update):
 
 def test_update_capability_is_independent_and_local(monkeypatch):
     monkeypatch.setattr("os.geteuid", lambda: 1000)
-    app = AppRecord("rpm", "Example", provider="rpm", action=Action.NONE)
+    app = AppRecord(
+        "rpm", "Example", provider="rpm", action=Action.NONE, metadata={"rpm_verified": "true"}
+    )
     assign_update_action(
         app, {"rpm": ProviderCapabilities(update_preview=True, update_execute=True)}
     )

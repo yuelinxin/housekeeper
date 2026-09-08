@@ -1,9 +1,10 @@
 # Housekeeper
 
-A lightweight GTK 4 application for understanding where your desktop applications
-come from, where their files live, and how to update or remove them correctly.
+A simple, unified app manager for the GNOME desktop. Bring your installed
+applications together in one clean interface to browse, inspect, and manage them.
 
-Housekeeper combines desktop entries with supported installation providers. It
+Housekeeper brings a consistent graphical interface to applications installed
+from different sources, with update and removal actions where supported. It
 recognizes RPM, DEB, Pacman and APK packages, Flatpak and Snap applications,
 independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
 
@@ -11,71 +12,44 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 
 ## Features
 
-- Search applications by name, package identity, or file location.
-- Switch between a list and an icon grid, with source filters and adaptive navigation.
-- Sort either view by name (the default), software size (largest first), or Last Updated
-  (newest first). The chosen order is remembered; unknown values appear last.
-- Inspect versions, installation scopes, desktop entries, and executable paths.
-- See software size for RPM, DEB, Pacman, APK, Flatpak, Snap, and AppImage installations. Shared
-  dependencies and runtimes are excluded; unavailable sizes are shown as unknown.
-- See the icon theme or custom image used for an app, and any explicit launcher
-  GTK theme override. Change or restore each launcher's icon.
-- Include hidden and auxiliary entries, with explanations of their visibility.
-- Preview RPM and Flatpak removal, preserving personal application data.
-- Check for RPM and Flatpak updates beside the uninstall action, then review versions
-  and dependency changes before confirming an update.
-- Configure Updates in Preferences: check on entry (daily by default, or weekly)
-  or manually only, and choose whether RPM and Flatpak participate. These settings
-  leave the application inventory and individual checks in app details available.
-- Move precisely identified, user-owned AppImage files and launchers to Trash.
-- Open the appropriate browser or Steam manager for externally managed applications.
+- Browse a searchable list or grid, filter by source, and sort by name, size, or Last Updated.
+- Inspect versions, file locations, installation scope, and hidden entries.
+- Customize launcher icons and restore the originals.
+- Preview RPM and Flatpak updates and removal where supported, preserving personal data.
+- Choose manual or on-entry update checks, daily or weekly, for RPM and Flatpak.
+- Move eligible AppImages to Trash and open external managers for web apps and Steam games.
 
-Sidebar categories such as **RPM** and **Flatpak** identify installation sources.
-The second category follows the host's native package family: **RPM** on Fedora
-and openSUSE, **DEB** on Ubuntu/Debian, **Pacman** on Arch, **APK** on Alpine, and
-corresponding names for other recognized families. It uses `ID` and `ID_LIKE`
-from `os-release`, falling back to **System Packages**. A category whose inventory
-provider is not implemented explains this when opened; its label does not enable
-package detection, updates or removal. Unverified applications remain in **Other**.
-Pacman includes locally installed AUR builds registered in its package database.
-Pacman, APK, DEB, and Snap updates and removal use external management instructions.
-The separate **System** and **User** labels describe installation scope; Flatpak
-applications can use either scope.
+## Current support
 
-Housekeeper does not install new applications, perform system release upgrades,
-clean application data, or list every command-line package. It never scans the
-entire disk looking for executables. Application updates can install or upgrade
-the dependencies listed in their confirmation preview.
+Housekeeper manages installed desktop applications. It does not install new apps,
+perform system upgrades, or clean application data. Software sizes exclude shared
+runtimes and dependencies; unavailable sizes and update dates stay unknown.
 
-Last Updated describes when the current version was installed or updated. Dates come
-from RPM, Pacman and Snap metadata, and matching Flatpak deployment records in the
-local systemd journal. Missing, inaccessible or unmatched history stays unknown,
-as do dates for other sources. File modification and package build times are not
-used as substitutes. Numeric sorting shows the size or date in each row or tile.
+Management support varies by source. DEB, Pacman, APK, and Snap currently provide
+external management instructions. Direct RPM removal is unavailable on the tested
+Fedora backends; Housekeeper provides guidance instead. See
+[compatibility](docs/compatibility.md) for supported environments and limitations.
 
 ## Requirements
 
-- Python 3.10 or newer, with PyGObject
-- GTK 4.12 or newer
-- libadwaita 1.4 or newer
+- Python 3.10+ with PyGObject, GTK 4.12+, and libadwaita 1.4+
 - A graphical desktop session; GNOME Shell itself is not required
+- Optional RPM, PackageKit, and Flatpak integrations for their respective sources
 
-RPM ownership uses the optional Python RPM bindings. Direct RPM removal additionally
-requires PackageKit, its introspection bindings, a compatible backend, and Polkit.
-Flatpak support uses the optional libflatpak introspection bindings; update previews
-require libflatpak 1.9.1 or newer. Missing providers
-leave the rest of the inventory usable.
+## Install on Fedora
 
-The initial system-package removal target is Fedora Workstation 43 and 44.
-See [compatibility](docs/compatibility.md) for other environments and limitations.
+Install a downloaded RPM matching your Fedora release:
 
-**Current native-removal limitation:** the tested Fedora PackageKit backends cannot
-provide the required dependency-safe removal plan: Fedora 43 rejects the no-cascade
-request, and Fedora 44 returns an empty preview. Housekeeper retains the application
-and gives terminal management guidance. Direct RPM removal must not be advertised
-as verified on these backends. Flatpak and AppImage follow independent paths.
+```sh
+sudo dnf install ./housekeeper-0.1.8-1.fc44.noarch.rpm
+```
 
-## Build and run on Fedora
+Release packages do not configure an automatic update repository.
+To uninstall Housekeeper, run `sudo dnf remove housekeeper`.
+
+## Build and run
+
+On Fedora:
 
 ```sh
 sudo dnf install python3-gobject gtk4 libadwaita meson ninja-build glib2-devel gettext
@@ -85,84 +59,31 @@ meson compile -C build
 ./build/housekeeper-dev
 ```
 
-The development launcher runs an incremental build before starting, so GTK resources
-and settings schemas stay in sync with the Python source. A failed build stops startup.
+The second command enables optional integrations. The development launcher rebuilds
+changed resources before starting. Use `GSETTINGS_BACKEND=memory` to try it without
+saving preferences.
 
-The second installation command enables optional integrations. Build tools are not
-needed when installing a release RPM. The launchers always use `/usr/bin/python3`,
-including when a Conda environment is active, and work from any current directory.
+## Development
 
-The development launcher uses build-tree resources and schemas. To test without
-saving preferences, launch it with `GSETTINGS_BACKEND=memory`.
+See [testing and releases](docs/testing.md) for test commands, disposable integration
+environments, and packaging. [Architecture](docs/architecture.md) describes the
+implementation; [validation](docs/validation.md) records completed checks and known gaps.
+Run package-manager integration tests only in their disposable containers.
 
-To install a downloaded release package:
+## Privacy and diagnostics
 
-```sh
-sudo dnf install ./housekeeper-0.1.7-1.fc44.noarch.rpm
-```
+Housekeeper has no telemetry, account, or background update service. Preferences
+and update results are stored locally. Update checks may contact configured repositories.
+System operations use the desktop's Polkit authentication dialog when required;
+Housekeeper never collects passwords.
 
-Install the build matching your Fedora release. GitHub release packages do not
-configure an automatic update repository. To remove Housekeeper itself, use
-`sudo dnf remove housekeeper`.
+Update errors are logged in `~/.local/state/housekeeper/housekeeper.log`
+(or under `$XDG_STATE_HOME`). Set `HOUSEKEEPER_DEBUG=1` for additional diagnostics.
+Review logs before sharing: they can include application names and file paths.
 
-## Development and validation
-
-```sh
-sudo dnf install python3-pytest
-PYTHONPATH=src /usr/bin/python3 -m pytest
-meson test -C build --print-errorlogs
-ruff check src tests build-aux
-ruff format --check src tests build-aux
-mypy
-```
-
-Install Ruff and mypy in a development environment; they are not runtime dependencies.
-GUI smoke tests use synthetic applications and perform no removal:
-
-```sh
-GTK_A11Y=none GIO_USE_VFS=local \
-  dbus-run-session --config-file=tests/session.conf -- \
-  /usr/bin/python3 tests/smoke_ui.py
-```
-
-For CI without a display, put `xvfb-run -a` before `dbus-run-session`. This smoke test
-checks layout and interaction; it does not replace a real screen-reader test.
-
-See [testing and releases](docs/testing.md) for disposable package-manager tests,
-RPM builds, and the release checklist. Never run integration fixtures on a personal
-system; their harness explicitly requires a disposable container.
-
-## Privacy and behavior
-
-Housekeeper keeps its inventory in memory and preferences in GSettings. Successful
-update checks are cached locally in `$XDG_CACHE_HOME/housekeeper/updates.json`
-(normally `~/.cache/housekeeper/updates.json`), including app identities, checked
-sources and previews. Changing update sources clears the previous results.
-Deleting this cache resets the saved update results. It has no
-telemetry, account, background service, or automatic network scan. Package managers
-and explicitly opened external managers may use their own network connections.
-
-`HOUSEKEEPER_DEBUG=1` enables diagnostic logging. Review logs before sharing them:
-application names, paths, and package-manager errors can identify installed software.
-
-All maintained repository prose, comments, and interface text are English.
-The gettext structure is ready for future translations; version 0.1 is English-only.
+The interface is currently English-only, with gettext support for future translations.
 
 ## License
 
-MIT; see [LICENSE](LICENSE). AppStream metadata is CC0-1.0. Application screenshots
-show synthetic inventory data; third-party application icons retain their original licenses.
-
-## Update authorization and diagnostics
-
-System updates use the desktop's Polkit authentication dialog when required by
-system policy. Authenticate there with a password or a configured fingerprint;
-Housekeeper never collects credentials or runs the entire interface through sudo.
-User Flatpak updates normally do not require administrator authorization. Existing
-authorizations and system policy can allow an update without displaying a prompt.
-
-Update failures are logged with the application, provider, and backend error in
-`~/.local/state/housekeeper/housekeeper.log` (or under `$XDG_STATE_HOME`). The log
-rotates at 1 MiB, retaining two backups. If file logging is unavailable, errors
-remain available in the launching terminal. Use the complete result error and this
-log when reporting a failure; a missing prompt alone does not establish its cause.
+[MIT](LICENSE). AppStream metadata is CC0-1.0. Screenshots use synthetic application
+inventories; third-party icons retain their original licenses.

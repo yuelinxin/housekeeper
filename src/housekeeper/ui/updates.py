@@ -1,10 +1,11 @@
 """Updates navigation page; checks are initiated only by explicit user interaction."""
 
 import time
+from dataclasses import replace
 
 from gi.repository import Adw, GLib, GObject, Gtk
 
-from housekeeper.batch_updates import UPDATE_PROVIDERS
+from housekeeper.batch_updates import UPDATE_PROVIDERS, installation_key
 from housekeeper.i18n import _
 from housekeeper.models import Outcome
 from housekeeper.ui.icons import icon_image
@@ -24,6 +25,9 @@ class UpdatesPage(Adw.NavigationPage):
         self.cache_loaded = False
         self.checked_at = None
         self.inventory_snapshot = None
+        self.report = None
+        self.stale = False
+        self.updated_keys = set()
         self.source_revision = 0
         self.checking = False
         toolbar = Adw.ToolbarView()
@@ -147,6 +151,9 @@ class UpdatesPage(Adw.NavigationPage):
         self.check_when_ready = False
         self.visited = False
         self.checked_at = None
+        self.report = None
+        self.stale = False
+        self.updated_keys.clear()
         self.last_checked.set_visible(False)
         self.details = ""
         self.errors_button.set_visible(False)
@@ -195,12 +202,29 @@ class UpdatesPage(Adw.NavigationPage):
                     self._show_stale()
         current = {a.key: a for a in self.window.records}
         kept = tuple(item for item in self.items if current.get(item.app.key) == item.app)
-        changed = self.inventory_snapshot is not None and self.inventory_snapshot != current
+        previous = self.inventory_snapshot
+        changed_keys = (
+            {
+                key
+                for key in previous.keys() | current.keys()
+                if previous.get(key) != current.get(key)
+            }
+            if previous is not None
+            else set()
+        )
         self.inventory_snapshot = current
         if kept != self.items:
-            self.render(kept)
-        if self.visited and changed:
+            self._retain_items(kept)
+        if self.visited and changed_keys - self.updated_keys:
             self._show_stale()
+        if self.updated_keys:
+            # A known successful update changes the inventory, not the check time.
+            self.cache.reconcile(
+                self.window.records,
+                updated_keys=self.updated_keys,
+                providers=self.enabled_providers(),
+            )
+        self.updated_keys.clear()
         if self.check_when_ready:
             self.check_when_ready = False
             if self.window.section == "updates":
@@ -209,6 +233,7 @@ class UpdatesPage(Adw.NavigationPage):
                 self.enter()
 
     def _show_stale(self):
+        self.stale = True
         text = _("Installed applications changed. Refresh to check for remaining updates.")
         self.status.set_label(text)
         self.empty.set_title(_("Check for Updates"))
@@ -226,8 +251,35 @@ class UpdatesPage(Adw.NavigationPage):
         self.cache.clear()
         self.cache_loaded = True
         self.check_when_ready = False
+        self.report = None
+        self.updated_keys.clear()
         self.render(())
         self._show_stale()
+
+    def _retain_items(self, items):
+        items = tuple(items)
+        stale = self.stale
+        if self.report is not None:
+            self._show_report(replace(self.report, items=items))
+        else:
+            self.render(items)
+        if stale:
+            self._show_stale()
+
+    def updates_completed(self, app_keys):
+        if not app_keys:
+            return
+        installations = {
+            installation_key(app) for app in self.window.records if app.key in app_keys
+        }
+        keys = set(app_keys) | {
+            app.key for app in self.window.records if installation_key(app) in installations
+        }
+        self.updated_keys.update(keys)
+        self._retain_items(item for item in self.items if item.app.key not in keys)
+        self.cache.reconcile(
+            self.window.records, completed_keys=keys, providers=self.enabled_providers()
+        )
 
     def selected(self):
         return tuple(item for item, check in self.checks if check.get_active())
@@ -273,6 +325,8 @@ class UpdatesPage(Adw.NavigationPage):
             self.window.toast(_("Update check cancelled."))
             return
         self._show_report(report)
+        self.inventory_snapshot = {a.key: a for a in self.window.records}
+        self.updated_keys.clear()
         if not report.errors:
             checked_at = time.time()
             self._set_checked_at(checked_at)
@@ -281,6 +335,8 @@ class UpdatesPage(Adw.NavigationPage):
             )
 
     def _show_report(self, report):
+        self.report = report
+        self.stale = False
         self.render(report.items)
         details = list(report.errors)
         if report.errors:
@@ -424,11 +480,7 @@ class UpdatesPage(Adw.NavigationPage):
 
     def finished(self, result):
         self.window._end_operation()
-        # Dependencies and app identities can overlap: refresh before another explicit check.
-        self.invalidate()
-        self.status.set_label(_("Check again to find any remaining updates."))
-        self.empty.set_title(_("Update Results"))
-        self.empty.set_description(self.status.get_label())
+        self.updates_completed(result.completed_app_keys)
         titles = {
             Outcome.SUCCESS: _("Updates Complete"),
             Outcome.PARTIAL: _("Updates Partially Complete"),

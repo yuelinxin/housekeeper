@@ -1211,7 +1211,11 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _operation_finished(self, result):
         update = self.operation_kind == "update"
         self._end_operation()
-        self.updates_page.invalidate()
+        if update:
+            if result.outcome == Outcome.SUCCESS:
+                self.updates_page.updates_completed((self.operation_key,))
+        else:
+            self.updates_page.invalidate()
         title = {
             Outcome.SUCCESS: _("Update Complete") if update else _("Removal Complete"),
             Outcome.PARTIAL: _("Partially Completed"),

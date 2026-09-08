@@ -164,6 +164,7 @@ class UpdateBatch:
 
     def execute(self, items, progress):
         completed, errors, hints, verified = [], [], [], {}
+        completed_app_keys = []
         outcome = Outcome.SUCCESS
         for index, item in enumerate(items):
             app, original = item.app, item.plan
@@ -177,6 +178,7 @@ class UpdateBatch:
                 )
                 if all(verified.get(change_key(original, c)) == c for c in original.changes):
                     completed.extend(item.names)
+                    completed_app_keys.append(app.key)
                     continue
                 kwargs = {"refresh": False} if app.provider == "rpm" else {}
                 check = provider.prepare_update(app, self.inventory, progress, **kwargs)
@@ -204,6 +206,7 @@ class UpdateBatch:
                     outcome = result.outcome
                     break
                 completed.extend(item.names)
+                completed_app_keys.append(app.key)
                 verified.update((change_key(plan, c), c) for c in plan.changes)
             except Exception as error:
                 LOG.warning(
@@ -229,4 +232,5 @@ class UpdateBatch:
             tuple(dict.fromkeys(completed)),
             tuple(errors),
             "\n".join(dict.fromkeys(hints)),
+            completed_app_keys=tuple(completed_app_keys),
         )

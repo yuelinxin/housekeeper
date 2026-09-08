@@ -30,6 +30,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.8" date="2026-09-08" type="development">
+      <description>
+        <p>Keep remaining updates visible and recognize more RPM application launchers.</p>
+        <ul>
+          <li>Remove successfully updated apps from cached results and retain remaining updates and selections.</li>
+          <li>Keep unfinished updates available after partial failures or cancellation.</li>
+          <li>Recognize shared and D-Bus launchers used by LibreOffice, GNOME Maps, and GNOME Weather.</li>
+          <li>Verify RPM launcher contents and package relationships before direct management, with instructions when verification is unavailable.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.7" date="2026-09-08" type="development">
       <description>
         <p>Find applications with remembered sorting and control how Housekeeper checks for updates.</p>

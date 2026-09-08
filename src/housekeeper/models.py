@@ -170,6 +170,7 @@ class OperationResult:
     completed: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
     restart_hint: str = ""
+    completed_app_keys: tuple[str, ...] = ()
 
 
 class Progress(Protocol):

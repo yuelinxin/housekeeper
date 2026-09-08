@@ -1,9 +1,39 @@
-# v0.1.7 development validation
+# v0.1.8 development validation
 
 Updated on September 8, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.8 metadata validation — September 8, 2026
+
+- Application, Meson, RPM spec, latest AppStream release, changelog and README
+  installation example agree on 0.1.8; release metadata is dated September 8.
+- Meson compilation and offline AppStream validation pass. Desktop-file validation
+  passes with the existing optional Settings-category hint. The development launcher
+  reports `Housekeeper 0.1.8` without opening a window.
+- The full local unit suite passes again after the version change: 330 passed and
+  one optional dpkg-query skip. Ruff lint/format, configured mypy checks (the model
+  and identity modules), and whitespace checks pass.
+
+## v0.1.8 behavior validation — September 8, 2026
+
+- Local unit tests pass: 330 passed, one skipped because dpkg-query is unavailable.
+  Cache regressions cover single and batch completion, partial failures,
+  cancellation, inventory reconciliation, restart persistence, and incomplete
+  reports. RPM fixtures cover file contents, symlinks, shared dependencies,
+  D-Bus activation, ambiguous ownership, and changed targets.
+- Isolated GTK smoke passes with synthetic records, including retained update
+  lists and instructions-only RPM actions. The 1,000-record search completed in
+  approximately 51 ms with 189 MiB peak RSS; the smoke run took approximately
+  32 seconds. No real update or removal provider was invoked.
+- A read-only host check verifies the RPM attribution of LibreOffice Calc,
+  Impress and Writer, GNOME Maps, and GNOME Weather. Among visible system RPM
+  launchers, 50 verify successfully; GNOME Software retains its RPM source with
+  instructions because systemd-delegated activation is not supported by the verifier.
+- These checks do not replace the full Fedora 43/44 release acceptance matrix.
+  No new RPM/SRPM build or real package-manager transaction was performed for this
+  release preparation. Broader discovery and provider generalization is deferred.
 
 ## v0.1.7 metadata validation — September 8, 2026
 

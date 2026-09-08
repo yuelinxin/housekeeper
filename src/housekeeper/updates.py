@@ -19,6 +19,10 @@ def assign_update_action(app, capabilities):
         return
     if app.provider == "flatpak" and not app.metadata.get("installation"):
         app.update_reason = _("The Flatpak installation could not be identified uniquely.")
+    elif app.provider == "rpm" and app.metadata.get("rpm_verified") != "true":
+        app.update_reason = app.metadata.get("management_reason") or _(
+            "The application's RPM launch target could not be verified."
+        )
     elif os.geteuid() == 0:
         app.update_reason = _("Run Housekeeper as a regular desktop user.")
     elif capability.update_preview and capability.update_execute:
@@ -31,7 +35,7 @@ def update_instructions(app):
     if app.source in {Source.RPM, Source.DEB, Source.PACMAN, Source.APK, Source.SNAP}:
         text = _("Review updates for this package using your system package manager.")
         package = app.metadata.get("name")
-        if package and app.source == Source.RPM:
+        if package and app.source == Source.RPM and app.metadata.get("rpm_verified") == "true":
             arch = app.metadata.get("arch")
             text += "\n\nsudo dnf upgrade -- " + shlex.quote(package + ("." + arch if arch else ""))
     elif app.source == Source.FLATPAK:

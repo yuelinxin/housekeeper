@@ -2,6 +2,13 @@
 
 ## Local tests
 
+`test_rpm_attribution.py` uses temporary files and synthetic installed RPM metadata to
+verify launcher/entry-point digests, symlink targets, shared command dependencies,
+dependency versions and architectures, PATH shadowing, D-Bus service ownership and
+user precedence, and provider revalidation after a launcher changes. Unverified apps
+retain their RPM source but cannot enter update batches or direct management. Dependency
+comparison cases use the optional RPM Python bindings; other cases run without them.
+
 Update preference regressions cover daily/weekly expiry boundaries, cache source
 matching (including older caches), and skipping disabled providers while passing
 the complete inventory to enabled providers. GTK smoke exercises manual entry,
@@ -156,6 +163,13 @@ files before publishing. GitHub releases are the initial distribution channel;
 there is no application self-updater or configured COPR repository.
 
 ## Updates page and batch regression checks
+
+Cache and GTK smoke regressions cover removing successfully updated installations from
+the remaining list after both batch and details-page updates, including runtime-only
+updates with unchanged app records. They check preserved selection, count, original
+check time, cache restoration, partial completion, cancellation/failure, duplicate
+launcher identities, incomplete check details, and the final up-to-date empty state.
+Unrelated inventory changes must continue to mark the saved report stale.
 
 `test_batch_updates.py` covers duplicate installation grouping, separate installations,
 incomplete checks, cancellation, shared dependencies, changed sources or targets, and

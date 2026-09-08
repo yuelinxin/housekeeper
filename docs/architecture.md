@@ -11,6 +11,26 @@ Command classification recognizes web apps, Steam game entries, and direct AppIm
 launches before native package attribution. RPM ownership of a browser executable is
 not ownership of the web app it launches. Unknown shell wrappers remain manual.
 
+A uniquely RPM-owned desktop file identifies its application package even when its
+command belongs to a shared package, as with LibreOffice components and GNOME apps
+launched through `gapplication`. Multiple desktop owners remain ambiguous. Executable
+ownership is a fallback only for unowned direct launchers without guest-app arguments;
+generic interpreters and launch helpers cannot identify their guest applications.
+
+RPM source attribution is separate from permission to manage the application.
+`RpmAttribution` compares launcher and entry-point file digests and symlink targets
+with installed RPM headers. Shared commands require a matching installed RPM dependency;
+an interpreter also requires an application-owned script argument. D-Bus activation
+requires a verified service with a matching name, owned by the app or a direct
+dependency, whose entry point belongs to the application itself. Higher-priority
+session service files, including user overrides, participate in this check. Services
+delegating to systemd are currently display-only because unit overrides are not verified.
+Unknown digests, modified files, unresolved targets, and unowned launchers can retain
+their RPM source but receive management instructions rather than direct actions.
+Providers repeat the evidence check before previews and execution; cached attribution
+never bypasses it. These local checks do not lock files or prove arbitrary wrapper
+script behavior, and do not replace the existing PackageKit transaction checks.
+
 Providers enrich records; the inventory service merges only proven identical launch
 targets within the same installation. RPM package versions are metadata, not stable
 UI identity. Flatpak identity includes the installation path and full ref. Web-app
@@ -221,8 +241,13 @@ preserves checkbox selection. Expiry is evaluated on page entry, including when 
 entry request waits for the initial inventory. Cache loading, focus refreshes, and
 leaving the page before that inventory completes do not initiate checks. No background
 timer runs; failed or cancelled checks do not renew the chosen cache lifetime.
-Completed management attempts invalidate stored previews
-because dependencies can overlap. Cached plans still undergo normal provider validation
+Successful updates remove completed installations from the visible and saved report,
+preserving remaining selections, check errors, and the original check time. Batch results
+identify fully completed apps by key rather than display name or completed dependency names.
+The following inventory refresh reconciles those installations with the saved snapshot;
+unrelated inventory changes still show a refresh reminder. Failed or cancelled updates
+keep unfinished rows, and removals still invalidate stored previews.
+Cached plans still undergo normal provider validation
 before execution; a saved preview never authorizes an update on its own.
 
 `UpdateBatch` runs as one task on the existing executor. It groups RPM name/architecture

@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.7
+Version:        0.1.8
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -64,6 +64,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Tue Sep 08 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.8-1
+- Keep remaining cached updates visible after successful single and batch updates.
+- Recognize RPM applications that use shared executables or D-Bus launchers.
+- Verify RPM launcher contents and package relationships before direct management.
+
 * Tue Sep 08 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.7-1
 - Add remembered name, size and Last Updated sorting with Flatpak journal dates.
 - Simplify the adaptive header and add update-check timing and source preferences.

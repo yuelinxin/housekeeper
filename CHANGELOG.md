@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.8 — 2026-09-08
+
+- Remove successfully updated applications from the visible and persisted update
+  cache while retaining remaining updates, selections, and the original check time.
+  Preserve unfinished applications after partial failures or cancellation, and keep
+  unrelated inventory changes subject to a fresh check.
+- Recognize RPM applications with shared executables or D-Bus launchers, including
+  LibreOffice Calc, Impress and Writer, GNOME Maps, and GNOME Weather, using desktop
+  package ownership and verified package relationships.
+- Check installed RPM launcher and entry-point contents, symlink targets, direct
+  dependencies, and applicable D-Bus services. Revalidate targets before direct
+  management; retain source identification with instructions when evidence is
+  insufficient, including unsupported systemd-delegated activation.
+- Add cache, attribution, and GTK regressions, and simplify the README.
+
 ## 0.1.7 — 2026-09-08
 
 - Add update preferences for checks on entry or manual checks only, daily or

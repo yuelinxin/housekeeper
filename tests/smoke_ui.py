@@ -36,6 +36,7 @@ from housekeeper.models import (
     OperationCancelled,
     OperationResult,
     Outcome,
+    ProviderCapabilities,
     Source,
     UpdateAction,
     UpdateChange,
@@ -46,6 +47,7 @@ from housekeeper.models import (
 from housekeeper.platforms import native_package_source
 from housekeeper.services import InventoryService
 from housekeeper.storage import StorageUsage
+from housekeeper.updates import assign_update_action
 
 Gio.resources_register(Gio.Resource.load(str(BUILD / "data/housekeeper.gresource")))
 from housekeeper.ui.updates import UpdatesPage
@@ -481,6 +483,34 @@ def activate(app):
         theme = Gtk.IconTheme.get_for_display(window.get_display())
         theme.emit("changed")
         assert group.icon_theme.get_subtitle() == theme.get_theme_name()
+        original = window.detail_app
+        unverified = replace(
+            original,
+            action=Action.NONE,
+            metadata={
+                **original.metadata,
+                "rpm_verified": "false",
+                "management_reason": "The launch target could not be verified.",
+            },
+        )
+        assign_update_action(
+            unverified, {"rpm": ProviderCapabilities(update_preview=True, update_execute=True)}
+        )
+        window.show_details(unverified, replace=True)
+        assert window.manage_button.get_label() == "Show Management Instructions"
+        assert not window.manage_button.has_css_class("destructive-action")
+        assert window.update_button.get_label() == "Update Instructions"
+        with (
+            patch.object(window.service, "prepare") as prepare,
+            patch.object(window.service, "prepare_update") as prepare_update,
+            patch.object(window, "message") as message,
+        ):
+            window.manage_button.emit("clicked")
+            window.update_button.emit("clicked")
+            prepare.assert_not_called()
+            prepare_update.assert_not_called()
+            assert message.call_count == 2
+        window.show_details(original, replace=True)
         storage_callbacks = []
         with patch.object(
             window.service,
@@ -916,6 +946,8 @@ def activate(app):
         expired.inventory_ready()
         assert len(check_calls) == 4 and not expired.check_when_ready
         window.section = "updates"
+        # Restore real time after the simulated next-day expiry check above.
+        page.checked(page.report)
         page.selected_button.emit("clicked")
         assert window.confirm_dialog.get_default_response() == "cancel"
         assert window.confirm_dialog.get_heading() == "Update Boxes?"
@@ -958,18 +990,92 @@ def activate(app):
             bounds = button.compute_bounds(window)[1]
             assert bounds.get_x() >= 0 and bounds.get_x() + bounds.get_width() <= window.get_width()
         calls = []
+        original = page.items
+        checked_at = page.checked_at
+        page.checks[1][1].set_active(True)
         window.service.execute_updates = lambda items, _p, done: (
             calls.append(items),
             done(
                 OperationResult(
-                    Outcome.PARTIAL, "Synthetic partial update.", ("Boxes",), ("Cancelled",)
+                    Outcome.PARTIAL,
+                    "Synthetic partial update.",
+                    ("Boxes",),
+                    ("Cancelled",),
+                    completed_app_keys=(items[0].app.key,),
                 )
             ),
         )
-        page.all_button.emit("clicked")
-        window.confirm_dialog.response("update")
-        assert len(calls[0]) == 3 and not window.operation_active and not page.items
+        with patch.object(window, "refresh"):
+            page.all_button.emit("clicked")
+            window.confirm_dialog.response("update")
+        assert len(calls[0]) == 3 and not window.operation_active
+        assert page.items == original[1:] and page.selected() == (original[1],)
+        assert page.status.get_label() == "2 updates available"
+        assert page.stack.get_visible_child_name() == "list"
+        assert window.updates_count.get_label() == "2" and page.all_button.get_sensitive()
+        assert page.checked_at == checked_at and "19 apps" in page.details
+        # Inventory refresh after success must keep the list and persist its original TTL.
+        records = window.records
+        window.records = [
+            replace(app, version="2.0") if app.key == original[0].app.key else app
+            for app in records
+        ]
+        page.inventory_ready()
+        assert page.status.get_label() == "2 updates available" and not page.stale
+        restored = UpdatesPage(window)
+        restored.inventory_ready()
+        with patch.object(window.service, "check_updates") as check:
+            restored.enter()
+            check.assert_not_called()
+        assert restored.items == original[1:] and not restored.stale
+        assert restored.checked_at == checked_at
         close_messages()
+        # Failed/cancelled attempts without any completed apps preserve the cache and selection.
+        cache_bytes = page.cache.path.read_bytes()
+        for outcome in (Outcome.CANCELLED, Outcome.FAILED):
+            with patch.object(window, "refresh"):
+                page.finished(OperationResult(outcome, "Stopped"))
+            assert page.items == original[1:] and page.selected() == (original[1],)
+            assert page.cache.path.read_bytes() == cache_bytes
+            close_messages()
+            assert window._begin_operation(original[1].app, "update")
+            with patch.object(window, "refresh"):
+                window._operation_finished(OperationResult(outcome, "Stopped"))
+            assert page.items == original[1:] and page.cache.path.read_bytes() == cache_bytes
+            close_messages()
+        # A successful details-page update removes the same cached installation.
+        assert window._begin_operation(original[1].app, "update")
+        with patch.object(window, "refresh"):
+            window._operation_finished(OperationResult(Outcome.SUCCESS, "Done"))
+        assert page.items == original[2:] and not page.selected()
+        assert page.status.get_label() == "1 updates available"
+        assert page.cache.load(window.records).report.items == original[2:]
+        close_messages()
+        # Runtime-only success may leave the app record unchanged, so inventory equality
+        # cannot be the only way completed rows disappear.
+        with patch.object(window, "refresh"):
+            page.finished(
+                OperationResult(Outcome.SUCCESS, "Done", completed_app_keys=(original[2].app.key,))
+            )
+        page.inventory_ready()
+        assert not page.items and page.empty.get_title() == "You're Up to Date"
+        assert not page.all_button.get_sensitive() and window.updates_count.get_label() == ""
+        restored = UpdatesPage(window)
+        restored.inventory_ready()
+        assert not restored.items and not restored.stale and restored.checked_at == checked_at
+        window.records = records
+        close_messages()
+        # Updating a second launcher for the same installation removes the grouped row,
+        # while preserving check errors and pruning the previous successful disk report.
+        alias = replace(original[0].app, key="update-alias")
+        window.records = [*records, alias]
+        page.checked(UpdateReport(original, unsupported=19))
+        page.checked(UpdateReport(original, ("Offline",), unsupported=19))
+        page.updates_completed((alias.key,))
+        assert page.items == original[1:]
+        assert "incomplete" in page.status.get_label() and "Offline" in page.details
+        assert page.cache.load(window.records).report.items == original[1:]
+        window.records = records
         status = page.status.get_label()
         page.checked(UpdateReport((), ("Offline",), cancelled=True))
         assert page.status.get_label() == status

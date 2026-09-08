@@ -6,7 +6,7 @@ import math
 import os
 import tempfile
 import time
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from housekeeper import VERSION
@@ -38,6 +38,7 @@ class CachedUpdates:
     report: UpdateReport
     checked_at: float
     stale: bool
+    inventory_snapshot: dict
 
 
 def decode_plan(data):
@@ -113,7 +114,7 @@ class UpdateCache:
                 raise ValueError("Invalid unsupported count")
             stale = saved != {app.key: snapshot(app) for app in inventory}
             return CachedUpdates(
-                UpdateReport(tuple(items), unsupported=unsupported), checked_at, stale
+                UpdateReport(tuple(items), unsupported=unsupported), checked_at, stale, saved
             )
         except FileNotFoundError:
             return None
@@ -122,6 +123,31 @@ class UpdateCache:
             return None
 
     def save(self, report, inventory, checked_at, *, providers=UPDATE_PROVIDERS):
+        self._save(
+            report, {app.key: snapshot(app) for app in inventory}, checked_at, providers=providers
+        )
+
+    def reconcile(
+        self, inventory, *, completed_keys=(), updated_keys=(), providers=UPDATE_PROVIDERS
+    ):
+        cached = self.load(inventory, providers=providers)
+        if cached is None:
+            return
+        report = replace(
+            cached.report,
+            items=tuple(item for item in cached.report.items if item.app.key not in completed_keys),
+        )
+        saved = dict(cached.inventory_snapshot)
+        current = {app.key: app for app in inventory}
+        # Rebase only known updates; unrelated changes must still mark the cache stale.
+        for key in updated_keys:
+            if key in current:
+                saved[key] = snapshot(current[key])
+            else:
+                saved.pop(key, None)
+        self._save(report, saved, cached.checked_at, providers=providers)
+
+    def _save(self, report, inventory_snapshot, checked_at, *, providers):
         if report.errors or report.cancelled:
             return
         temporary = None
@@ -132,7 +158,7 @@ class UpdateCache:
                     "version": VERSION,
                     "checked_at": checked_at,
                     "providers": sorted(providers),
-                    "inventory": {app.key: snapshot(app) for app in inventory},
+                    "inventory": inventory_snapshot,
                     "items": [
                         {"key": item.app.key, "plan": asdict(item.plan), "names": item.names}
                         for item in report.items

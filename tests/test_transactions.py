@@ -70,6 +70,8 @@ def rpm_backend(monkeypatch):
     )
     gio = NS(Cancellable=lambda: NS(cancel=lambda: None))
     manager = RpmProvider()
+    # Launcher evidence is exercised separately; this fixture isolates PackageKit transactions.
+    monkeypatch.setattr(manager, "_validate_app", lambda _app: None)
     monkeypatch.setattr(manager, "_client", lambda: (client, pk, gio, None))
     app = AppRecord(
         "test",

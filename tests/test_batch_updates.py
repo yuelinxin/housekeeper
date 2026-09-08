@@ -249,6 +249,7 @@ def test_batch_accepts_only_previously_completed_shared_dependency():
         [UpdateItem(a, first, ("A",)), UpdateItem(b, second, ("B",))], lambda *_: None
     )
     assert result.outcome == Outcome.SUCCESS and result.completed == ("A", "B")
+    assert result.completed_app_keys == ("a", "b")
     assert executed == [first, fresh_second]
 
 
@@ -273,4 +274,52 @@ def test_batch_failure_stops_remaining_work_and_reports_partial():
         [UpdateItem(a, plan(a), (a.name,)) for a in records], lambda *_: None
     )
     assert result.outcome == Outcome.PARTIAL and result.completed == ("A",)
+    assert result.completed_app_keys == ("a",)
     assert created == ["a", "b"] and "Cancelled" in result.errors[0]
+
+
+def test_completed_keys_distinguish_names_and_partial_components():
+    a = app()
+    b = replace(app("b"), name=a.name)
+
+    def factory(record):
+        result = (
+            OperationResult(Outcome.SUCCESS, "Done")
+            if record.key == a.key
+            else OperationResult(Outcome.PARTIAL, "Stopped", ("runtime",))
+        )
+        return NS(
+            prepare_update=lambda *_: UpdateCheckResult(UpdateState.AVAILABLE, plan(record)),
+            execute_update=lambda *_: result,
+        )
+
+    result = UpdateBatch(factory, [a, b]).execute(
+        [UpdateItem(record, plan(record), (record.name,)) for record in (a, b)], lambda *_: None
+    )
+    assert result.outcome == Outcome.PARTIAL
+    assert result.completed_app_keys == (a.key,)
+    assert result.completed == ("A", "A: runtime")
+
+
+def test_completed_keys_include_plans_satisfied_by_preceding_update():
+    a, b = app(), app("b")
+    first = plan(a, (change("a"), change("b")))
+    second = plan(b)
+    executed = []
+
+    def factory(record):
+        def execute(*_args):
+            executed.append(record.key)
+            return OperationResult(Outcome.SUCCESS, "Done")
+
+        return NS(
+            prepare_update=lambda *_: UpdateCheckResult(UpdateState.AVAILABLE, first),
+            execute_update=execute,
+        )
+
+    result = UpdateBatch(factory, [a, b]).execute(
+        [UpdateItem(a, first, (a.name,)), UpdateItem(b, second, (b.name,))], lambda *_: None
+    )
+    assert result.outcome == Outcome.SUCCESS
+    assert result.completed_app_keys == (a.key, b.key)
+    assert executed == [a.key]
