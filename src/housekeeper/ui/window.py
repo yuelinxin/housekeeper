@@ -22,6 +22,7 @@ from housekeeper.models import (
 )
 from housekeeper.platforms import native_package_source
 from housekeeper.services import InventoryService
+from housekeeper.sorting import sort_key
 from housekeeper.ui.appearance import ICON_REFRESH_NOTICE, AppearanceGroup
 from housekeeper.ui.icons import icon_image, set_icon
 from housekeeper.ui.updates import UpdatesPage
@@ -67,11 +68,27 @@ def label(text, **kwargs):
 
 
 class AppObject(GObject.Object):
-    def __init__(self, record):
+    sort_mode = GObject.Property(type=str, default="name")
+
+    def __init__(self, record, sort_mode="name"):
         super().__init__()
         self.record = record
         self.search = record.search_text
-        self.sort_key = (record.name.casefold(), record.key)
+        self.update_sort(sort_mode)
+
+    def update_sort(self, mode):
+        self.sort_key = sort_key(
+            self.record, mode, GLib.utf8_collate_key(self.record.name.casefold(), -1)
+        )
+        self.sort_mode = mode
+
+
+def last_updated_date(app, *, detailed=False):
+    if app.updated_at is not None:
+        date = GLib.DateTime.new_from_unix_local(app.updated_at)
+        if date is not None:
+            return date.format("%Y-%m-%d %H:%M" if detailed else "%Y-%m-%d")
+    return _("Unknown")
 
 
 @Gtk.Template(resource_path="/io/github/yuelinxin/housekeeper/window.ui")
@@ -106,6 +123,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         }
         self.source = "all"
         self.query = ""
+        self.sort_mode = settings.get_string("sort-mode")
         self.records = []
         self.monitors = []
         self.monitor_paths = set()
@@ -179,6 +197,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             factory = Gtk.SignalListItemFactory()
             factory.connect("setup", self._factory_setup, mode)
             factory.connect("bind", self._factory_bind, mode)
+            factory.connect("unbind", self._factory_unbind)
             if mode == "list":
                 view = Gtk.ListView(
                     model=self.selection, factory=factory, single_click_activate=True
@@ -208,7 +227,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.overview_box.append(self.views)
         self.view_buttons = {}
         group = None
-        controls = Gtk.Box()
+        controls = self.view_controls = Gtk.Box()
         controls.add_css_class("linked")
         for mode, icon, title in (
             ("list", "view-list-symbolic", _("List View")),
@@ -221,13 +240,6 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             button.connect("toggled", self._view_toggled, mode)
             self.view_buttons[mode] = button
             controls.append(button)
-        self.header.pack_end(controls)
-        self.split.bind_property(
-            "collapsed",
-            controls,
-            "visible",
-            GObject.BindingFlags.SYNC_CREATE | GObject.BindingFlags.INVERT_BOOLEAN,
-        )
         self.view_buttons[self.settings.get_string("view-mode")].set_active(True)
 
     def _actions(self):
@@ -253,11 +265,18 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             lambda *_: self.view_buttons[self.settings.get_string("view-mode")].set_active(True),
         )
         self.settings.connect("changed::show-hidden", lambda *_: self._refilter())
+        self.add_action(self.settings.create_action("sort-mode"))
+        self.settings.connect("changed::sort-mode", self._sort_changed)
+        sort_menu = Gio.Menu()
+        sort_menu.append(_("Name (A–Z)"), "win.sort-mode::name")
+        sort_menu.append(_("Size (Largest First)"), "win.sort-mode::size")
+        sort_menu.append(_("Last Updated (Newest First)"), "win.sort-mode::installed")
+        self.sort_button = Gtk.MenuButton(
+            icon_name="view-sort-ascending-symbolic", menu_model=sort_menu
+        )
+        self._sort_tooltip()
         menu = Gio.Menu()
         menu.append(_("Refresh"), "win.refresh")
-        menu.append(_("List View"), "win.view-mode::list")
-        menu.append(_("Grid View"), "win.view-mode::grid")
-        menu.append(_("Show Hidden and Auxiliary Entries"), "win.show-hidden")
         menu.append(_("Preferences"), "win.preferences")
         menu.append(_("About Housekeeper"), "win.about")
         self.header.pack_end(
@@ -265,6 +284,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 icon_name="open-menu-symbolic", menu_model=menu, tooltip_text=_("Main Menu")
             )
         )
+        self.header.pack_end(self.sort_button)
+        self.header.pack_end(self.view_controls)
         self.get_application().set_accels_for_action("win.search", ["<Primary>f"])
         self.get_application().set_accels_for_action("win.refresh", ["<Primary>r", "F5"])
 
@@ -281,33 +302,94 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         name.add_css_class("heading")
         subtitle = label("", ellipsize=Pango.EllipsizeMode.END, max_width_chars=35)
         subtitle.add_css_class("dim-label")
+        metric = label("", ellipsize=Pango.EllipsizeMode.END)
+        metric.add_css_class("dim-label")
         if mode == "grid":
             name.set_xalign(0.5)
             subtitle.set_xalign(0.5)
+            metric.set_xalign(0.5)
             box.set_size_request(130, 150)
         text.append(name)
         text.append(subtitle)
+        text.append(metric)
         box.append(text)
         badge = label("", valign=Gtk.Align.CENTER, halign=Gtk.Align.START)
         badge.add_css_class("source-badge")
         if mode == "list":
             box.append(badge)
         item.set_child(box)
-        item.widgets = (picture, name, subtitle, badge)
+        item.widgets = (picture, name, subtitle, badge, metric)
 
     def _factory_bind(self, _factory, item, mode):
-        app = item.get_item().record
-        picture, name, subtitle, badge = item.widgets
+        obj = item.get_item()
+        app = obj.record
+        picture, name, subtitle, badge, metric = item.widgets
         set_icon(picture, app.icon)
         name.set_label(app.name)
         subtitle.set_label(
             app.status or (BADGES[app.source.value] if mode == "grid" else app.scope)
         )
         badge.set_label(BADGES[app.source.value])
+        self._factory_metric(item)
+        item.sort_object = obj
+        item.sort_handler = obj.connect("notify::sort-mode", lambda *_: self._factory_metric(item))
+
+    @staticmethod
+    def _factory_unbind(_factory, item):
+        item.sort_object.disconnect(item.sort_handler)
+        item.sort_object = None
+
+    def _factory_metric(self, item):
+        obj = item.get_item()
+        app, mode = obj.record, obj.sort_mode
+        metric = item.widgets[-1]
+        metric.set_visible(mode != "name")
+        if mode == "size":
+            metric.set_label(
+                GLib.format_size(app.software_size)
+                if app.software_size is not None
+                else _("Size unknown")
+            )
+        elif mode == "installed":
+            metric.set_label(
+                last_updated_date(app) if app.updated_at is not None else _("Last updated unknown")
+            )
         item.get_child().set_tooltip_text(
             f"{app.name}\n{BADGES[app.source.value]} · {app.scope}"
             + (f"\n{app.status}" if app.status else "")
+            + (f"\n{metric.get_label()}" if mode != "name" else "")
         )
+
+    def _sort_tooltip(self):
+        descriptions = {
+            "name": _("Sort Apps: Name (A–Z)"),
+            "size": _("Sort Apps: Largest First. Unknown sizes appear last."),
+            "installed": _(
+                "Sort Apps: Last Updated, Newest First. Dates refer to the installation or "
+                "update of the current version. Unknown dates appear last."
+            ),
+        }
+        self.sort_button.set_tooltip_text(descriptions[self.sort_mode])
+
+    def _sort_changed(self, *_args):
+        if self.closed:
+            return
+        self.sort_mode = self.settings.get_string("sort-mode")
+        self._sort_tooltip()
+        # Keep item identities so GTK preserves selection and keyboard focus on reorder.
+        for position in range(self.store.get_n_items()):
+            self.store.get_item(position).update_sort(self.sort_mode)
+        self.sorter.changed(Gtk.SorterChange.DIFFERENT)
+        if self.selection.get_selected_item() is not None:
+            view = self.scrolls[self.settings.get_string("view-mode")].get_child()
+            focus = self.get_focus()
+            view.scroll_to(
+                self.selection.get_selected(),
+                Gtk.ListScrollFlags.FOCUS
+                if focus is not None and focus.is_ancestor(view)
+                else Gtk.ListScrollFlags.NONE,
+                None,
+            )
 
     def _matches(self, obj):
         app = obj.record
@@ -449,7 +531,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         if self.closed:
             return
         self.records = records
-        self.store.splice(0, self.store.get_n_items(), [AppObject(a) for a in records])
+        self.store.splice(
+            0, self.store.get_n_items(), [AppObject(a, self.sort_mode) for a in records]
+        )
         # Rebuilding source rows must not navigate away from an open detail page.
         saved = self.detail_app
         self.detail_app = None
@@ -655,6 +739,19 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         installation = Adw.PreferencesGroup(title=_("Installation"))
         self._property(installation, _("Source"), BADGES[app.source.value])
         self._property(installation, _("Version"), app.version or _("Unknown"))
+        installed = Adw.ActionRow(
+            title=_("Last Updated"), subtitle=last_updated_date(app, detailed=True)
+        )
+        installed.set_tooltip_text(
+            _(
+                "When the current version was installed or updated, according to package metadata or local deployment history."
+            )
+            if app.updated_at is not None
+            else _(
+                "No reliable update time is available. Package metadata or local history may be unavailable."
+            )
+        )
+        installation.add(installed)
         self._property(installation, _("Scope"), app.scope)
         if app.scope == "Unknown":
             self._property(
@@ -1163,6 +1260,51 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.settings.bind("show-hidden", row, "active", Gio.SettingsBindFlags.DEFAULT)
         group.add(row)
         page.add(group)
+        updates = Adw.PreferencesGroup(
+            title=_("Update Checks"),
+            description=_("Checks run when you open Updates, never in the background."),
+        )
+
+        def choice(key, title, choices):
+            values, titles = zip(*choices, strict=True)
+            row = Adw.ComboRow(title=title, model=Gtk.StringList.new(titles))
+            row.set_selected(values.index(self.settings.get_string(key)))
+            row.connect(
+                "notify::selected",
+                lambda row, _pspec: self.settings.set_string(key, values[row.get_selected()]),
+            )
+            updates.add(row)
+            return row
+
+        mode = choice(
+            "update-check-mode",
+            _("Check for Updates"),
+            (("on-entry", _("When Opening Updates")), ("manual", _("Manually Only"))),
+        )
+        interval = choice(
+            "update-check-interval",
+            _("Check Interval"),
+            (("daily", _("Every Day")), ("weekly", _("Every Week"))),
+        )
+        interval.set_subtitle(_("Reuse recent results until this interval has passed."))
+        interval.set_sensitive(mode.get_selected() == 0)
+        mode.connect(
+            "notify::selected", lambda row, _pspec: interval.set_sensitive(row.get_selected() == 0)
+        )
+        page.add(updates)
+        sources = Adw.PreferencesGroup(
+            title=_("Update Sources"),
+            description=_(
+                "Sources checked on the Updates page. You can still check individual apps in their details."
+            ),
+        )
+        for source, title in (("rpm", _("RPM Packages")), ("flatpak", _("Flatpak"))):
+            row = Adw.SwitchRow(title=title)
+            self.settings.bind(
+                "update-source-" + source, row, "active", Gio.SettingsBindFlags.DEFAULT
+            )
+            sources.add(row)
+        page.add(sources)
         window.add(page)
         window.present()
 

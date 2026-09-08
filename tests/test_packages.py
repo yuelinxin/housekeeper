@@ -23,6 +23,7 @@ def pacman_db(tmp_path, monkeypatch):
     directory.mkdir(parents=True)
     (directory / "desc").write_text(
         "%NAME%\neditor\n\n%VERSION%\n1.2-1\n\n%ARCH%\nx86_64\n\n%SIZE%\n12345\n"
+        "\n%INSTALLDATE%\n1735689600\n"
     )
     (directory / "files").write_text(
         "%FILES%\nusr/bin/editor\nusr/share/applications/editor.desktop\n\n"
@@ -38,6 +39,7 @@ def test_pacman_source_size_and_stale_version(pacman_db, entry):
     app = classify(replace(entry(), path=Path("/usr/share/applications/editor.desktop")))
     packages.PackageIndex().enrich(app)
     assert app.source == Source.PACMAN and app.version == "1.2-1"
+    assert app.software_size == 12345 and app.updated_at == 1735689600
     assert measure_storage(app) == StorageUsage(12345)
     assert app.action == Action.NONE
     assign_update_action(app, {})
@@ -62,6 +64,12 @@ def test_pacman_reads_local_size_not_repository_download_size(pacman_db):
     desc = pacman_db / "desc"
     desc.write_text(desc.read_text().replace("%SIZE%", "%ISIZE%") + "\n%CSIZE%\n99\n")
     assert packages.pacman_packages()[0].size is None
+
+
+def test_pacman_does_not_replace_missing_last_updated_date_with_build_or_file_time(pacman_db):
+    desc = pacman_db / "desc"
+    desc.write_text(desc.read_text().replace("%INSTALLDATE%", "%BUILDDATE%"))
+    assert packages.pacman_packages()[0].updated_at is None
 
 
 def test_pacman_corrupt_package_does_not_hide_good_package(pacman_db):
@@ -102,6 +110,7 @@ def test_apk_installed_size_and_directory_file_attribution(apk_db, entry):
     app = classify(replace(entry(), path=Path("/usr/share/applications/editor.desktop")))
     packages.PackageIndex().enrich(app)
     assert app.source == Source.APK and app.identity == "editor:x86_64"
+    assert app.software_size == 8192 and app.updated_at is None
     assert measure_storage(app) == StorageUsage(8192)
     assert packages.apk_packages()[1].desktops == ("/opt/other/other.desktop",)
     apk_db.write_text(apk_db.read_text().replace("V:1.2-r0", "V:1.2-r1"))
@@ -177,6 +186,7 @@ def snap_info(**kwargs):
         "status": "active",
         "type": "app",
         "installed-size": 123456,
+        "install-date": "2025-01-01T00:00:00Z",
         "apps": [{"desktop-file": "/var/lib/snapd/desktop/applications/editor_test.desktop"}],
         **kwargs,
     }
@@ -222,6 +232,7 @@ def test_snap_reads_enabled_revision_and_excludes_runtimes(snap_api, monkeypatch
     app = classify(replace(entry(), path=Path(snap_info()["apps"][0]["desktop-file"])))
     packages.PackageIndex().enrich(app)
     assert app.source == Source.SNAP and app.identity == "editor_test"
+    assert app.software_size == 123456 and app.updated_at == 1735689600
     assert measure_storage(app) == StorageUsage(123456)
     assert calls[:2] == [("GET", "/v2/snaps"), "closed"]
     response["body"]["result"][0]["revision"] = "13"

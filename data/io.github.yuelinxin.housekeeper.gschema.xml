@@ -6,7 +6,24 @@
       <default>'list'</default>
       <summary>Application view mode</summary>
     </key>
+    <key name="sort-mode" type="s">
+      <choices><choice value="name"/><choice value="size"/><choice value="installed"/></choices>
+      <default>'name'</default>
+      <summary>Application sort order</summary>
+    </key>
     <key name="show-hidden" type="b"><default>false</default><summary>Show hidden and auxiliary entries</summary></key>
+    <key name="update-check-mode" type="s">
+      <choices><choice value="on-entry"/><choice value="manual"/></choices>
+      <default>'on-entry'</default>
+      <summary>When to check for updates</summary>
+    </key>
+    <key name="update-check-interval" type="s">
+      <choices><choice value="daily"/><choice value="weekly"/></choices>
+      <default>'daily'</default>
+      <summary>Minimum interval between checks on entering Updates</summary>
+    </key>
+    <key name="update-source-rpm" type="b"><default>true</default><summary>Check RPM updates on the Updates page</summary></key>
+    <key name="update-source-flatpak" type="b"><default>true</default><summary>Check Flatpak updates on the Updates page</summary></key>
     <key name="window-width" type="i"><range min="360" max="10000"/><default>1040</default><summary>Window width</summary></key>
     <key name="window-height" type="i"><range min="420" max="10000"/><default>720</default><summary>Window height</summary></key>
     <key name="maximized" type="b"><default>false</default><summary>Whether the window is maximized</summary></key>

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.7 — 2026-09-08
+
+- Add update preferences for checks on entry or manual checks only, daily or
+  weekly intervals, and independent RPM/Flatpak source switches. Match cached
+  reports to the enabled sources and discard results when that selection changes.
+- Simplify the header: keep view switching beside sorting, including in narrow
+  windows, and keep hidden-entry visibility in Preferences only.
+- Add a remembered sort menu for list and grid views: name (default), largest software
+  size first, or Last Updated (newest first). Show the selected metric and put unknown
+  values last, with alphabetical ties and preserved selection when changing order.
+- Reuse inventory metadata for sorting. Last Updated comes from RPM, Pacman and Snap
+  metadata or Flatpak's local deployment journal and is also shown in details.
+- Match Flatpak history by installation, full ref and current commit, with user-scope
+  isolation and no fallback to a stale deployment before an uninstall or newer change.
+  Unavailable history leaves the date unknown without interrupting inventory.
+- Recompile the development settings schema when its source changes.
+
 ## 0.1.6 — 2026-09-07
 
 - Show software size in app details for RPM, DEB, Pacman, APK, Flatpak, Snap and

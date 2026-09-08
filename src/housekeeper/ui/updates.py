@@ -4,6 +4,7 @@ import time
 
 from gi.repository import Adw, GLib, GObject, Gtk
 
+from housekeeper.batch_updates import UPDATE_PROVIDERS
 from housekeeper.i18n import _
 from housekeeper.models import Outcome
 from housekeeper.ui.icons import icon_image
@@ -23,6 +24,8 @@ class UpdatesPage(Adw.NavigationPage):
         self.cache_loaded = False
         self.checked_at = None
         self.inventory_snapshot = None
+        self.source_revision = 0
+        self.checking = False
         toolbar = Adw.ToolbarView()
         self.set_child(toolbar)
         header = Adw.HeaderBar(show_back_button=False)
@@ -55,7 +58,6 @@ class UpdatesPage(Adw.NavigationPage):
         content.append(metadata)
         self.last_checked = Gtk.Label(xalign=0, visible=False)
         self.last_checked.add_css_class("dim-label")
-        self.last_checked.set_tooltip_text(_("Checks refresh on entry after 24 hours."))
         metadata.append(self.last_checked)
         self.errors_button = Gtk.Button(label=_("Details"), halign=Gtk.Align.START, visible=False)
         self.errors_button.add_css_class("flat")
@@ -109,10 +111,71 @@ class UpdatesPage(Adw.NavigationPage):
         footer_bin.add_breakpoint(breakpoint)
         toolbar.add_bottom_bar(footer_bin)
         self.details = ""
+        for key in ("update-check-mode", "update-check-interval"):
+            window.settings.connect("changed::" + key, self._check_policy_changed)
+        for source in UPDATE_PROVIDERS:
+            window.settings.connect("changed::update-source-" + source, self._sources_changed)
+        self._check_policy_changed()
+        if not self.enabled_providers():
+            self._sources_changed()
         self._selection_changed()
 
+    def enabled_providers(self):
+        return tuple(
+            source
+            for source in UPDATE_PROVIDERS
+            if self.window.settings.get_boolean("update-source-" + source)
+        )
+
+    def _check_policy_changed(self, *_args):
+        manual = self.window.settings.get_string("update-check-mode") == "manual"
+        if manual:
+            self.check_when_ready = False
+        weekly = self.window.settings.get_string("update-check-interval") == "weekly"
+        self.last_checked.set_tooltip_text(
+            _("Updates are checked manually.")
+            if manual
+            else _("Checks refresh on entry after 7 days.")
+            if weekly
+            else _("Checks refresh on entry after 24 hours.")
+        )
+
+    def _sources_changed(self, *_args):
+        self.source_revision += 1
+        self.cache.clear()
+        self.cache_loaded = True
+        self.check_when_ready = False
+        self.visited = False
+        self.checked_at = None
+        self.last_checked.set_visible(False)
+        self.details = ""
+        self.errors_button.set_visible(False)
+        self.render(())
+        text = (
+            _("Update sources changed. Check again for available updates.")
+            if self.enabled_providers()
+            else _("Enable an update source in Preferences to check for updates.")
+        )
+        self.status.set_label(text)
+        self.empty.set_title(
+            _("Check for Updates") if self.enabled_providers() else _("No Update Sources Enabled")
+        )
+        self.empty.set_description(text)
+        if self.checking:
+            self.window.service.cancel()
+
     def enter(self):
-        if not self.visited or (self.checked_at is not None and cache_expired(self.checked_at)):
+        if (
+            self.window.settings.get_string("update-check-mode") == "manual"
+            or not self.enabled_providers()
+        ):
+            return
+        ttl = (
+            7 if self.window.settings.get_string("update-check-interval") == "weekly" else 1
+        ) * 86400
+        if not self.visited or (
+            self.checked_at is not None and cache_expired(self.checked_at, ttl=ttl)
+        ):
             if self.window.service.scanning:
                 if not self.check_when_ready:
                     self.window.toast(_("Waiting for the application inventory."))
@@ -123,7 +186,7 @@ class UpdatesPage(Adw.NavigationPage):
     def inventory_ready(self):
         if not self.cache_loaded:
             self.cache_loaded = True
-            cached = self.cache.load(self.window.records)
+            cached = self.cache.load(self.window.records, providers=self.enabled_providers())
             if cached is not None:
                 self.visited = True
                 self._show_report(cached.report)
@@ -175,23 +238,35 @@ class UpdatesPage(Adw.NavigationPage):
         active = self.window.operation_active
         self.selected_button.set_sensitive(bool(count) and not active)
         self.all_button.set_sensitive(bool(self.items) and not active)
-        self.refresh_button.set_sensitive(not active)
+        self.refresh_button.set_sensitive(not active and bool(self.enabled_providers()))
         for _item, check in self.checks:
             check.set_sensitive(not active)
 
     def check(self):
         window = self.window
+        providers = self.enabled_providers()
+        if not providers:
+            return
         if not window._begin_operation(None, "update"):
             return
+        self.checking = True
         self.visited = True
         self._selection_changed()
         window._show_task(_("Checking for Updates"), deferred_cancel=True)
+        revision = self.source_revision
         window.service.check_updates(
-            window._guard(window._progress), window._guard(self.checked), window._guard(self.failed)
+            window._guard(window._progress),
+            window._guard(lambda report: self.checked(report, revision=revision)),
+            window._guard(lambda error: self.failed(error, revision=revision)),
+            providers=providers,
         )
 
-    def checked(self, report):
+    def checked(self, report, *, revision=None):
+        self.checking = False
         self.window._end_operation()
+        if revision is not None and revision != self.source_revision:
+            self._selection_changed()
+            return
         if report.cancelled:
             # A cancelled check is not a replacement snapshot, even if some
             # providers returned results before cancellation was acknowledged.
@@ -201,7 +276,9 @@ class UpdatesPage(Adw.NavigationPage):
         if not report.errors:
             checked_at = time.time()
             self._set_checked_at(checked_at)
-            self.cache.save(report, self.window.records, checked_at)
+            self.cache.save(
+                report, self.window.records, checked_at, providers=self.enabled_providers()
+            )
 
     def _show_report(self, report):
         self.render(report.items)
@@ -226,9 +303,12 @@ class UpdatesPage(Adw.NavigationPage):
         self.empty.set_title(empty_title)
         self.empty.set_description(text)
 
-    def failed(self, error):
+    def failed(self, error, *, revision=None):
+        self.checking = False
         self.window._end_operation()
         self._selection_changed()
+        if revision is not None and revision != self.source_revision:
+            return
         self.status.set_label(_("The update check failed. Previous results may be out of date."))
         self.window.message(_("Could Not Check Updates"), str(error))
 

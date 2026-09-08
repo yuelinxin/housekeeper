@@ -117,5 +117,14 @@
         <setter object="header" property="show-start-title-buttons">true</setter>
       </object>
     </child>
+    <child>
+      <object class="AdwBreakpoint">
+        <condition>max-width: 450sp</condition>
+        <setter object="split" property="collapsed">true</setter>
+        <setter object="sidebar_button" property="visible">true</setter>
+        <setter object="header" property="show-start-title-buttons">true</setter>
+        <setter object="header" property="show-title">false</setter>
+      </object>
+    </child>
   </template>
 </interface>

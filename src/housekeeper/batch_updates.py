@@ -17,6 +17,7 @@ from housekeeper.models import (
 )
 
 LOG = logging.getLogger(__name__)
+UPDATE_PROVIDERS = ("rpm", "flatpak")
 
 
 @dataclass(frozen=True)
@@ -67,9 +68,11 @@ class UpdateBatch:
             self.provider = self.factory(app)
             return self.provider
 
-    def check(self, progress):
+    def check(self, progress, providers=UPDATE_PROVIDERS):
         groups, unsupported = {}, 0
         for app in self.inventory:
+            if app.provider in UPDATE_PROVIDERS and app.provider not in providers:
+                continue
             if app.update_action != UpdateAction.CHECK:
                 unsupported += 1
                 continue

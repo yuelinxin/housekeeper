@@ -76,6 +76,8 @@ def examples():
             icon=icon,
             version="1.0",
             scope="System" if source == Source.RPM else "User",
+            software_size=(i + 1) * 1024 * 1024 if source != Source.WEB else None,
+            updated_at=1735689600 + i * 86400 if source == Source.RPM else None,
             identity="org.example." + name,
             action=Action.UNINSTALL if source in {Source.RPM, Source.FLATPAK} else Action.NONE,
             update_action=UpdateAction.CHECK
@@ -152,6 +154,107 @@ def activate(app):
     window.present()
     steps = []
     icon_fixture = {}
+
+    def inventory_names():
+        return [
+            window.filtered.get_item(i).record.name for i in range(window.filtered.get_n_items())
+        ]
+
+    def sort_metric(mode):
+        container = window.scrolls[mode].get_child().get_first_child().get_first_child()
+        return container.get_first_child().get_next_sibling().get_last_child()
+
+    def start_sorting():
+        assert window.settings.get_string("sort-mode") == "name"
+        assert (
+            window.sort_button.get_menu_model()
+            .get_item_attribute_value(2, "label", None)
+            .get_string()
+            == "Last Updated (Newest First)"
+        )
+        assert inventory_names() == [app.name for app in examples()]
+        window.selection.set_selected(0)
+        window.lookup_action("sort-mode").activate(GLib.Variant("s", "size"))
+        assert window.selection.get_selected_item().record.name == "Boxes"
+        assert Gio.Settings.new(APP_ID).get_string("sort-mode") == "size"
+        assert inventory_names() == [
+            "Weather",
+            "Steam",
+            "Photos",
+            "Notes",
+            "Maps",
+            "Foliate",
+            "Firefox",
+            "Calendar",
+            "Boxes",
+            "Music",
+        ]
+
+    def check_size_sorting():
+        assert window.selection.get_selected_item().record.name == "Boxes"
+        assert sort_metric("list").get_visible()
+        assert sort_metric("list").get_label() == GLib.format_size(10 * 1024 * 1024)
+        capture(window, "sort-size-list.png")
+        window.view_buttons["grid"].set_active(True)
+
+    def check_grid_sorting():
+        assert sort_metric("grid").get_label() == GLib.format_size(10 * 1024 * 1024)
+        capture(window, "sort-size-grid.png")
+        window.search.set_text("flatpak")
+        window._search_changed(window.search)
+        assert inventory_names() == ["Photos", "Maps", "Foliate"]
+        window.lookup_action("sort-mode").activate(GLib.Variant("s", "installed"))
+        assert inventory_names() == ["Foliate", "Maps", "Photos"]
+        window.search.set_text("")
+        window._search_changed(window.search)
+        assert inventory_names() == [
+            "Weather",
+            "Steam",
+            "Firefox",
+            "Calendar",
+            "Boxes",
+            "Foliate",
+            "Maps",
+            "Music",
+            "Notes",
+            "Photos",
+        ]
+        changed = examples()
+        changed[0] = replace(changed[0], updated_at=1835689600)
+        window._complete(changed, [], [], {})
+        assert inventory_names()[0] == "Boxes"
+        window._complete(examples(), [], [], {})
+        assert inventory_names()[0] == "Weather"
+        window.view_buttons["list"].set_active(True)
+        window.set_default_size(360, 640)
+
+    def check_installation_sorting():
+        assert sort_metric("list").get_label() == GLib.DateTime.new_from_unix_local(
+            1735689600 + 9 * 86400
+        ).format("%Y-%m-%d")
+        assert window.split.get_collapsed()
+        assert window.get_width() <= 400
+        assert window.header.measure(Gtk.Orientation.HORIZONTAL, -1)[0] <= window.get_width()
+        for button in window.view_buttons.values():
+            assert button.get_mapped()
+            bounds = button.compute_bounds(window)[1]
+            assert bounds.get_width() > 0
+            assert bounds.get_x() >= 0
+            assert bounds.get_x() + bounds.get_width() <= window.get_width()
+        bounds = window.sort_button.compute_bounds(window)[1]
+        assert bounds.get_x() >= 0 and bounds.get_x() + bounds.get_width() <= window.get_width()
+        capture(window, "sort-installed-narrow.png")
+        window.sort_button.popup()
+
+    def finish_sorting():
+        popover = window.sort_button.get_popover()
+        assert popover.get_visible() and popover.get_width() <= window.get_width()
+        capture(popover, "sort-menu-narrow.png")
+        window.sort_button.popdown()
+        window.lookup_action("sort-mode").activate(GLib.Variant("s", "name"))
+        assert inventory_names() == [app.name for app in examples()]
+        window.selection.unselect_all()
+        window.set_default_size(1040, 720)
 
     def start_icon_change():
         directory = tempfile.TemporaryDirectory(prefix="housekeeper-smoke-icons-")
@@ -574,6 +677,113 @@ def activate(app):
         )
         assert not window.operation_active
 
+    def check_update_preferences():
+        close_messages()
+        page = window.updates_page
+        settings = window.settings
+        calls = []
+
+        def check(_progress, done, _failed, *, providers):
+            calls.append(providers)
+            done(UpdateReport(()))
+
+        window.service.check_updates = check
+        settings.set_string("update-check-mode", "manual")
+        window.service.scanning = True
+        page.enter()
+        assert not page.check_when_ready and not calls
+        window.service.scanning = False
+        page.inventory_ready()
+        page.enter()
+        assert not calls
+        page.refresh_button.emit("clicked")
+        assert calls == [("rpm", "flatpak")]
+        checked_at = page.checked_at
+        settings.set_string("update-check-interval", "weekly")
+        settings.set_string("update-check-mode", "on-entry")
+        with patch("housekeeper.ui.updates.time.time", return_value=checked_at + 604799):
+            page.enter()
+            assert len(calls) == 1
+        with patch("housekeeper.ui.updates.time.time", return_value=checked_at + 604800):
+            page.enter()
+            assert len(calls) == 2
+        # Switching to manual also cancels an entry deferred during inventory scanning.
+        page.checked_at = checked_at - 604800
+        window.service.scanning = True
+        page.enter()
+        assert page.check_when_ready
+        settings.set_string("update-check-mode", "manual")
+        window.service.scanning = False
+        page.inventory_ready()
+        assert not page.check_when_ready and len(calls) == 2
+        settings.set_boolean("update-source-rpm", False)
+        assert page.checked_at is None and not page.items and not page.cache.path.exists()
+        page.enter()
+        assert len(calls) == 2
+        page.refresh_button.emit("clicked")
+        assert calls[-1] == ("flatpak",)
+        restored = UpdatesPage(window)
+        restored.inventory_ready()
+        restored.enter()
+        assert restored.checked_at is not None and len(calls) == 3
+        settings.set_boolean("update-source-flatpak", False)
+        assert not page.refresh_button.get_sensitive()
+        assert page.empty.get_title() == "No Update Sources Enabled"
+        page.check()
+        page.enter()
+        assert len(calls) == 3
+        settings.set_boolean("update-source-flatpak", True)
+        assert page.refresh_button.get_sensitive() and page.checked_at is None
+        # Results started under earlier source settings must not overwrite the new state,
+        # even if the sources are toggled off and then back on before completion.
+        pending = []
+        window.service.check_updates = lambda _p, done, _f, **_kwargs: pending.append(done)
+        page.check()
+        settings.set_boolean("update-source-flatpak", False)
+        settings.set_boolean("update-source-flatpak", True)
+        pending[0](UpdateReport(()))
+        assert not window.operation_active and page.checked_at is None
+        assert not page.cache.path.exists()
+        settings.set_boolean("update-source-rpm", True)
+        settings.set_string("update-check-interval", "daily")
+        settings.set_string("update-check-mode", "on-entry")
+
+        window.preferences()
+        preferences = next(
+            w for w in Gtk.Window.get_toplevels() if isinstance(w, Adw.PreferencesWindow)
+        )
+
+        def descendants(widget):
+            yield widget
+            child = widget.get_first_child()
+            while child:
+                yield from descendants(child)
+                child = child.get_next_sibling()
+
+        rows = {
+            widget.get_title(): widget
+            for widget in descendants(preferences)
+            if isinstance(widget, (Adw.ComboRow, Adw.SwitchRow))
+        }
+        rows["Check for Updates"].set_selected(1)
+        assert settings.get_string("update-check-mode") == "manual"
+        assert not rows["Check Interval"].get_sensitive()
+        rows["Check for Updates"].set_selected(0)
+        assert rows["Check Interval"].get_sensitive()
+        rows["Check Interval"].set_selected(1)
+        assert Gio.Settings.new(APP_ID).get_string("update-check-interval") == "weekly"
+        rows["Check Interval"].set_selected(0)
+        rows["RPM Packages"].set_active(False)
+        assert page.enabled_providers() == ("flatpak",)
+        rows["RPM Packages"].set_active(True)
+
+    def capture_update_preferences():
+        preferences = next(
+            w for w in Gtk.Window.get_toplevels() if isinstance(w, Adw.PreferencesWindow)
+        )
+        capture(preferences, "preferences-updates.png")
+        close_messages()
+
     def check_updates_page():
         close_messages()
         window.set_default_size(1040, 720)
@@ -597,7 +807,8 @@ def activate(app):
             items.append(UpdateItem(record, plan, (record.name,)))
         check_calls = []
 
-        def check(_progress, done, _failed):
+        def check(_progress, done, _failed, *, providers):
+            assert providers == ("rpm", "flatpak")
             check_calls.append(True)
             done(UpdateReport(tuple(items), unsupported=19))
 
@@ -644,8 +855,8 @@ def activate(app):
         cancel = window.service.cancel
         for partial in ((), tuple(items[:1])):
             pending = []
-            window.service.check_updates = lambda _p, done, _f, pending=pending: pending.append(
-                done
+            window.service.check_updates = lambda _p, done, _f, pending=pending, **_kwargs: (
+                pending.append(done)
             )
             window.service.cancel = lambda pending=pending, partial=partial: pending[0](
                 UpdateReport(partial, ("Interrupted check",), cancelled=True)
@@ -874,6 +1085,11 @@ def activate(app):
 
     steps.extend(
         [
+            start_sorting,
+            check_size_sorting,
+            check_grid_sorting,
+            check_installation_sorting,
+            finish_sorting,
             hover_list,
             hover_list_dark,
             finish_list_hover,
@@ -899,6 +1115,8 @@ def activate(app):
             check_update_preview,
             check_update_execute,
             check_operation,
+            check_update_preferences,
+            capture_update_preferences,
             check_updates_page,
             check_updates_narrow,
             check_updates_wide,
@@ -934,7 +1152,7 @@ def activate(app):
 
 application.connect("activate", activate)
 GLib.timeout_add_seconds(
-    30, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
+    40, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
 )
 application.run([sys.argv[0]])
 raise SystemExit(bool(failed))

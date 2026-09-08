@@ -92,6 +92,7 @@ class DebIndex:
         package = matches[0]
         app.source, app.provider = Source.DEB, "deb"
         app.scope, app.version = "System", package["version"]
+        app.software_size = package_size(package)
         app.identity = package["name"] + ":" + package["arch"]
         app.metadata.update(package)
         app.metadata["management_reason"] = _(
@@ -111,6 +112,10 @@ def installed_size(app):
     ]
     if len(matches) != 1:
         return None
-    size = matches[0]["installed_size"]
+    return package_size(matches[0])
+
+
+def package_size(package):
+    size = package["installed_size"]
     # Debian Installed-Size is an estimate in KiB, not the archive's download size.
     return int(size) * 1024 if re.fullmatch(r"[0-9]+", size) else None

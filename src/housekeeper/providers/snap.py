@@ -7,6 +7,7 @@ from pathlib import Path
 
 from housekeeper.models import Source
 from housekeeper.providers.packages import InstalledPackage, byte_size
+from housekeeper.sorting import package_timestamp
 
 SNAP_SOCKET = Path("/run/snapd.socket")
 
@@ -65,6 +66,7 @@ def snap_packages():
                 byte_size(snap.get("installed-size")),
                 desktops,
                 snap["revision"],
+                package_timestamp(snap.get("install-date")),
             )
         )
     return result

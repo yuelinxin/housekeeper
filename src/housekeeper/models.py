@@ -81,6 +81,8 @@ class AppRecord:
     metadata: dict[str, str] = field(default_factory=dict)
     update_action: UpdateAction = UpdateAction.INSTRUCTIONS
     update_reason: str = ""
+    software_size: int | None = None
+    updated_at: int | None = None
 
     @property
     def search_text(self) -> str:

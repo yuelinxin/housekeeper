@@ -13,6 +13,8 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 
 - Search applications by name, package identity, or file location.
 - Switch between a list and an icon grid, with source filters and adaptive navigation.
+- Sort either view by name (the default), software size (largest first), or Last Updated
+  (newest first). The chosen order is remembered; unknown values appear last.
 - Inspect versions, installation scopes, desktop entries, and executable paths.
 - See software size for RPM, DEB, Pacman, APK, Flatpak, Snap, and AppImage installations. Shared
   dependencies and runtimes are excluded; unavailable sizes are shown as unknown.
@@ -22,6 +24,9 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 - Preview RPM and Flatpak removal, preserving personal application data.
 - Check for RPM and Flatpak updates beside the uninstall action, then review versions
   and dependency changes before confirming an update.
+- Configure Updates in Preferences: check on entry (daily by default, or weekly)
+  or manually only, and choose whether RPM and Flatpak participate. These settings
+  leave the application inventory and individual checks in app details available.
 - Move precisely identified, user-owned AppImage files and launchers to Trash.
 - Open the appropriate browser or Steam manager for externally managed applications.
 
@@ -41,6 +46,12 @@ Housekeeper does not install new applications, perform system release upgrades,
 clean application data, or list every command-line package. It never scans the
 entire disk looking for executables. Application updates can install or upgrade
 the dependencies listed in their confirmation preview.
+
+Last Updated describes when the current version was installed or updated. Dates come
+from RPM, Pacman and Snap metadata, and matching Flatpak deployment records in the
+local systemd journal. Missing, inaccessible or unmatched history stays unknown,
+as do dates for other sources. File modification and package build times are not
+used as substitutes. Numeric sorting shows the size or date in each row or tile.
 
 ## Requirements
 
@@ -87,7 +98,7 @@ saving preferences, launch it with `GSETTINGS_BACKEND=memory`.
 To install a downloaded release package:
 
 ```sh
-sudo dnf install ./housekeeper-0.1.6-1.fc44.noarch.rpm
+sudo dnf install ./housekeeper-0.1.7-1.fc44.noarch.rpm
 ```
 
 Install the build matching your Fedora release. GitHub release packages do not
@@ -125,7 +136,8 @@ system; their harness explicitly requires a disposable container.
 
 Housekeeper keeps its inventory in memory and preferences in GSettings. Successful
 update checks are cached locally in `$XDG_CACHE_HOME/housekeeper/updates.json`
-(normally `~/.cache/housekeeper/updates.json`), including app identities and previews.
+(normally `~/.cache/housekeeper/updates.json`), including app identities, checked
+sources and previews. Changing update sources clears the previous results.
 Deleting this cache resets the saved update results. It has no
 telemetry, account, background service, or automatic network scan. Package managers
 and explicitly opened external managers may use their own network connections.

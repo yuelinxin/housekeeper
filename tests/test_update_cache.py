@@ -53,6 +53,39 @@ def test_empty_results_are_cached(cached):
     assert not result.report.items and not result.stale
 
 
+@pytest.mark.parametrize("age,expired", [(86400, False), (604799, False), (604800, True)])
+def test_weekly_interval(cached, age, expired):
+    cache, app, _ = cached
+    result = cache.load([app])
+    assert cache_expired(result.checked_at, now=result.checked_at + age, ttl=604800) is expired
+
+
+def test_cache_is_scoped_to_checked_providers(cached):
+    cache, app, report = cached
+    assert cache.load([app], providers=("flatpak",)) is None
+    cache.save(report, [app], 1_700_000_001, providers=("flatpak",))
+    assert cache.load([app], providers=("flatpak",)).report == report
+    assert cache.load([app]) is None
+    assert cache.load([app], providers=("rpm",)) is None
+
+
+def test_legacy_cache_requires_both_providers(cached):
+    cache, app, report = cached
+    data = json.loads(cache.path.read_text())
+    del data["providers"]
+    cache.path.write_text(json.dumps(data))
+    assert cache.load([app]).report == report
+    assert cache.load([app], providers=("flatpak",)) is None
+
+
+def test_cache_rejects_items_from_an_unchecked_provider(cached):
+    cache, app, _ = cached
+    data = json.loads(cache.path.read_text())
+    data["providers"] = ["rpm"]
+    cache.path.write_text(json.dumps(data))
+    assert cache.load([app], providers=("rpm",)) is None
+
+
 @pytest.mark.parametrize("changes", [{"version": "2"}, {"metadata": {"installation": "/other"}}])
 def test_changed_installation_is_removed_from_cached_results(cached, changes):
     cache, app, _ = cached

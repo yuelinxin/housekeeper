@@ -77,6 +77,28 @@ def test_check_errors_and_current_are_distinct():
     assert not report.items and report.errors == ("A: Offline",) and not report.cancelled
 
 
+@pytest.mark.parametrize("providers", [("rpm",), ("flatpak",), (), ("rpm", "flatpak")])
+def test_check_only_contacts_enabled_providers_with_full_inventory(providers):
+    records = [
+        app(),
+        replace(app("rpm"), provider="rpm"),
+        replace(app("web"), provider="web", update_action=UpdateAction.INSTRUCTIONS),
+    ]
+    calls = []
+
+    def check(record, inventory, _progress, **_kwargs):
+        assert inventory == records
+        calls.append(record.provider)
+        return UpdateCheckResult(UpdateState.CURRENT)
+
+    result = UpdateBatch(lambda _: NS(prepare_update=check), records).check(
+        lambda *_: None, providers=providers
+    )
+    assert set(calls) == set(providers)
+    assert result.unsupported == 1
+    assert not result.errors and not result.cancelled
+
+
 def test_check_cancel_keeps_results_and_does_not_start_next_provider():
     created = []
     worker = None

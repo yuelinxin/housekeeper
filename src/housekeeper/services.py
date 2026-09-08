@@ -81,6 +81,9 @@ def collect(partial=None, roots=None):
     for record in output:
         assign_update_action(record, update_capabilities)
         if record.source == Source.APPIMAGE:
+            from housekeeper.storage import measure_storage
+
+            record.software_size = measure_storage(record).software
             try:
                 image_provider.prepare(record, output)
                 record.action = Action.TRASH
@@ -179,13 +182,14 @@ class InventoryService:
             preserve_error=True,
         )
 
-    def check_updates(self, progress, completed, failed):
-        from housekeeper.batch_updates import UpdateBatch
+    def check_updates(self, progress, completed, failed, *, providers=None):
+        from housekeeper.batch_updates import UPDATE_PROVIDERS, UpdateBatch
 
+        providers = UPDATE_PROVIDERS if providers is None else tuple(providers)
         batch = UpdateBatch(self._provider, list(self.inventory))
         self._submit(
             None,
-            lambda worker: worker.check(lambda *args: self.dispatch(progress, *args)),
+            lambda worker: worker.check(lambda *args: self.dispatch(progress, *args), providers),
             completed,
             failed,
             preserve_error=True,

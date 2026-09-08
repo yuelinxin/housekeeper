@@ -24,7 +24,11 @@ stable package identity; updates and removal remain in the external system manag
 
 The service publishes an initial desktop inventory and then enriched records. The
 UI shares a Gio.ListStore, filter, sorter, and selection between both virtualized
-views. Records are sorted by name. GTK mutations are dispatched on the main loop; blocking integrations
+views. Name sorting uses the current locale and is the default; a remembered setting
+also selects largest software size or Last Updated, newest first. Numeric ties use
+name and stable identity, with unknown values last. Sorting reuses the installed
+metadata gathered during inventory, without per-row queries or network access.
+GTK mutations are dispatched on the main loop; blocking integrations
 run in a single worker. No application database is written.
 
 ## Internal interfaces
@@ -78,7 +82,8 @@ debounced, and returning to the active window schedules a refresh. A pending ref
 runs after an operation completes. Closing during an active operation keeps the
 window alive and explains that the task must finish or be safely cancelled.
 
-Settings are limited to window geometry, view mode, and hidden-entry visibility.
+Settings cover window geometry, view mode, sort order, hidden-entry visibility,
+and update-check mode, interval and participating sources.
 Missing metadata is reported as unknown; package origin and executable locations
 are never inferred from display names. No network metadata refresh is initiated
 by the inventory scan.
@@ -92,6 +97,25 @@ AppImage reports its file length. Package versions and architectures or Flatpak
 commits must still match the inventory. Shared dependencies and runtimes are excluded.
 Missing metadata remains unknown. These are estimates, not reclaimable disk space.
 No user data directories are scanned. Late results cannot update a different details page.
+
+Inventory records retain software-size estimates for sorting, while the details-page
+measurement still revalidates the installed version. RPM `INSTALLTIME`, Pacman
+`%INSTALLDATE%`, and Snap `install-date` supply the time of the currently installed
+package, which may change after an upgrade or reinstall. The interface calls this
+Last Updated. DEB, APK, AppImage, web apps and Steam entries currently have unknown
+dates. File timestamps and build/commit timestamps are never used as substitutes.
+
+Flatpak dates come from the same local journal message ID as `flatpak history`.
+One read-only `journalctl` query per inventory reads up to 5,000 recent deployment
+and removal records, with a three-second timeout and an 8 MiB parsing limit.
+Structured microsecond timestamps retain the year omitted by the history command's
+formatted output. Installation names map to configured paths; user installations
+also require the current user's journal UID. The newest relevant event must be an
+install/update deployment matching the full ref and current commit. A newer removal,
+different commit or invalid date blocks fallback to older deployments. Ambiguous
+installation names and unavailable history leave dates unknown. No journal access
+permissions are changed. The saved sort value `installed` remains for compatibility
+with existing preferences; the data field is `updated_at`.
 
 Pacman uses the installed ALPM database's [`%SIZE%`](https://man.archlinux.org/man/alpm-db-desc.5.en#%25SIZE%25)
 field in bytes and the `%FILES%` section to establish exact desktop ownership.
@@ -165,27 +189,38 @@ Every execution outcome refreshes inventory. No automatic restart is performed.
 
 ## Updates page and batches
 
-The Updates navigation row stays below the scrollable source list. Its first activation
-requests a check after inventory scanning finishes when no saved result exists or
-the last successful check is at least 24 hours old. The page refresh action can request
-earlier checks. Filesystem/focus refreshes only read inventory and invalidate changed
+The Updates navigation row stays below the scrollable source list. In the default
+on-entry mode, activation requests a check after inventory scanning finishes when no
+saved result exists or the last successful check is at least one day old. Preferences
+can extend this interval to one week, or select manual-only checks. Manual mode also
+cancels a pending entry check waiting for inventory. The page refresh action can request
+checks regardless of the selected interval or mode. Filesystem/focus refreshes only read inventory and invalidate changed
 rows. They never initiate a background update check. Selection and source filters are
 independent. The page uses GTK 4/libadwaita widgets and wraps actions at narrow widths.
 Action buttons keep their natural width at the bottom right, with selection status
 at the bottom left. This footer stays visible while the application list scrolls. The header
 shows the update count and last check time; Details contains separate-updater guidance
-and check errors, and the timestamp tooltip explains the 24-hour refresh rule.
+and check errors, and the timestamp tooltip explains the selected check policy.
+
+RPM and Flatpak source switches apply to Updates-page checks. Disabled providers
+are skipped before grouping and do not increase the unsupported-app count; providers
+still receive the full inventory for ownership and dependency validation. Individual
+checks in app details and application discovery are unchanged. Changing sources clears
+results and their timestamp, requests cancellation of an active page check, and rejects
+its late completion using a revision counter. No settings change starts a network check.
+With both sources disabled, the page explains how to enable a source and disables refresh.
 
 `UpdateCache` saves successful reports, including empty reports, in the XDG cache
 directory using a bounded JSON file and atomic replacement. Failures and cancelled
 checks leave the previous successful file intact. Cache schema and application versions
-must match; malformed files are ignored. Restoring a report requires an unchanged local
+must match; malformed files are ignored. The checked-provider set must also match;
+older caches without this field are treated as checks of both providers. Restoring a report requires an unchanged local
 app snapshot for each retained item. New or changed inventory shows a refresh reminder
 without network access. The last successful check time remains visible, and navigation
 preserves checkbox selection. Expiry is evaluated on page entry, including when an
 entry request waits for the initial inventory. Cache loading, focus refreshes, and
 leaving the page before that inventory completes do not initiate checks. No background
-timer runs; failed or cancelled checks do not renew the 24-hour lifetime.
+timer runs; failed or cancelled checks do not renew the chosen cache lifetime.
 Completed management attempts invalidate stored previews
 because dependencies can overlap. Cached plans still undergo normal provider validation
 before execution; a saved preview never authorizes an update on its own.

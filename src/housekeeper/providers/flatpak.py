@@ -20,6 +20,7 @@ from housekeeper.models import (
     UpdatePlan,
     UpdateState,
 )
+from housekeeper.providers.packages import byte_size
 
 
 def load_flatpak():
@@ -70,6 +71,10 @@ class FlatpakIndex:
                     if ref.get_kind() != fp.RefKind.APP:
                         continue
                     identity = ref.format_ref()
+                    try:
+                        size = byte_size(ref.get_installed_size())
+                    except Exception:
+                        size = None
                     self.apps.append(
                         AppRecord(
                             key=digest("flatpak", path, identity),
@@ -83,6 +88,7 @@ class FlatpakIndex:
                             location=ref.get_deploy_dir() or "",
                             icon=ref.get_name(),
                             action=Action.UNINSTALL,
+                            software_size=size,
                             metadata={
                                 "installation": path,
                                 "app_id": ref.get_name(),
@@ -92,6 +98,9 @@ class FlatpakIndex:
                     )
             except Exception as error:
                 self.warnings.append(f"Could not read a Flatpak installation: {error}")
+        from housekeeper.providers.flatpak_history import enrich_history
+
+        enrich_history(self.apps, self.installations)
 
     @property
     def roots(self):

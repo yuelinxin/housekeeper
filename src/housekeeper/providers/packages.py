@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from housekeeper.i18n import _
 from housekeeper.identity import digest
 from housekeeper.models import Source
+from housekeeper.sorting import package_timestamp
 
 LOG = logging.getLogger(__name__)
 PACKAGE_SOURCES = {Source.PACMAN, Source.APK, Source.SNAP}
@@ -26,6 +27,7 @@ class InstalledPackage:
     size: int | None
     desktops: tuple[str, ...]
     revision: str = ""
+    updated_at: int | None = None
 
 
 def byte_size(value):
@@ -89,6 +91,7 @@ def pacman_packages():
             if any(len(value) != 1 for value in (name, version, arch)):
                 continue
             size = fields.get("%SIZE%", [])
+            installed = fields.get("%INSTALLDATE%", [])
             result.append(
                 InstalledPackage(
                     Source.PACMAN,
@@ -98,6 +101,7 @@ def pacman_packages():
                     str(database),
                     byte_size(size[0]) if len(size) == 1 else None,
                     tuple(path for file in files if (path := desktop_path(file, root))),
+                    updated_at=package_timestamp(installed[0]) if len(installed) == 1 else None,
                 )
             )
         except (OSError, ValueError, KeyError):
@@ -185,6 +189,8 @@ class PackageIndex:
         package = matches[0]
         app.source, app.provider = package.source, package.source.value
         app.scope, app.version = "System", package.version
+        app.software_size = package.size
+        app.updated_at = package.updated_at
         app.identity = package.name + (":" + package.arch if package.arch else "")
         app.metadata.update(
             {

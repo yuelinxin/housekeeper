@@ -38,6 +38,7 @@ def test_deb_attribution_size_and_manual_management(database):
     assert (app.source, app.provider, app.scope) == (Source.DEB, "deb", "System")
     assert app.identity == "example:amd64"
     assert app.version == "1:2.0-3"
+    assert app.software_size == 42 * 1024 and app.updated_at is None
     assert app.action == Action.NONE
     assert measure_storage(app) == StorageUsage(42 * 1024)
     assert calls[-1][-2:] == ("--", "example:amd64")
@@ -127,6 +128,7 @@ def test_unknown_and_zero_sizes(database, size, expected):
     deb.DebIndex().enrich(app)
     assert app.source == Source.DEB
     assert measure_storage(app).software == expected
+    assert app.software_size == expected
 
 
 def test_index_batches_queries_across_launchers(database):

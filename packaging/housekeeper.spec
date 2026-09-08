@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.6
+Version:        0.1.7
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -34,6 +34,8 @@ plus management of AppImages, browser web apps, and Steam shortcuts.
 Application details include software sizes, icon themes, custom launcher icons
 and restoration. Read-only attribution covers DEB, Pacman, APK and Snap packages.
 Native source labels follow the distribution; unsupported providers remain manual.
+Sort applications by name, size or last update, and configure update-check timing
+and participating RPM and Flatpak sources in Preferences.
 
 %prep
 %autosetup
@@ -62,6 +64,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Tue Sep 08 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.7-1
+- Add remembered name, size and Last Updated sorting with Flatpak journal dates.
+- Simplify the adaptive header and add update-check timing and source preferences.
+- Scope cached update results to selected providers and rebuild changed settings.
+
 * Mon Sep 07 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.6-1
 - Show installed software sizes and add DEB, Pacman, APK and Snap attribution.
 - Keep update-check progress, window layout and Cancel button states stable.

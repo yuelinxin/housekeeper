@@ -170,3 +170,25 @@ def test_batch_submit_failure_recovers(service):
     value.execute_updates([], lambda *_: None, results.append)
     assert results[0].outcome == Outcome.FAILED
     assert not value.busy and value.active_provider is None
+
+
+def test_batch_check_forwards_provider_selection(service, monkeypatch):
+    value, _provider = service
+    from housekeeper.models import UpdateAction
+
+    value.inventory = [
+        AppRecord(source, source, provider=source, update_action=UpdateAction.CHECK)
+        for source in ("rpm", "flatpak")
+    ]
+    contacted = []
+
+    def provider(app):
+        contacted.append(app.provider)
+        return NS(prepare_update=lambda *_: UpdateCheckResult(UpdateState.CURRENT))
+
+    monkeypatch.setattr(value, "_provider", provider)
+    results = []
+    value.check_updates(lambda *_: None, results.append, pytest.fail, providers=("flatpak",))
+    value.executor.finish()
+    assert contacted == ["flatpak"]
+    assert not results[0].errors and not value.busy

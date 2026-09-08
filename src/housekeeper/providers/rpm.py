@@ -19,6 +19,8 @@ from housekeeper.models import (
     UpdatePlan,
     UpdateState,
 )
+from housekeeper.providers.packages import byte_size
+from housekeeper.sorting import package_timestamp
 
 
 def host_support(os_release=None, markers=None):
@@ -78,9 +80,13 @@ class RpmIndex:
                 version = f"{header['version']}-{header['release']}"
                 if epoch != "0":
                     version = epoch + ":" + version
-                packages.append(
-                    {"name": header["name"], "version": version, "arch": header["arch"]}
-                )
+                package = {"name": header["name"], "version": version, "arch": header["arch"]}
+                for tag in ("size", "installtime"):
+                    try:
+                        package[tag] = str(header[tag])
+                    except (KeyError, ValueError, TypeError):
+                        pass  # Optional metadata must not prevent package attribution.
+                packages.append(package)
             self._cache[path] = packages
         return self._cache[path]
 
@@ -130,6 +136,8 @@ class RpmIndex:
         package = dict(next(iter(owners)))
         app.source, app.provider = Source.RPM, "rpm"
         app.scope, app.version = "System", package["version"]
+        app.software_size = byte_size(package.get("size"))
+        app.updated_at = package_timestamp(package.get("installtime"))
         app.identity = "{name}-{version}.{arch}".format(**package)
         app.metadata.update(package)
         launch = entry.argv or (entry.desktop_id,)

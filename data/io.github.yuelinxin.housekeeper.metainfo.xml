@@ -10,6 +10,7 @@
     <p>Housekeeper brings desktop applications from different installation sources into one native, searchable inventory.</p>
     <ul>
       <li>Browse applications in a list or an icon grid.</li>
+      <li>Sort applications by name, software size, or Last Updated.</li>
       <li>Inspect installation sources, package identities, file locations, and software sizes.</li>
       <li>Identify installed DEB, Pacman, APK, and Snap packages with external management guidance.</li>
       <li>View app icon themes and customize or restore launcher icons.</li>
@@ -17,6 +18,7 @@
       <li>Review removal plans for RPM packages, Flatpak applications, and independent AppImages.</li>
       <li>Check for RPM and Flatpak updates, then confirm versions and dependency changes before updating.</li>
       <li>Select applications in Updates or update all available applications together.</li>
+      <li>Choose manual or on-entry update checks, daily or weekly intervals, and participating RPM and Flatpak sources.</li>
       <li>Find browser and Steam management instructions.</li>
     </ul>
     <p>System package removal requires a compatible PackageKit backend and a verified removal preview. Unsupported operations provide manual management guidance. Other sources remain available when their integration is installed. Personal application data is kept.</p>
@@ -28,6 +30,18 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.7" date="2026-09-08" type="development">
+      <description>
+        <p>Find applications with remembered sorting and control how Housekeeper checks for updates.</p>
+        <ul>
+          <li>Sort list and grid views by name, software size, or Last Updated, with unknown values last.</li>
+          <li>Read Flatpak deployment dates from matching local journal records and show Last Updated in app details.</li>
+          <li>Simplify the header and keep view switching accessible in narrow windows.</li>
+          <li>Choose checks on opening Updates or manual checks only, with daily or weekly intervals.</li>
+          <li>Enable RPM and Flatpak update checks independently and match cached results to the selected sources.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.6" date="2026-09-07" type="development">
       <description>
         <p>See installed software sizes across more package formats and check updates without flickering controls.</p>

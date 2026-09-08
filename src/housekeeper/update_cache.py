@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 from housekeeper import VERSION
-from housekeeper.batch_updates import UpdateItem, UpdateReport
+from housekeeper.batch_updates import UPDATE_PROVIDERS, UpdateItem, UpdateReport
 from housekeeper.models import UpdateChange, UpdatePlan
 
 LOG = logging.getLogger(__name__)
@@ -18,8 +18,8 @@ MAX_BYTES = 4 * 1024 * 1024
 UPDATE_CACHE_TTL = 24 * 60 * 60
 
 
-def cache_expired(checked_at, now=None):
-    return (time.time() if now is None else now) - checked_at >= UPDATE_CACHE_TTL
+def cache_expired(checked_at, now=None, *, ttl=UPDATE_CACHE_TTL):
+    return (time.time() if now is None else now) - checked_at >= ttl
 
 
 def cache_path():
@@ -64,7 +64,7 @@ class UpdateCache:
     def __init__(self, path=None):
         self.path = path if path is not None else cache_path()
 
-    def load(self, inventory):
+    def load(self, inventory, *, providers=UPDATE_PROVIDERS):
         try:
             with self.path.open("rb") as stream:
                 payload = stream.read(MAX_BYTES + 1)
@@ -72,6 +72,8 @@ class UpdateCache:
                 raise ValueError("Update cache is too large")
             data = json.loads(payload)
             if data["schema"] != 1 or data["version"] != VERSION:
+                return None
+            if data.get("providers", sorted(UPDATE_PROVIDERS)) != sorted(providers):
                 return None
             checked_at = data["checked_at"]
             if (
@@ -92,6 +94,8 @@ class UpdateCache:
                 if app is None or saved.get(key) != snapshot(app):
                     continue
                 plan = decode_plan(entry["plan"])
+                if plan.provider not in providers:
+                    raise ValueError("Cached update belongs to a disabled provider")
                 names = entry["names"]
                 if (
                     key in seen
@@ -117,7 +121,7 @@ class UpdateCache:
             LOG.warning("Could not load update cache: %s", error)
             return None
 
-    def save(self, report, inventory, checked_at):
+    def save(self, report, inventory, checked_at, *, providers=UPDATE_PROVIDERS):
         if report.errors or report.cancelled:
             return
         temporary = None
@@ -127,6 +131,7 @@ class UpdateCache:
                     "schema": 1,
                     "version": VERSION,
                     "checked_at": checked_at,
+                    "providers": sorted(providers),
                     "inventory": {app.key: snapshot(app) for app in inventory},
                     "items": [
                         {"key": item.app.key, "plan": asdict(item.plan), "names": item.names}

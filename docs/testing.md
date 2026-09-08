@@ -2,6 +2,24 @@
 
 ## Local tests
 
+Update preference regressions cover daily/weekly expiry boundaries, cache source
+matching (including older caches), and skipping disabled providers while passing
+the complete inventory to enabled providers. GTK smoke exercises manual entry,
+manual refresh, deferred-entry cancellation, weekly checks, source switches,
+both sources disabled, late results after a source change, and Preferences controls.
+
+`test_sorting.py` checks numeric order, unknown and zero values, deterministic ties,
+timestamp validation, RPM metadata reuse and Flatpak installation separation. Package
+fixtures verify Pacman and Snap dates and keep unsupported dates unknown. GTK smoke
+exercises the settings action, both views, filters, selection, inventory refreshes,
+and the sort menu at 360 pixels wide. At that width, the external view buttons
+must remain mapped and the header's minimum width must fit the window.
+
+`test_flatpak_history.py` verifies Last Updated from structured journal timestamps,
+default/user/named installation matching, user isolation, exact refs and commits,
+reinstall/removal boundaries, malformed or absent records, and bounded journal
+queries. GTK smoke checks the Last Updated menu label using an isolated display.
+
 `test_packages.py` exercises installed Pacman and APK database fixtures, custom
 Pacman roots, missing sizes, changed versions, ambiguous desktop ownership, and
 provider failures. Snap tests cover active revisions, exclusion of bases and old

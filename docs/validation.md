@@ -1,9 +1,59 @@
-# v0.1.6 development validation
+# v0.1.7 development validation
 
-Updated on September 7, 2026. These are local development checks, not a claim that
+Updated on September 8, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.7 metadata validation — September 8, 2026
+
+- Application, Meson, RPM spec, latest AppStream release, changelog and README
+  installation example agree on 0.1.7; release metadata is dated September 8.
+- Meson compilation, offline AppStream validation and desktop-file validation pass.
+  The development launcher reports `Housekeeper 0.1.7` without opening a window.
+- All 23 update-cache tests pass with the new application version. Ruff lint/format
+  and whitespace checks pass. RPM packages and release attachments were not built
+  as part of this metadata update.
+
+## v0.1.7 update preferences validation
+
+- The offline Fedora 44 container passes 289 unit tests, with one optional
+  dpkg-query skip. Coverage includes weekly expiry, checked-provider cache matching,
+  legacy cache compatibility, and provider selection through the service and batch.
+- Isolated GTK smoke passes manual-only entry and explicit refresh, deferred-entry
+  cancellation, weekly expiry, persisted preference controls, source switching,
+  both sources disabled, and rejection of late results after a source change.
+- Ruff lint/format, configured mypy, Meson build and whitespace checks pass.
+  No real application was checked for updates or modified by these tests.
+
+## v0.1.7 Flatpak Last Updated validation
+
+- The offline Fedora 44 container passes 278 unit tests, with one optional
+  dpkg-query skip. GTK smoke passes in an isolated Xvfb display, including the
+  Last Updated label and existing sorting, filtering and selection checks.
+- Journal fixtures cover default/user/named installations, another user's history,
+  exact refs and commits, removal/reinstall boundaries, invalid timestamps, missing
+  commands, timeouts and bounded output. No journal permissions were changed.
+- A read-only host inventory matches current deployment dates for 15 of 19 Flatpak
+  apps and retains dates for 123 RPM apps. Four Flatpak dates remain unknown. The
+  full inventory took approximately 0.38 seconds and reported no provider warnings.
+- Ruff lint/format, configured mypy, Meson build and whitespace checks pass. The
+  final Last Updated sort popup was visually reviewed.
+
+## Initial sorting validation — September 7, 2026
+
+- A fresh build in the existing offline Fedora 44 container passes 262 unit tests;
+  one test skips because dpkg-query is unavailable. Sorting coverage includes numeric
+  ties, unknown values, package timestamp parsing, and inventory metric attribution.
+- GTK smoke passes in an isolated Xvfb display, covering both views, remembered
+  settings, selection after a rendered frame, filters, refreshes and a narrow sort
+  popup. Synthetic screenshots were visually reviewed. The 1,000-record search
+  check completed in 58 ms with approximately 180 MiB peak RSS.
+- Ruff lint/format, configured mypy checks, and whitespace checks pass. A read-only
+  host inventory obtained sizes and installation times for 123 RPM apps, sizes for
+  19 Flatpak apps and one AppImage, with no provider warnings.
+- Installation dates remain unknown outside RPM, Pacman and Snap. These checks do
+  not extend the existing update/removal or platform acceptance guarantees.
 
 ## v0.1.6 release validation — September 7, 2026
 
