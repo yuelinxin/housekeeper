@@ -1,9 +1,30 @@
-# v0.1.5 development validation
+# v0.1.6 development validation
 
 Updated on September 7, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.6 release validation — September 7, 2026
+
+- Application, Meson, RPM spec, latest AppStream release, README installation
+  example and source archive agree on 0.1.6. The source archive includes the new
+  storage and DEB, Pacman/APK, and Snap adapters.
+- Fedora 44 offline container: a fresh Meson build and its unit-test target pass;
+  offline AppStream and desktop metadata validation pass, and the development
+  launcher reports `Housekeeper 0.1.6`.
+- The full suite passes 240 tests with one optional dpkg-query skip. GTK smoke
+  passes with source-filter and storage checks, stable progress-window dimensions,
+  and no Cancel sensitivity changes during backend phase transitions. Clicking
+  Cancel disables it exactly once; late callbacks do not re-enable it.
+- Storage and attribution use synthetic Pacman/APK databases and a temporary Snap
+  Unix socket. The real dpkg-query fixture and GTK checks passed on Ubuntu during
+  DEB integration. Actual Arch/Alpine desktops and live snapd remain unverified.
+- Ruff lint/format, mypy, whitespace and version-consistency checks pass. The new
+  progress window was visually reviewed with synthetic messages.
+- This commit does not repeat the full Fedora 43/44 RPM installation/removal and
+  real update-transaction release matrix. No personal application was installed,
+  updated or removed during these checks.
 
 ## v0.1.5 release validation — September 7, 2026
 

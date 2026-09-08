@@ -45,6 +45,7 @@ from housekeeper.models import (
 )
 from housekeeper.platforms import native_package_source
 from housekeeper.services import InventoryService
+from housekeeper.storage import StorageUsage
 
 Gio.resources_register(Gio.Resource.load(str(BUILD / "data/housekeeper.gresource")))
 from housekeeper.ui.updates import UpdatesPage
@@ -102,6 +103,13 @@ def fake_scan(self, partial, completed, failed):
 
 
 InventoryService.scan = fake_scan
+
+
+def fake_storage(self, app, completed):
+    GLib.idle_add(lambda: (completed(StorageUsage(123456789)), False)[1])
+
+
+InventoryService.measure_storage = fake_storage
 failed = []
 
 
@@ -239,9 +247,34 @@ def activate(app):
         assert window.overview_page.get_title() == native_title
         if native_key != "rpm":
             assert window.filtered.get_n_items() == 0
-            assert window.empty.get_title() == "Package Source Not Yet Supported"
+            assert window.empty.get_title() == (
+                "No Applications"
+                if native_key in {"deb", "pacman", "apk"}
+                else "Package Source Not Yet Supported"
+            )
             window._replace(examples())
             assert window.source == native_key, "Refresh left the native package tab"
+        for source in (Source.DEB, Source.PACMAN, Source.APK, Source.SNAP):
+            package_app = replace(
+                examples()[0],
+                key="package-example",
+                source=source,
+                provider=source.value,
+                identity="example",
+                action=Action.NONE,
+                update_action=UpdateAction.INSTRUCTIONS,
+            )
+            window._replace([*examples(), package_app])
+            package_row = window.sidebar.get_first_child()
+            while package_row.source != source.value:
+                package_row = package_row.get_next_sibling()
+            window.sidebar.emit("row-activated", package_row)
+            assert window.filtered.get_n_items() == 1
+            window.show_details(package_app)
+            assert window.manage_button.get_label() == "Show Management Instructions"
+            assert window.update_button.get_label() == "Update Instructions"
+            window.navigation.pop_to_tag("overview")
+        window._replace(examples())
         rows = []
         child = window.sidebar.get_first_child()
         while child:
@@ -331,6 +364,7 @@ def activate(app):
 
     def check_details():
         assert window.detail_app.name == "Boxes"
+        assert window.software_size_row.get_subtitle() == GLib.format_size(123456789)
         assert window.update_button.get_label() == "Check for Updates"
         assert window.manage_button.get_label() == "Uninstall"
         assert window.manage_button.has_css_class("destructive-action")
@@ -344,6 +378,18 @@ def activate(app):
         theme = Gtk.IconTheme.get_for_display(window.get_display())
         theme.emit("changed")
         assert group.icon_theme.get_subtitle() == theme.get_theme_name()
+        storage_callbacks = []
+        with patch.object(
+            window.service,
+            "measure_storage",
+            side_effect=lambda app, callback: storage_callbacks.append(callback),
+        ):
+            window.show_details(window.detail_app, replace=True)
+            window.show_details(window.detail_app, replace=True)
+        storage_callbacks[0](StorageUsage(999))
+        assert window.software_size_row.get_subtitle() == "Calculating…"
+        storage_callbacks[1](StorageUsage(0))
+        assert window.software_size_row.get_subtitle() == GLib.format_size(0)
         changed = list(window.records)
         changed[0] = replace(changed[0], version="2.0")
         window._complete(changed, [], [], {})
@@ -362,6 +408,16 @@ def activate(app):
         for button in (window.update_button, window.manage_button):
             button.get_parent().set_state_flags(Gtk.StateFlags.PRELIGHT, False)
             button.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+
+    def scroll_storage():
+        group = window.storage_group
+        scroll = group.get_ancestor(Gtk.ScrolledWindow)
+        bounds = group.compute_bounds(scroll)[1]
+        adjustment = scroll.get_vadjustment()
+        adjustment.set_value(adjustment.get_value() + bounds.get_y() - 16)
+
+    def capture_storage():
+        capture(window, "storage-light.png")
 
     def scroll_appearance():
         group = window.appearance_group
@@ -596,6 +652,9 @@ def activate(app):
             )
             page.refresh_button.emit("clicked")
             assert window.operation_active
+            assert window.cancel_button.get_sensitive()
+            window._progress("A backend phase cannot stop immediately", 0.1, False)
+            assert window.cancel_button.get_sensitive()
             window._progress("Checking synthetic updates", 0.2, True)
             window.cancel_button.emit("clicked")
             assert not window.operation_active and window.task_dialog is None
@@ -745,6 +804,66 @@ def activate(app):
         )
         assert elapsed < 100, "Inventory filtering exceeded the reference budget"
 
+    progress_window = {}
+
+    def start_progress_window():
+        assert window._begin_operation(None, "update")
+        window._show_task("Checking for Updates", deferred_cancel=True)
+        assert window.cancel_button.get_sensitive()
+        progress_window["sensitivity"] = []
+        window.cancel_button.connect(
+            "notify::sensitive",
+            lambda button, _: progress_window["sensitivity"].append(button.get_sensitive()),
+        )
+        for can_cancel in (False, True, False, True, False):
+            window._progress("Checking backend phases", 0.0, can_cancel)
+            assert window.cancel_button.get_sensitive()
+        assert progress_window["sensitivity"] == []
+        window._progress("Checking A (1 of 3)", 0.0, True)
+        progress_window["dialog"] = window.task_dialog
+        progress_window["bar"] = window.task_progress
+
+    def grow_progress_message():
+        dialog = window.task_dialog
+        progress_window["size"] = (dialog.get_width(), dialog.get_height())
+        window._progress(
+            "Checking an application with a very long name (2 of 3)\n"
+            + "Resolving configured software sources and package information " * 8,
+            1 / 3,
+            True,
+        )
+
+    def shrink_progress_message():
+        dialog = window.task_dialog
+        assert dialog is progress_window["dialog"]
+        assert (dialog.get_width(), dialog.get_height()) == progress_window["size"]
+        assert window.task_progress is progress_window["bar"]
+        assert window.task_progress.get_fraction() == 1 / 3
+        assert "Resolving configured software sources" in window.task_detail_label.get_label()
+        assert window.task_label.get_tooltip_text().startswith(window.task_label.get_label())
+        capture(dialog, "update-check-progress.png")
+        window._progress("Checked 3 of 3 applications", 1.0, False)
+
+    def finish_progress_window():
+        dialog = window.task_dialog
+        assert dialog is progress_window["dialog"]
+        assert (dialog.get_width(), dialog.get_height()) == progress_window["size"]
+        assert window.task_progress.get_fraction() == 1.0
+        assert window.cancel_button.get_sensitive()
+        assert progress_window["sensitivity"] == []
+        requests = []
+        original_cancel = window.service.cancel
+        window.service.cancel = lambda: requests.append(True)
+        window.cancel_button.emit("clicked")
+        for can_cancel in (True, False, True):
+            window._progress("Waiting for cancellation", 1.0, can_cancel)
+        assert not window.cancel_button.get_sensitive()
+        assert progress_window["sensitivity"] == [False]
+        window.cancel_button.emit("clicked")
+        assert requests == [True]
+        window.service.cancel = original_cancel
+        window._end_operation()
+
     def finish():
         print(f"GTK smoke completed in {time.monotonic() - started:.2f}s; screenshots: {output}")
         for w in list(Gtk.Window.get_toplevels()):
@@ -769,6 +888,8 @@ def activate(app):
             hover_details_light,
             hover_details_dark,
             finish_details_hover,
+            scroll_storage,
+            capture_storage,
             scroll_appearance,
             capture_appearance,
             check_details,
@@ -785,6 +906,10 @@ def activate(app):
             start_icon_change,
             verify_icon_change,
             verify_icon_reset,
+            start_progress_window,
+            grow_progress_message,
+            shrink_progress_message,
+            finish_progress_window,
             check_performance,
             finish,
         ]
@@ -809,7 +934,7 @@ def activate(app):
 
 application.connect("activate", activate)
 GLib.timeout_add_seconds(
-    25, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
+    30, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
 )
 application.run([sys.argv[0]])
 raise SystemExit(bool(failed))

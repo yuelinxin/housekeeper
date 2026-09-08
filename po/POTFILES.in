@@ -6,6 +6,8 @@ src/housekeeper/ui/updates.py
 src/housekeeper/ui/window.py
 src/housekeeper/updates.py
 src/housekeeper/providers/rpm.py
+src/housekeeper/providers/deb.py
+src/housekeeper/providers/packages.py
 src/housekeeper/providers/flatpak.py
 data/window.ui
 data/io.github.yuelinxin.housekeeper.desktop

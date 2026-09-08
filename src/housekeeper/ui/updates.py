@@ -185,7 +185,7 @@ class UpdatesPage(Adw.NavigationPage):
             return
         self.visited = True
         self._selection_changed()
-        window._show_task(_("Checking for Updates"))
+        window._show_task(_("Checking for Updates"), deferred_cancel=True)
         window.service.check_updates(
             window._guard(window._progress), window._guard(self.checked), window._guard(self.failed)
         )

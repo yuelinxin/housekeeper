@@ -10,8 +10,10 @@ uses XDG and freedesktop conventions rather than GNOME Shell internals.
 | --- | --- | --- |
 | Fedora Workstation 43 / 44 | Supported | Implemented; tested backends currently require manual guidance |
 | Other ordinary RPM distributions | RPM metadata when bindings are available | Manual in v0.1 |
-| Ubuntu / Debian | Desktop entries and installed optional integrations | DEB provider planned |
-| Arch / openSUSE | Desktop entries and installed optional integrations | Broader native adapters planned |
+| Ubuntu / Debian | DEB ownership, versions and software sizes through local dpkg-query; optional integrations | External system package manager |
+| Arch / Manjaro | Pacman ownership, versions and software sizes; optional integrations | External system package manager |
+| Alpine | APK ownership, versions and software sizes; optional integrations | External system package manager |
+| openSUSE | RPM metadata when bindings are available; optional integrations | External system package manager |
 | OSTree / bootc / NixOS | Available desktop entries and optional integrations | Host changes remain manual |
 | Missing optional provider | Other providers remain usable | Affected operation is unavailable |
 
@@ -31,6 +33,19 @@ of a successful real RPM removal or graphical Polkit authentication.
 
 ## Source-specific details
 
+- Pacman reads installed ALPM `desc`/`files` records, including AUR builds installed
+  through Pacman. `pacman-conf` supplies custom database and installation roots.
+- APK reads `/lib/apk/db/installed`; downloaded repository indexes and package archive
+  sizes are not used. Broken package records are excluded.
+- Snap reads active app revisions through snapd's local `/v2/snaps` endpoint. The
+  daemon's desktop-file paths establish ownership. The reported snap size excludes
+  data, base snaps, shared runtimes, and inactive revisions. Exported desktop entries
+  are discovered even when the Snap desktop directory is missing from XDG_DATA_DIRS.
+- Nix, Guix, Portage, XBPS and eopkg do not yet have software-size adapters. Their
+  native category labels do not imply package attribution or size support.
+- DEB identifies installed owners of desktop files, including verified icon overrides.
+  Software size uses the package's declared installed size; unowned launchers and
+  ambiguous or diverted files remain unknown. No APT metadata refresh is needed.
 - Flatpak enumerates user, system, and named system installations. Different branches
   and installation scopes remain distinct. Runtime refs are not listed as apps.
 - Chrome and Chromium web apps retain the profile and explicit data directory from

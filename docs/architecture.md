@@ -16,6 +16,12 @@ targets within the same installation. RPM package versions are metadata, not sta
 UI identity. Flatpak identity includes the installation path and full ref. Web-app
 identity includes the browser, profile, explicit data root, and app ID.
 
+DEB attribution batches local `dpkg-query` package metadata and desktop-file ownership
+queries. Only an unambiguous installed owner of the exact desktop path (or a verified
+icon override's original path) is used. Unowned launchers, diverted files, and browser
+or Steam guest apps are not attributed to host packages. Name and architecture form
+stable package identity; updates and removal remain in the external system manager.
+
 The service publishes an initial desktop inventory and then enriched records. The
 UI shares a Gio.ListStore, filter, sorter, and selection between both virtualized
 views. Records are sorted by name. GTK mutations are dispatched on the main loop; blocking integrations
@@ -76,6 +82,28 @@ Settings are limited to window geometry, view mode, and hidden-entry visibility.
 Missing metadata is reported as unknown; package origin and executable locations
 are never inferred from display names. No network metadata refresh is initiated
 by the inventory scan.
+
+## Storage
+
+The details page measures software size on the serialized worker when opened. RPM
+reports the installed package's size, DEB uses the installed package's `Installed-Size`
+(KiB converted to bytes), Flatpak reports the matching installed ref's size, and
+AppImage reports its file length. Package versions and architectures or Flatpak
+commits must still match the inventory. Shared dependencies and runtimes are excluded.
+Missing metadata remains unknown. These are estimates, not reclaimable disk space.
+No user data directories are scanned. Late results cannot update a different details page.
+
+Pacman uses the installed ALPM database's [`%SIZE%`](https://man.archlinux.org/man/alpm-db-desc.5.en#%25SIZE%25)
+field in bytes and the `%FILES%` section to establish exact desktop ownership.
+`pacman-conf` resolves custom database and root directories. APK uses the installed
+database's `I:` size and `F:`/`R:` file ownership records. Both indexes are loaded once
+per inventory, include local builds, and keep missing sizes unknown. Snap reads only
+snapd's local `/v2/snaps` GET endpoint and uses active application revisions,
+`installed-size`, and the supplied `desktop-file` paths. Socket timeouts and bounded
+responses limit unavailable backends; one unavailable provider does not hide others.
+All three adapters verify the package identity, installation and version again when
+measuring size; Snap also verifies revision. They provide external update and removal
+guidance. Nix, Guix, Portage, XBPS and eopkg remain unsupported for attribution and size.
 
 ## Appearance and launcher icons
 
@@ -168,6 +196,17 @@ metadata refresh is shared within a check. Provider failures are collected separ
 from successful no-update results. Cancellation returns any partial check results to
 the caller, but the page preserves its previous list, selection, status, and check time
 instead of presenting that incomplete snapshot. A brief toast acknowledges cancellation.
+Checks use one determinate progress bar based on completed installation groups.
+Backend phase percentages and unknown estimates cannot reset it or switch it to
+pulse mode. Failed checks count as attempted groups; cancellation never reports
+full completion. The status area reserves separate single lines for the application
+and backend status, and ellipsizes longer messages
+with a full tooltip so source changes do not resize the progress window.
+During update checks, Cancel stays enabled independently of the current backend's
+ability to interrupt immediately. A click requests cooperative cancellation and
+disables the button once; a non-interruptible read can finish before cancellation
+is acknowledged. Update execution and removal still follow backend cancellation
+capabilities. Later progress callbacks cannot re-enable a requested cancellation.
 A locked
 cancellation controller follows provider changes without opening gaps between tasks.
 

@@ -101,6 +101,86 @@ def test_batch_cancel_before_start():
     assert worker.check(lambda *_: None).cancelled
 
 
+def test_check_uses_one_monotonic_progress_for_all_sources():
+    records = [app(), replace(app("rpm"), provider="rpm"), app("last")]
+    records.append(replace(records[0], key="alias"))
+    events = []
+
+    def check(record, inventory, progress, **kwargs):
+        for fraction in (None, 0.8, 1.0, 0.0, None, 0.2, 1.0):
+            progress("Checking a backend phase", fraction, fraction != 0.2)
+        return UpdateCheckResult(UpdateState.CURRENT)
+
+    result = UpdateBatch(lambda _: NS(prepare_update=check), records).check(
+        lambda *event: events.append(event)
+    )
+    assert not result.errors and not result.cancelled
+    fractions = [fraction for _, fraction, _ in events]
+    assert fractions == sorted(fractions)
+    assert set(fractions) == {0, 1 / 3, 2 / 3, 1}
+    assert fractions.count(1) == 1
+    phases = [
+        (message, fraction, cancel) for message, fraction, cancel in events if "backend" in message
+    ]
+    assert {fraction for _, fraction, _ in phases} == {0, 1 / 3, 2 / 3}
+    assert all("of 3)" in message for message, _, _ in phases)
+    assert any(not cancel for _, _, cancel in phases)
+
+
+def test_failed_checks_advance_overall_progress_and_empty_check_completes():
+    events = []
+
+    def factory(record):
+        if record.key == "a":
+            raise RuntimeError("Offline")
+        return NS(prepare_update=lambda *_: UpdateCheckResult(UpdateState.CURRENT))
+
+    result = UpdateBatch(factory, [app(), app("b")]).check(lambda *event: events.append(event))
+    assert result.errors == ("A: Offline",)
+    assert [fraction for _, fraction, _ in events] == [0.5, 0.5, 1]
+    events.clear()
+    UpdateBatch(factory, []).check(lambda *event: events.append(event))
+    assert len(events) == 1 and events[0][1:] == (1.0, False)
+
+
+def test_cancelled_check_never_reports_total_completion():
+    events = []
+    worker = None
+
+    def check(record, inventory, progress):
+        progress("Finishing backend phase", 1.0, True)
+        worker.request_cancel()
+        raise OperationCancelled("Cancelled")
+
+    worker = UpdateBatch(lambda _: NS(prepare_update=check, request_cancel=lambda: None), [app()])
+    assert worker.check(lambda *event: events.append(event)).cancelled
+    assert all(fraction == 0 for _, fraction, _ in events)
+
+
+def test_cancel_request_during_non_interruptible_phase_stops_next_check():
+    created, requests = [], []
+    worker = None
+
+    def factory(record):
+        created.append(record.key)
+
+        def check(_record, _inventory, progress):
+            progress("Finishing a non-interruptible phase", None, False)
+            # The backend finishes its current read even after receiving cancel.
+            return UpdateCheckResult(UpdateState.CURRENT)
+
+        return NS(prepare_update=check, request_cancel=lambda: requests.append(True))
+
+    worker = UpdateBatch(factory, [app(), app("b")])
+
+    def progress(_message, _fraction, can_cancel):
+        if not can_cancel:
+            worker.request_cancel()
+
+    assert worker.check(progress).cancelled
+    assert created == ["a"] and requests == [True]
+
+
 @pytest.mark.parametrize(
     "mutation", ["new_dependency", "new_target", "sources", "external_removal"]
 )

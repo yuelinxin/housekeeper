@@ -76,18 +76,30 @@ class UpdateBatch:
             groups.setdefault(installation_key(app), []).append(app)
         items, errors = [], []
         refreshed = False
+        total = len(groups)
+        if self.cancelled:
+            return UpdateReport((), (), True, unsupported)
+        if not total:
+            progress(_("No applications to check"), 1.0, False)
         for index, apps in enumerate(groups.values()):
             app = apps[0]
+            label = _("Checking %(name)s (%(index)d of %(total)d)") % {
+                "name": app.name,
+                "index": index + 1,
+                "total": total,
+            }
+
+            def checking_progress(message, _fraction, can_cancel, index=index, label=label):
+                # Backend percentages restart for metadata, resolution and previews.
+                # Count completed installations instead of presenting those phases as
+                # the progress of the entire inventory (or switching to pulse mode).
+                progress(f"{label}\n{message}" if message else label, index / total, can_cancel)
+
             try:
                 provider = self._activate(app)
-                progress(
-                    _("Checking %(name)s (%(index)d of %(total)d)")
-                    % {"name": app.name, "index": index + 1, "total": len(groups)},
-                    index / len(groups),
-                    True,
-                )
+                progress(label, index / total, True)
                 kwargs = {"refresh": not refreshed} if app.provider == "rpm" else {}
-                check = provider.prepare_update(app, self.inventory, progress, **kwargs)
+                check = provider.prepare_update(app, self.inventory, checking_progress, **kwargs)
                 if app.provider == "rpm":
                     refreshed = True
                 if check.state == UpdateState.AVAILABLE:
@@ -108,6 +120,12 @@ class UpdateBatch:
                 errors.append(f"{app.name}: {error}")
             if self.cancelled:
                 return UpdateReport(tuple(items), tuple(errors), True, unsupported)
+            progress(
+                _("Checked %(done)d of %(total)d applications")
+                % {"done": index + 1, "total": total},
+                (index + 1) / total,
+                index + 1 < total,
+            )
         return UpdateReport(tuple(items), tuple(errors), False, unsupported)
 
     @staticmethod

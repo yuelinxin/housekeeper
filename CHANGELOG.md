@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.6 — 2026-09-07
+
+- Show software size in app details for RPM, DEB, Pacman, APK, Flatpak, Snap and
+  AppImage installations. Keep unavailable sizes unknown; omit user-data scanning
+  and exclude shared dependencies and runtimes from estimates.
+- Identify DEB, Pacman, APK and Snap applications from local installed-package
+  metadata and exact desktop ownership. Include Pacman-registered AUR builds,
+  custom Pacman roots and Snap desktop exports. Keep update and removal actions
+  for these sources in their external package managers.
+- Use one overall update-check progress bar based on completed installations.
+  Backend phase percentages and unknown estimates no longer reset its progress.
+- Keep the progress window size stable with separate fixed-height application
+  and status lines, using tooltips for long messages.
+- Keep Cancel enabled throughout update checks and disable it once after a click.
+  Defer cancellation when a backend phase cannot stop immediately, and prevent
+  later progress callbacks from re-enabling the button.
+- Add storage, package-attribution, cancellation and GTK layout regressions, and
+  synchronize application, build, package and AppStream metadata for v0.1.6.
+
 ## 0.1.5 — 2026-09-07
 
 - Name the second sidebar category from the distribution's native package family

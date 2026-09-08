@@ -24,12 +24,19 @@ def collect(partial=None, roots=None):
     records = [classify(entry) for entry in entries]
     if partial:
         partial(merge_records(records))
+    from housekeeper.providers.deb import DebIndex
     from housekeeper.providers.flatpak import FlatpakIndex, FlatpakProvider
+    from housekeeper.providers.packages import PackageIndex
     from housekeeper.providers.rpm import RpmIndex, RpmProvider
 
     flatpaks, rpms = FlatpakIndex(), RpmIndex()
+    debs = DebIndex()
+    packages = PackageIndex()
     if roots is None:
         extra_roots = [p for p in flatpaks.roots if p not in application_roots()]
+        snap_desktops = Path("/var/lib/snapd/desktop/applications")
+        if snap_desktops.is_dir() and snap_desktops not in application_roots():
+            extra_roots.append(snap_desktops)
         extra_entries, extra_warnings = scan_entries(extra_roots)
         known_ids = {e.desktop_id for e in entries}
         records.extend(classify(e) for e in extra_entries if e.desktop_id not in known_ids)
@@ -43,11 +50,12 @@ def collect(partial=None, roots=None):
             if matched is not None:
                 output.append(matched)
                 continue
-        try:
-            rpms.enrich(record)
-        except Exception as error:
-            LOG.debug("RPM lookup failed", exc_info=True)
-            warnings.append(f"Could not identify a system package: {error}")
+        for index in (rpms, debs, packages):
+            try:
+                index.enrich(record)
+            except Exception as error:
+                LOG.debug("Native package lookup failed", exc_info=True)
+                warnings.append(f"Could not identify a system package: {error}")
         if record.source == Source.RPM and not rpm_capability.execute:
             record.action = Action.NONE
             record.metadata["management_reason"] = rpm_capability.reason
@@ -63,6 +71,7 @@ def collect(partial=None, roots=None):
             record.action = Action.INSTRUCTIONS
             record.metadata["management_reason"] = "The application's manager is unavailable."
         output.append(record)
+    warnings.extend(packages.warnings)
     output.extend(flatpaks.apps)
     output = merge_records(output)
     from housekeeper.providers.appimage import AppImageProvider
@@ -221,6 +230,29 @@ class InventoryService:
         self._submit(
             app, lambda _worker: save_icon(entry, image), completed, failed, worker=object()
         )
+
+    def measure_storage(self, app, completed):
+        from housekeeper.storage import StorageUsage, measure_storage
+
+        if self.closed:
+            return
+        try:
+            future = self.executor.submit(measure_storage, app)
+        except RuntimeError:
+            self.dispatch(completed, StorageUsage())
+            return
+
+        def done(result):
+            if self.closed:
+                return
+            try:
+                usage = result.result()
+            except Exception:
+                LOG.debug("Storage measurement failed", exc_info=True)
+                usage = StorageUsage()
+            self.dispatch(completed, usage)
+
+        future.add_done_callback(done)
 
     @staticmethod
     def _failure(error):

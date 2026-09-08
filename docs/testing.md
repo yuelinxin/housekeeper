@@ -2,6 +2,14 @@
 
 ## Local tests
 
+`test_packages.py` exercises installed Pacman and APK database fixtures, custom
+Pacman roots, missing sizes, changed versions, ambiguous desktop ownership, and
+provider failures. Snap tests cover active revisions, exclusion of bases and old
+revisions, and HTTP transport over a temporary Unix socket (no real snap daemon or
+applications are modified). GTK smoke checks DEB, Pacman, APK and Snap source rows
+and their details-page management guidance. These fixtures do not replace tests on
+actual Arch/Alpine desktops or a live snapd installation.
+
 `test_platforms.py` checks native package labels, `ID_LIKE` inheritance, ID priority
 and unknown/missing os-release fallback. GTK smoke checks the second sidebar row
 against the actual host, keeps unsupported native categories selected across refresh,

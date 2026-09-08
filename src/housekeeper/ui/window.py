@@ -30,6 +30,10 @@ from housekeeper.updates import authorization_notice, update_instructions
 SOURCES = {
     "all": (_("All Apps"), "view-app-grid-symbolic"),
     "rpm": (_("RPM"), "package-x-generic-symbolic"),
+    "deb": (_("DEB"), "package-x-generic-symbolic"),
+    "pacman": (_("Pacman"), "package-x-generic-symbolic"),
+    "apk": (_("APK"), "package-x-generic-symbolic"),
+    "snap": (_("Snap"), "application-x-addon-symbolic"),
     "flatpak": (_("Flatpak"), "application-x-addon-symbolic"),
     "web": (_("Web Apps"), "web-browser-symbolic"),
     "appimage": (_("AppImage"), "application-x-executable-symbolic"),
@@ -38,6 +42,10 @@ SOURCES = {
 }
 BADGES = {
     "rpm": "RPM",
+    "deb": "DEB",
+    "pacman": "Pacman",
+    "apk": "APK",
+    "snap": "Snap",
     "flatpak": "Flatpak",
     "web": _("Web App"),
     "appimage": "AppImage",
@@ -404,7 +412,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 if self.query
                 else _("Refresh, or enable hidden and auxiliary entries.")
             )
-            if self.source == self.native_source and self.native_source != "rpm":
+            if self.source == self.native_source and self.native_source not in {
+                "rpm",
+                "deb",
+                "pacman",
+                "apk",
+            }:
                 self.empty.set_title(_("Package Source Not Yet Supported"))
                 self.empty.set_description(
                     _(
@@ -654,6 +667,26 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self._property(installation, _("Origin"), app.origin)
         self._property(installation, _("Browser Profile"), app.metadata.get("profile", ""))
         body.append(installation)
+        storage = Adw.PreferencesGroup(
+            title=_("Storage"),
+            description=_(
+                "Software size covers the installed package or app file, excluding shared "
+                "dependencies and runtimes."
+            ),
+        )
+        software_size = Adw.ActionRow(title=_("Software Size"), subtitle=_("Calculating…"))
+        storage.add(software_size)
+        self.storage_group = storage
+        self.software_size_row = software_size
+        body.append(storage)
+
+        def storage_ready(usage):
+            if self.closed or self.detail_app is not app or self.storage_group is not storage:
+                return
+            software_size.set_subtitle(
+                GLib.format_size(usage.software) if usage.software is not None else _("Unknown")
+            )
+
         files = Adw.PreferencesGroup(title=_("File Locations"))
         self._property(files, _("Installation Location"), app.location, True)
         self._property(
@@ -694,6 +727,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.navigation.push(page)
         self.detail_app = app
         page.connect("hidden", self._detail_hidden, app.key)
+        self.service.measure_storage(app, storage_ready)
 
     def _detail_hidden(self, _page, key):
         if (
@@ -875,7 +909,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             return
         if not self._begin_operation(app, "update"):
             return
-        self._show_task(_("Checking Updates for %s") % app.name)
+        self._show_task(_("Checking Updates for %s") % app.name, deferred_cancel=True)
         self.service.prepare_update(
             app,
             self._guard(self._progress),
@@ -995,7 +1029,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         execute = self.service.execute_update if update else self.service.execute
         execute(app, plan, self._guard(self._progress), self._guard(self._operation_finished))
 
-    def _show_task(self, title):
+    def _show_task(self, title, *, deferred_cancel=False):
+        self.task_deferred_cancel = deferred_cancel
         self.task_dialog = Adw.Window(
             transient_for=self,
             modal=True,
@@ -1015,11 +1050,27 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             margin_top=24,
             margin_bottom=24,
         )
-        self.task_label = Gtk.Label(label=_("Waiting for the application manager"), wrap=True)
-        box.append(self.task_label)
+        self.task_label = Gtk.Label(
+            label=_("Waiting for the application manager"),
+            single_line_mode=True,
+            ellipsize=Pango.EllipsizeMode.END,
+            width_chars=36,
+            max_width_chars=36,
+        )
+        self.task_detail_label = Gtk.Label(
+            single_line_mode=True,
+            ellipsize=Pango.EllipsizeMode.END,
+            width_chars=36,
+            max_width_chars=36,
+        )
+        self.task_detail_label.add_css_class("dim-label")
+        status = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        status.append(self.task_label)
+        status.append(self.task_detail_label)
+        box.append(status)
         self.task_progress = Gtk.ProgressBar()
         box.append(self.task_progress)
-        self.cancel_button = Gtk.Button(label=_("Cancel"), sensitive=False)
+        self.cancel_button = Gtk.Button(label=_("Cancel"), sensitive=deferred_cancel)
         self.cancel_button.connect("clicked", self._cancel_operation)
         box.append(self.cancel_button)
         toolbar.set_content(box)
@@ -1041,12 +1092,24 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _progress(self, message, fraction, can_cancel):
         if not self.task_dialog:
             return
-        self.task_label.set_label(message)
+        summary, _, detail = message.partition("\n")
+        detail = " ".join(detail.splitlines())
+        if self.task_label.get_label() != summary:
+            self.task_label.set_label(summary)
+        if self.task_detail_label.get_label() != detail:
+            self.task_detail_label.set_label(detail)
+        if self.task_label.get_tooltip_text() != message:
+            self.task_label.set_tooltip_text(message)
+            self.task_detail_label.set_tooltip_text(message)
         if fraction is None:
             self.task_progress.pulse()
         else:
             self.task_progress.set_fraction(fraction)
-        self.cancel_button.set_sensitive(can_cancel and not self.cancel_requested)
+        # Checks accept a cancellation request even if the current backend phase
+        # must finish first. Phase-level capability changes must not flash the button.
+        sensitive = (self.task_deferred_cancel or can_cancel) and not self.cancel_requested
+        if self.cancel_button.get_sensitive() != sensitive:
+            self.cancel_button.set_sensitive(sensitive)
 
     def _operation_finished(self, result):
         update = self.operation_kind == "update"

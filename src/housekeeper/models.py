@@ -8,6 +8,10 @@ from typing import Protocol
 
 class Source(str, Enum):
     RPM = "rpm"
+    DEB = "deb"
+    PACMAN = "pacman"
+    APK = "apk"
+    SNAP = "snap"
     FLATPAK = "flatpak"
     WEB = "web"
     APPIMAGE = "appimage"

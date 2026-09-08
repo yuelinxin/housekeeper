@@ -10,7 +10,8 @@
     <p>Housekeeper brings desktop applications from different installation sources into one native, searchable inventory.</p>
     <ul>
       <li>Browse applications in a list or an icon grid.</li>
-      <li>Inspect installation sources, package identities, and file locations.</li>
+      <li>Inspect installation sources, package identities, file locations, and software sizes.</li>
+      <li>Identify installed DEB, Pacman, APK, and Snap packages with external management guidance.</li>
       <li>View app icon themes and customize or restore launcher icons.</li>
       <li>See native package source labels matched to the distribution, with guidance for unsupported providers.</li>
       <li>Review removal plans for RPM packages, Flatpak applications, and independent AppImages.</li>
@@ -27,6 +28,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.6" date="2026-09-07" type="development">
+      <description>
+        <p>See installed software sizes across more package formats and check updates without flickering controls.</p>
+        <ul>
+          <li>Show software sizes for RPM, DEB, Pacman, APK, Flatpak, Snap, and AppImage installations.</li>
+          <li>Identify DEB, Pacman, APK, and Snap applications from installed metadata, including Pacman-registered AUR builds.</li>
+          <li>Use one overall update-check progress bar and keep the progress window size stable.</li>
+          <li>Keep Cancel enabled during checks and disable it once after a cancellation request.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.5" date="2026-09-07" type="development">
       <description>
         <p>Customize application icons and find clearer source and appearance information.</p>

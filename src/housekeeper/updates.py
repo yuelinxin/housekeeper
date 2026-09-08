@@ -28,10 +28,10 @@ def assign_update_action(app, capabilities):
 
 
 def update_instructions(app):
-    if app.source == Source.RPM:
+    if app.source in {Source.RPM, Source.DEB, Source.PACMAN, Source.APK, Source.SNAP}:
         text = _("Review updates for this package using your system package manager.")
         package = app.metadata.get("name")
-        if package:
+        if package and app.source == Source.RPM:
             arch = app.metadata.get("arch")
             text += "\n\nsudo dnf upgrade -- " + shlex.quote(package + ("." + arch if arch else ""))
     elif app.source == Source.FLATPAK:

@@ -4,8 +4,8 @@ A lightweight GTK 4 application for understanding where your desktop application
 come from, where their files live, and how to update or remove them correctly.
 
 Housekeeper combines desktop entries with supported installation providers. It
-recognizes RPM packages, Flatpak applications, independent AppImages, Chrome and
-Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
+recognizes RPM, DEB, Pacman and APK packages, Flatpak and Snap applications,
+independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
 
 ![Housekeeper in list view](docs/screenshots/list-light.png)
 
@@ -14,6 +14,8 @@ Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
 - Search applications by name, package identity, or file location.
 - Switch between a list and an icon grid, with source filters and adaptive navigation.
 - Inspect versions, installation scopes, desktop entries, and executable paths.
+- See software size for RPM, DEB, Pacman, APK, Flatpak, Snap, and AppImage installations. Shared
+  dependencies and runtimes are excluded; unavailable sizes are shown as unknown.
 - See the icon theme or custom image used for an app, and any explicit launcher
   GTK theme override. Change or restore each launcher's icon.
 - Include hidden and auxiliary entries, with explanations of their visibility.
@@ -30,6 +32,8 @@ corresponding names for other recognized families. It uses `ID` and `ID_LIKE`
 from `os-release`, falling back to **System Packages**. A category whose inventory
 provider is not implemented explains this when opened; its label does not enable
 package detection, updates or removal. Unverified applications remain in **Other**.
+Pacman includes locally installed AUR builds registered in its package database.
+Pacman, APK, DEB, and Snap updates and removal use external management instructions.
 The separate **System** and **User** labels describe installation scope; Flatpak
 applications can use either scope.
 
@@ -37,29 +41,6 @@ Housekeeper does not install new applications, perform system release upgrades,
 clean application data, or list every command-line package. It never scans the
 entire disk looking for executables. Application updates can install or upgrade
 the dependencies listed in their confirmation preview.
-
-## Appearance and application icons
-
-The **Appearance** group at the bottom of app details shows the icon theme used
-for lookup, or **Custom Icon** for a replacement image. Explicit launcher GTK theme
-overrides appear only when present. The icon file path is in **Technical Details**.
-Use the pencil beside **Launcher Icon** to select an image, or the undo button to restore the original.
-Images are saved under the user's data directory, and launcher changes affect
-only that user. Apps with multiple launchers have a separate control for each.
-GNOME may keep the old icon in its app grid even after the launcher is saved.
-If that happens, save your work, log out and log back in; reopening the app alone
-may not refresh the grid. This reminder appears in Appearance and is available
-from **GNOME Tip** after changing or restoring an icon.
-
-![Application appearance and launcher icon controls](docs/screenshots/appearance-light.png)
-
-## Screenshots
-
-![Applications in grid view](docs/screenshots/grid-light.png)
-
-![Application details with update and uninstall actions](docs/screenshots/details-light.png)
-
-![Updates with per-app selection and Update All](docs/screenshots/updates-light.png)
 
 ## Requirements
 
@@ -106,7 +87,7 @@ saving preferences, launch it with `GSETTINGS_BACKEND=memory`.
 To install a downloaded release package:
 
 ```sh
-sudo dnf install ./housekeeper-0.1.5-1.fc44.noarch.rpm
+sudo dnf install ./housekeeper-0.1.6-1.fc44.noarch.rpm
 ```
 
 Install the build matching your Fedora release. GitHub release packages do not
