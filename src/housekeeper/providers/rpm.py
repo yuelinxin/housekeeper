@@ -88,8 +88,11 @@ class RpmIndex:
         if app.source != Source.OTHER or not self.available:
             return
         entry = app.entries[0]
+        from housekeeper.appearance import verified_icon_source
+
+        entry_path = verified_icon_source(entry.path)
         argv = unwrap_env(entry.argv)
-        entry_owners = self.owners(entry.path)
+        entry_owners = self.owners(entry_path)
         if not entry_owners:
             binary = Path(entry.executable).name
             hosts = {
@@ -118,7 +121,7 @@ class RpmIndex:
             # Without package-owned desktop metadata, arguments may identify a guest app.
             if any(arg not in {"%u", "%U", "%f", "%F", "%i", "%c", "%k"} for arg in argv[1:]):
                 return
-        paths = [entry.path]
+        paths = [entry_path]
         if entry.executable:
             paths.extend([Path(entry.executable), Path(entry.resolved_executable)])
         owners = {tuple(sorted(package.items())) for path in paths for package in self.owners(path)}

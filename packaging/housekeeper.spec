@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.4
+Version:        0.1.5
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -31,6 +31,8 @@ Housekeeper provides a searchable GTK application inventory with installation
 sources, file locations, and source-appropriate removal or management actions.
 It supports RPM and Flatpak update previews and selected or all-app updates,
 plus management of AppImages, browser web apps, and Steam shortcuts.
+Application details include icon themes, custom launcher icons and restoration.
+Native source labels follow the distribution; unsupported providers remain manual.
 
 %prep
 %autosetup
@@ -59,6 +61,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Mon Sep 07 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.5-1
+- Add custom launcher icons, restoration and GNOME refresh guidance.
+- Show app appearance and adapt native source labels to the distribution.
+- Move inventory spacing inside scrolling content and refresh screenshots.
+
 * Mon Sep 07 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.4-1
 - Cache update checks with a 24-hour TTL and retain results after cancellation.
 - Move update actions to a compact adaptive footer and simplify page text.

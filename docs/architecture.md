@@ -77,6 +77,32 @@ Missing metadata is reported as unknown; package origin and executable locations
 are never inferred from display names. No network metadata refresh is initiated
 by the inventory scan.
 
+## Appearance and launcher icons
+
+Appearance sits last on the details page and watches GTK icon theme changes only
+while the page is mapped. It shows the theme used for icon lookup, or identifies
+custom icons and application image files. Global GTK and cursor settings are omitted.
+Only direct
+`env GTK_THEME=...` launcher assignments are reported as explicit overrides.
+The displayed icon path uses the same GTK lookup and fallback as the inventory
+and is placed inside Technical Details, including for apps without desktop entries.
+
+Icon edits run on the serialized worker. Images under 10 MB are decoded and saved
+as PNGs of at most 512 pixels per side under `$XDG_DATA_HOME/housekeeper/icons`.
+Content-addressed image files are retained for reuse. Launchers follow the
+[desktop entry specification](https://specifications.freedesktop.org/desktop-entry/latest-single/):
+system entries receive a per-user override with the same desktop ID; existing
+user entries keep their path. Atomic replacement preserves translations, desktop
+actions and other fields. Symlinked user launchers and conflicting overrides are
+rejected. Each launcher of a merged record is edited separately.
+
+Private launcher keys retain the original icon and source path. Reset removes an
+unchanged generated override to reveal the current source, or restores only its
+icon if other fields were edited. Source attribution compares every non-icon key
+against the referenced original before RPM or Flatpak can use its path; a source
+marker alone is never ownership evidence. Changed source commands or other fields
+can make attribution unavailable until the launcher override is reconciled.
+
 ## Update boundaries
 
 Only an explicit check refreshes network metadata. PackageKit checks first refresh

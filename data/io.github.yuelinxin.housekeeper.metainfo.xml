@@ -11,6 +11,8 @@
     <ul>
       <li>Browse applications in a list or an icon grid.</li>
       <li>Inspect installation sources, package identities, and file locations.</li>
+      <li>View app icon themes and customize or restore launcher icons.</li>
+      <li>See native package source labels matched to the distribution, with guidance for unsupported providers.</li>
       <li>Review removal plans for RPM packages, Flatpak applications, and independent AppImages.</li>
       <li>Check for RPM and Flatpak updates, then confirm versions and dependency changes before updating.</li>
       <li>Select applications in Updates or update all available applications together.</li>
@@ -25,6 +27,18 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.5" date="2026-09-07" type="development">
+      <description>
+        <p>Customize application icons and find clearer source and appearance information.</p>
+        <ul>
+          <li>Choose persistent launcher icons, restore originals, and see GNOME app-grid refresh guidance.</li>
+          <li>Show app icon themes and launcher theme overrides in Appearance, with icon paths in Technical Details.</li>
+          <li>Adapt native source labels to the distribution, including DEB on Ubuntu and RPM on Fedora.</li>
+          <li>Keep list and grid content spacing while extending scrollbars and overshoot effects to the page edges.</li>
+          <li>Refresh screenshots and preserve verified package attribution for icon-only launcher overrides.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.4" date="2026-09-07" type="development">
       <description>
         <p>Reuse update results and enjoy a simpler, more consistent interface.</p>

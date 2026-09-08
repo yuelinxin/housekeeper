@@ -27,9 +27,13 @@
 .inventory-list > row:selected:active {
   background: alpha(@accent_bg_color, 0.35);
 }
-.inventory-list { background: transparent; }
+/* Keep content inset while scrollbars and overshoot effects reach the page edges. */
+.inventory-list,
+.inventory-grid {
+  background: transparent;
+  padding: 0 12px 12px;
+}
 .inventory-list > row { border-radius: 8px; }
-.inventory-grid { background: transparent; }
 /* Paint every background on the tile, keeping only keyboard focus on its wrapper. */
 .inventory-grid > child {
   background: transparent;

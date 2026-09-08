@@ -27,6 +27,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gsk, Gtk
 
 from housekeeper import APP_ID
 from housekeeper.batch_updates import UpdateItem, UpdateReport
+from housekeeper.discovery import scan_entries
+from housekeeper.identity import classify
 from housekeeper.models import (
     Action,
     AppRecord,
@@ -41,6 +43,7 @@ from housekeeper.models import (
     UpdatePlan,
     UpdateState,
 )
+from housekeeper.platforms import native_package_source
 from housekeeper.services import InventoryService
 
 Gio.resources_register(Gio.Resource.load(str(BUILD / "data/housekeeper.gresource")))
@@ -83,6 +86,7 @@ def examples():
                     "org.example." + name + ".desktop",
                     Path("/usr/share/applications") / (name.lower() + ".desktop"),
                     name,
+                    icon=icon,
                     executable="/usr/bin/" + name.lower(),
                 )
             ],
@@ -139,6 +143,84 @@ def activate(app):
     window.toast = lambda _text: None
     window.present()
     steps = []
+    icon_fixture = {}
+
+    def start_icon_change():
+        directory = tempfile.TemporaryDirectory(prefix="housekeeper-smoke-icons-")
+        root = Path(directory.name)
+        launcher_root = root / "system/applications"
+        launcher_root.mkdir(parents=True)
+        source = launcher_root / "example.desktop"
+        source.write_text(
+            "[Desktop Entry]\nType=Application\nName=Icon Fixture\nExec=/usr/bin/true\nIcon=folder\n"
+        )
+        image = root / "image.svg"
+        image.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>'
+        )
+        environment = patch.dict(os.environ, {"XDG_DATA_HOME": str(root / "data")})
+        environment.start()
+        icon_fixture.update(
+            directory=directory, environment=environment, refresh=window.refresh, root=root
+        )
+
+        def refresh_fixture():
+            entries, warnings = scan_entries([root / "data/applications", launcher_root])
+            window._complete([classify(entry) for entry in entries], warnings, [], {})
+
+        window.refresh = refresh_fixture
+        window.section = "apps"
+        window.detail_app = None
+        refresh_fixture()
+        app = window.records[0]
+        window.show_details(app, replace=True)
+
+        class Chooser:
+            def __init__(self, **_kwargs):
+                pass
+
+            def open(self, _parent, _cancel, callback):
+                callback(self, None)
+
+            def open_finish(self, _result):
+                return Gio.File.new_for_path(str(image))
+
+        with patch("housekeeper.ui.window.Gtk.FileDialog", Chooser):
+            window.appearance_group.buttons[0][0].emit("clicked")
+        assert window.operation_active
+        assert not window.appearance_group.buttons[0][0].get_sensitive()
+        assert not window.manage_button.get_sensitive()
+
+    def verify_icon_change():
+        assert not window.operation_active and not window.service.busy
+        group = window.appearance_group
+        assert group.buttons[1][0].get_sensitive()
+        icon = Path(window.detail_app.icon)
+        assert icon.is_file() and icon.suffix == ".png"
+        assert group.icon_file.get_subtitle() == str(icon)
+        assert group.icon_theme.get_subtitle() == "Custom Icon"
+        assert group.icon_file.get_ancestor(Adw.ExpanderRow).get_title() == "Technical Details"
+        # The selection callback may arrive after the selected launcher disappears.
+        stale = window.detail_app
+        window.records = []
+        window.change_icon(stale, stale.entries[0], str(icon))
+        assert not window.operation_active
+        window.records = [stale]
+        group.buttons[1][0].emit("clicked")
+        assert window.operation_active
+
+    def verify_icon_reset():
+        assert not window.operation_active and not window.service.busy
+        assert window.detail_app.icon == "folder"
+        assert window.appearance_group.icon_theme.get_title() == "Icon Theme"
+        assert not window.appearance_group.buttons[1][0].get_sensitive()
+        assert not (icon_fixture["root"] / "data/applications/example.desktop").exists()
+        window.refresh = icon_fixture["refresh"]
+        icon_fixture["environment"].stop()
+        icon_fixture["directory"].cleanup()
+        window.detail_app = None
+        window.navigation.pop_to_tag("overview")
+        window._complete(examples(), [], [], {})
 
     def check_list():
         assert window.filtered.get_n_items() == 10, (
@@ -147,7 +229,30 @@ def activate(app):
         assert window.views.get_visible_child_name() == "list"
         capture(window, "list-light.png")
         all_row = window.sidebar.get_row_at_index(0)
-        flatpak_row = window.sidebar.get_row_at_index(2)
+        native_key, native_title = native_package_source()
+        native_row = window.sidebar.get_row_at_index(1)
+        assert native_row.source == native_key
+        assert (
+            native_row.get_child().get_first_child().get_next_sibling().get_text() == native_title
+        )
+        window.sidebar.emit("row-activated", native_row)
+        assert window.overview_page.get_title() == native_title
+        if native_key != "rpm":
+            assert window.filtered.get_n_items() == 0
+            assert window.empty.get_title() == "Package Source Not Yet Supported"
+            window._replace(examples())
+            assert window.source == native_key, "Refresh left the native package tab"
+        rows = []
+        child = window.sidebar.get_first_child()
+        while child:
+            rows.append(child)
+            child = child.get_next_sibling()
+        # RPM fixtures must keep their actual source even when testing on Ubuntu.
+        rpm_row = next(row for row in rows if row.source == "rpm")
+        assert rpm_row.get_child().get_first_child().get_next_sibling().get_text() == "RPM"
+        window.sidebar.emit("row-activated", rpm_row)
+        assert window.filtered.get_n_items() == 5
+        flatpak_row = next(row for row in rows if row.source == "flatpak")
         window.sidebar.select_row(flatpak_row)
         window.sidebar.emit("row-activated", flatpak_row)
         assert window.source == "flatpak"
@@ -231,7 +336,14 @@ def activate(app):
         assert window.manage_button.has_css_class("destructive-action")
         assert not window.update_button.has_css_class("destructive-action")
         assert window.update_button.get_allocation().height > 0
+        assert window.appearance_group.buttons[0][0].get_sensitive()
+        assert not window.appearance_group.buttons[1][0].get_sensitive()
         capture(window, "details-light.png")
+        group = window.appearance_group
+        assert group.get_parent().get_last_child() is group
+        theme = Gtk.IconTheme.get_for_display(window.get_display())
+        theme.emit("changed")
+        assert group.icon_theme.get_subtitle() == theme.get_theme_name()
         changed = list(window.records)
         changed[0] = replace(changed[0], version="2.0")
         window._complete(changed, [], [], {})
@@ -240,6 +352,7 @@ def activate(app):
         assert window.detail_notice.get_revealed()
         assert not window.manage_button.get_sensitive()
         assert not window.update_button.get_sensitive()
+        assert not window.appearance_group.buttons[0][0].get_sensitive()
         window._complete(examples(), [], [], {})
         window.navigation.pop_to_tag("overview")
         window.view_buttons["list"].set_active(True)
@@ -249,6 +362,18 @@ def activate(app):
         for button in (window.update_button, window.manage_button):
             button.get_parent().set_state_flags(Gtk.StateFlags.PRELIGHT, False)
             button.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
+
+    def scroll_appearance():
+        group = window.appearance_group
+        scroll = group.get_ancestor(Gtk.ScrolledWindow)
+        bounds = group.compute_bounds(scroll)[1]
+        adjustment = scroll.get_vadjustment()
+        adjustment.set_value(adjustment.get_value() + bounds.get_y() - 16)
+
+    def capture_appearance():
+        group = window.appearance_group
+        capture(window, "appearance-light.png")
+        group.get_ancestor(Gtk.ScrolledWindow).get_vadjustment().set_value(0)
 
     def hover_details_dark():
         capture(window, "details-hover-light.png")
@@ -644,6 +769,8 @@ def activate(app):
             hover_details_light,
             hover_details_dark,
             finish_details_hover,
+            scroll_appearance,
+            capture_appearance,
             check_details,
             check_dark,
             check_narrow,
@@ -655,6 +782,9 @@ def activate(app):
             check_updates_narrow,
             check_updates_wide,
             check_updates_batch,
+            start_icon_change,
+            verify_icon_change,
+            verify_icon_reset,
             check_performance,
             finish,
         ]

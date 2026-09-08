@@ -2,6 +2,19 @@
 
 ## Local tests
 
+`test_platforms.py` checks native package labels, `ID_LIKE` inheritance, ID priority
+and unknown/missing os-release fallback. GTK smoke checks the second sidebar row
+against the actual host, keeps unsupported native categories selected across refresh,
+and ensures RPM fixtures retain their source when run on Ubuntu.
+
+`test_appearance.py` covers durable icon images, per-user desktop precedence,
+restoring originals, preserving translations/actions/comments, conflicting and
+symlinked launchers, and verified RPM/Flatpak attribution. GTK smoke additionally
+exercises icon theme notifications, custom icon labels, the Technical Details path,
+Appearance's position at the bottom, and the real serialized icon save/refresh/reset
+flow using temporary launchers and a simulated file chooser. `appearance-light.png`
+shows the new controls. No personal launcher is edited by these tests.
+
 Unit tests exercise ownership, XDG overrides, invalid and hidden launchers, browser
 profile identity, conservative removal plans, changed targets, and partial failures.
 Run them with the system Python so GObject introspection modules are available.

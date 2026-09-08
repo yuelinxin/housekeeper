@@ -18,6 +18,10 @@ uses XDG and freedesktop conventions rather than GNOME Shell internals.
 This table describes intended behavior; the independently recorded checks in
 [validation](validation.md) distinguish tested environments from future targets.
 An RPM file alone does not make a distribution supported for native removal.
+The sidebar's second category is named for the host's native package family,
+even when that provider is not yet implemented. Unsupported categories explain
+the limitation and do not relabel unknown or RPM-owned applications as DEB,
+Pacman, or another native format. Only verified inventory populates source filters.
 
 The tested Fedora 43 PackageKit/DNF backend rejects `allow_deps=false`. The tested
 Fedora 44 PackageKit/DNF5 backend reports success with an empty removal preview for

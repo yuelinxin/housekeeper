@@ -14,6 +14,8 @@ Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
 - Search applications by name, package identity, or file location.
 - Switch between a list and an icon grid, with source filters and adaptive navigation.
 - Inspect versions, installation scopes, desktop entries, and executable paths.
+- See the icon theme or custom image used for an app, and any explicit launcher
+  GTK theme override. Change or restore each launcher's icon.
 - Include hidden and auxiliary entries, with explanations of their visibility.
 - Preview RPM and Flatpak removal, preserving personal application data.
 - Check for RPM and Flatpak updates beside the uninstall action, then review versions
@@ -22,6 +24,12 @@ Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
 - Open the appropriate browser or Steam manager for externally managed applications.
 
 Sidebar categories such as **RPM** and **Flatpak** identify installation sources.
+The second category follows the host's native package family: **RPM** on Fedora
+and openSUSE, **DEB** on Ubuntu/Debian, **Pacman** on Arch, **APK** on Alpine, and
+corresponding names for other recognized families. It uses `ID` and `ID_LIKE`
+from `os-release`, falling back to **System Packages**. A category whose inventory
+provider is not implemented explains this when opened; its label does not enable
+package detection, updates or removal. Unverified applications remain in **Other**.
 The separate **System** and **User** labels describe installation scope; Flatpak
 applications can use either scope.
 
@@ -30,42 +38,28 @@ clean application data, or list every command-line package. It never scans the
 entire disk looking for executables. Application updates can install or upgrade
 the dependencies listed in their confirmation preview.
 
-## Updating an application
+## Appearance and application icons
 
-Open an application's details and choose **Check for Updates** beside **Uninstall**.
-Checking refreshes the selected provider's software metadata only after your click.
-Review the current and target versions, installation scope, and dependency changes,
-then choose **Update**. Flatpak commits are shown when a release version is unavailable.
-When no update is available, Housekeeper reports that separately from a failed check.
+The **Appearance** group at the bottom of app details shows the icon theme used
+for lookup, or **Custom Icon** for a replacement image. Explicit launcher GTK theme
+overrides appear only when present. The icon file path is in **Technical Details**.
+Use the pencil beside **Launcher Icon** to select an image, or the undo button to restore the original.
+Images are saved under the user's data directory, and launcher changes affect
+only that user. Apps with multiple launchers have a separate control for each.
+GNOME may keep the old icon in its app grid even after the launcher is saved.
+If that happens, save your work, log out and log back in; reopening the app alone
+may not refresh the grid. This reminder appears in Appearance and is available
+from **GNOME Tip** after changing or restoring an icon.
 
-For multiple apps, open **Updates** at the bottom of the sidebar. Opening this page
-for the first time checks supported RPM and Flatpak installations if there is no
-saved result. Later visits, including after restarting Housekeeper, reuse the last
-successful check and display its time. Results are valid for 24 hours: entering
-Updates after that time automatically checks again. Tick the apps
-you want and choose **Update Selected**, or choose **Update All**. Review the app,
-package, and runtime changes together before confirming. Apps provided by the same
-installation are grouped to avoid duplicate updates. The refresh button checks again;
-startup, inventory refreshes, and returning focus do not trigger network checks.
-Use the refresh button, F5, or Ctrl+R to check before the 24-hour expiry.
-Inventory changes discard affected entries and show a refresh reminder; every update
-plan is still revalidated before installation.
-Cancelling a check keeps the previous list, selection, and check time, including
-when the previous result had no available updates.
+![Application appearance and launcher icon controls](docs/screenshots/appearance-light.png)
 
-Batches run in order and stop on failure, cancellation, or unexpected plan changes.
-Completed items remain visible in the result. Check again to review remaining updates.
-Apps requiring external updaters are counted separately and keep their update instructions.
+## Screenshots
 
-![Updates with per-app selection and Update All](docs/screenshots/updates-light.png)
+![Applications in grid view](docs/screenshots/grid-light.png)
 
 ![Application details with update and uninstall actions](docs/screenshots/details-light.png)
 
-Updates use PackageKit for RPM packages and libflatpak for Flatpak applications.
-Unsupported operations offer **Update Instructions**. AppImage files, browser apps,
-Steam games, and Housekeeper itself continue to use their original update managers.
-There is no background update check, application self-updater, or
-automatic restart. See [compatibility](docs/compatibility.md) for validated backends.
+![Updates with per-app selection and Update All](docs/screenshots/updates-light.png)
 
 ## Requirements
 
@@ -112,7 +106,7 @@ saving preferences, launch it with `GSETTINGS_BACKEND=memory`.
 To install a downloaded release package:
 
 ```sh
-sudo dnf install ./housekeeper-0.1.4-1.fc44.noarch.rpm
+sudo dnf install ./housekeeper-0.1.5-1.fc44.noarch.rpm
 ```
 
 Install the build matching your Fedora release. GitHub release packages do not

@@ -68,6 +68,31 @@ def test_check_blocks_other_work_and_releases_before_callback(service):
     assert value.active_provider is None
 
 
+@pytest.mark.parametrize("succeeds", [True, False])
+def test_icon_change_uses_serial_worker_without_a_package_provider(service, monkeypatch, succeeds):
+    value, _provider = service
+    calls, completed, errors = [], [], []
+
+    def save(entry, image):
+        calls.append((entry, image))
+        if not succeeds:
+            raise ManagementError("Invalid image")
+        return "saved.desktop"
+
+    def unexpected_provider(_app):
+        raise AssertionError("An icon change must not call a package manager")
+
+    monkeypatch.setattr("housekeeper.appearance.save_icon", save)
+    monkeypatch.setattr(value, "_provider", unexpected_provider)
+    value.change_icon(AppRecord("a", "Example"), "entry", "image", completed.append, errors.append)
+    assert value.busy and not value.scan(None, None, None)
+    value.executor.finish()
+    assert calls == [("entry", "image")]
+    assert not value.busy and value.active_provider is None
+    assert completed == (["saved.desktop"] if succeeds else [])
+    assert errors == ([] if succeeds else ["Invalid image"])
+
+
 @pytest.mark.parametrize("failure", ["provider", "submit", "worker"])
 def test_check_failure_never_leaves_service_busy(service, monkeypatch, failure):
     value, provider = service

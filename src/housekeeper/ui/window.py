@@ -20,7 +20,9 @@ from housekeeper.models import (
     UpdateAction,
     UpdateState,
 )
+from housekeeper.platforms import native_package_source
 from housekeeper.services import InventoryService
+from housekeeper.ui.appearance import ICON_REFRESH_NOTICE, AppearanceGroup
 from housekeeper.ui.icons import icon_image, set_icon
 from housekeeper.ui.updates import UpdatesPage
 from housekeeper.updates import authorization_notice, update_instructions
@@ -84,6 +86,16 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         super().__init__(application=application)
         self.settings = settings
         self.service = InventoryService(dispatch)
+        self.native_source, native_title = native_package_source()
+        self.sources = {
+            "all": SOURCES["all"],
+            self.native_source: (native_title, "package-x-generic-symbolic"),
+            **{
+                key: value
+                for key, value in SOURCES.items()
+                if key not in {"all", self.native_source}
+            },
+        }
         self.source = "all"
         self.query = ""
         self.records = []
@@ -176,9 +188,6 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             scroll = Gtk.ScrolledWindow(
                 hscrollbar_policy=Gtk.PolicyType.NEVER,
                 child=view,
-                margin_start=12,
-                margin_end=12,
-                margin_bottom=12,
             )
             self.scrolls[mode] = scroll
             self.views.add_named(scroll, mode)
@@ -311,12 +320,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self._update_count()
 
     def _sidebar(self):
-        counts = {key: 0 for key in SOURCES}
+        counts = {key: 0 for key in self.sources}
         for app in self.records:
             if app.visible or self.settings.get_boolean("show-hidden"):
                 counts["all"] += 1
                 counts[app.source.value] += 1
-        if counts.get(self.source, 0) == 0:
+        if counts.get(self.source, 0) == 0 and self.source != self.native_source:
             self.source = "all"
             self.filter.changed(Gtk.FilterChange.DIFFERENT)
         # Rebuilding navigation rows must not activate another source.
@@ -327,8 +336,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 following = child.get_next_sibling()
                 self.sidebar.remove(child)
                 child = following
-            for key, (title, icon) in SOURCES.items():
-                if key != "all" and not counts[key]:
+            for key, (title, icon) in self.sources.items():
+                if key not in {"all", self.native_source} and not counts[key]:
                     continue
                 row = Gtk.ListBoxRow()
                 row.source = key
@@ -346,7 +355,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                     self.sidebar.select_row(row)
         finally:
             self.sidebar.handler_unblock(self.sidebar_handler)
-        self.overview_page.set_title(SOURCES[self.source][0])
+        self.overview_page.set_title(self.sources[self.source][0])
 
     def _updates_activated(self, _list, row):
         if row is None:
@@ -368,7 +377,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.section = "apps"
         self.updates_sidebar.unselect_all()
         self.source = row.source
-        self.overview_page.set_title(SOURCES[self.source][0])
+        self.overview_page.set_title(self.sources[self.source][0])
         self.filter.changed(Gtk.FilterChange.DIFFERENT)
         self._update_count()
         if self.split.get_collapsed():
@@ -395,6 +404,15 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 if self.query
                 else _("Refresh, or enable hidden and auxiliary entries.")
             )
+            if self.source == self.native_source and self.native_source != "rpm":
+                self.empty.set_title(_("Package Source Not Yet Supported"))
+                self.empty.set_description(
+                    _(
+                        "Native package detection for %s is not available yet. "
+                        "Applications with unverified sources appear under Other."
+                    )
+                    % self.sources[self.native_source][0]
+                )
             self.views.set_visible_child_name("empty")
 
     def _view_toggled(self, button, mode):
@@ -451,6 +469,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 self.detail_notice.set_revealed(True)
                 self.manage_button.set_sensitive(False)
                 self.update_button.set_sensitive(False)
+                self.appearance_group.set_actions_sensitive(False)
             else:
                 if self.detail_app != match:
                     self.show_details(match, replace=True)
@@ -656,17 +675,19 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                         files, _("Resolved Program Path"), entry.resolved_executable, True
                     )
         body.append(files)
-        if app.entries:
-            advanced = Adw.PreferencesGroup()
-            expander = Adw.ExpanderRow(title=_("Technical Details"))
-            for entry in app.entries:
-                row = Adw.ActionRow(
-                    title=entry.desktop_id, subtitle=entry.command or _("D-Bus activation")
-                )
-                row.set_subtitle_lines(0)
-                expander.add_row(row)
-            advanced.add(expander)
-            body.append(advanced)
+        self.appearance_group = AppearanceGroup(self, app)
+        advanced = Adw.PreferencesGroup()
+        expander = Adw.ExpanderRow(title=_("Technical Details"))
+        for entry in app.entries:
+            row = Adw.ActionRow(
+                title=entry.desktop_id, subtitle=entry.command or _("D-Bus activation")
+            )
+            row.set_subtitle_lines(0)
+            expander.add_row(row)
+        expander.add_row(self.appearance_group.icon_file)
+        advanced.add(expander)
+        body.append(advanced)
+        body.append(self.appearance_group)
         if replace:
             self.navigation.replace([self.overview_page, page])
         else:
@@ -685,6 +706,64 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _copy(self, value):
         self.get_clipboard().set(value)
         self.toast(_("Copied to Clipboard"))
+
+    def choose_icon(self, app, entry):
+        if self.operation_active or self.closed:
+            return
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        images = Gtk.FileFilter(name=_("Images"))
+        images.add_pixbuf_formats()
+        filters.append(images)
+        dialog = Gtk.FileDialog(title=_("Change Icon for %s") % app.name, filters=filters)
+
+        def selected(chooser, result):
+            try:
+                file = chooser.open_finish(result)
+            except GLib.Error as error:
+                if not error.matches(Gtk.dialog_error_quark(), Gtk.DialogError.DISMISSED):
+                    self.message(_("Could Not Open Image"), str(error))
+                return
+            if self.closed:
+                return
+            path = file.get_path()
+            if path is None:
+                self.message(_("Could Not Open Image"), _("Choose a local image file."))
+                return
+            self.change_icon(app, entry, path)
+
+        dialog.open(self, None, selected)
+
+    def change_icon(self, app, entry, image):
+        current = next((item for item in self.records if item.key == app.key), None)
+        if current is None or entry not in current.entries:
+            self.toast(_("The launcher has changed. Refresh the inventory and try again."))
+            return
+        if not self._begin_operation(current, "icon"):
+            return
+        self._show_task(_("Saving Application Icon"))
+        self.task_label.set_label(_("Saving Application Icon"))
+        self.cancel_button.set_visible(False)
+
+        def completed(_path):
+            self._end_operation()
+            notice = Adw.Toast(
+                title=_("Icon saved") if image else _("Original icon restored"),
+                button_label=_("GNOME Tip"),
+                timeout=8,
+            )
+            notice.connect(
+                "button-clicked",
+                lambda _toast: self.message(_("Refreshing GNOME Icons"), ICON_REFRESH_NOTICE),
+            )
+            self.toast_overlay.add_toast(notice)
+            self.refresh()
+
+        def failed(error):
+            self._end_operation()
+            self.message(_("Could Not Change Icon"), str(error))
+            self.refresh()
+
+        self.service.change_icon(current, entry, image, self._guard(completed), self._guard(failed))
 
     def open_location(self, value):
         file = Gio.File.new_for_path(value)
@@ -755,6 +834,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         if self.detail_app:
             self.manage_button.set_sensitive(False)
             self.update_button.set_sensitive(False)
+            self.appearance_group.set_actions_sensitive(False)
         return True
 
     def _guard(self, callback):
@@ -783,6 +863,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             available = any(app.key == self.detail_app.key for app in self.records)
             self.manage_button.set_sensitive(available)
             self.update_button.set_sensitive(available)
+            self.appearance_group.set_actions_sensitive(available)
         if self.refresh_pending:
             self._schedule_refresh()
 

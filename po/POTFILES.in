@@ -1,4 +1,7 @@
 src/housekeeper/batch_updates.py
+src/housekeeper/appearance.py
+src/housekeeper/platforms.py
+src/housekeeper/ui/appearance.py
 src/housekeeper/ui/updates.py
 src/housekeeper/ui/window.py
 src/housekeeper/updates.py

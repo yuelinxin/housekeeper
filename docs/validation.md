@@ -1,9 +1,55 @@
-# v0.1.4 development validation
+# v0.1.5 development validation
 
 Updated on September 7, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.5 release validation — September 7, 2026
+
+- Application, Meson, RPM spec, latest AppStream release and README installation
+  example agree on 0.1.5. Source archives derive their version from the application.
+- Clean source builds, unit tests, GTK smoke and five fresh SVG startup checks
+  pass in Fedora 43 and 44 offline containers. RPM/SRPM builds, offline AppStream
+  and desktop metadata validation, installation, same-version replacement and
+  removal all pass; installed launchers report `Housekeeper 0.1.5`.
+- Ubuntu 24.04 baseline: clean build, 167 tests with one optional RPM-binding skip,
+  GTK smoke and five fresh SVG startup checks pass. Existing GTK allocation/toast
+  width warnings remain in synthetic narrow transitions.
+- Ruff lint/format, mypy, whitespace checks and README image links pass. Screenshots
+  were regenerated at desktop and narrow sizes using synthetic records and read-only
+  system icons. List, grid, app details, Appearance and Updates were visually reviewed.
+- Removed the standalone README updating guide. This release includes launcher icon
+  customization/restoration, GNOME refresh guidance, per-distribution source labels
+  and scrolling-content padding. DEB and other new labels do not imply new providers.
+- No personal application was installed, updated, removed or used as a screenshot
+  fixture during release validation. Package operations used disposable containers.
+
+## Native source labels — September 7, 2026
+
+- Fedora 44: 168 unit tests and GTK smoke pass. Ubuntu baseline: 167 tests pass,
+  one optional RPM-binding test is skipped, and GTK smoke passes.
+- The second sidebar row is RPM on Fedora and DEB on Ubuntu. Unsupported native
+  categories explain their status and remain selected across inventory refresh.
+  Synthetic RPM records retain RPM labels and filtering on both environments.
+- Ruff lint/format, mypy and whitespace checks pass. Existing baseline GTK
+  allocation/toast width warnings remain in synthetic narrow transitions.
+
+## Appearance changes — September 7, 2026
+
+- Fedora 44: 149 unit tests pass; clean Meson build and GTK smoke pass, including
+  temporary launcher image selection, serialized save, inventory refresh and reset.
+- Conservative Ubuntu/GTK baseline: 147 tests pass with one optional RPM-binding
+  skip before the final comment-preservation regression was added. The clean build
+  and extended GTK smoke pass. Existing allocation/toast width warnings remain in
+  synthetic narrow transitions; the details page was visually inspected.
+- Ruff lint/format, mypy and whitespace checks pass. Theme changes update the
+  visible rows. The synthetic appearance screenshot is saved in `docs/screenshots`.
+- Appearance now contains the icon theme or custom image, plus explicit launcher
+  GTK overrides, and sits at the bottom. Icon paths are in Technical Details.
+  Global GTK/cursor settings and inferred runtime styles are omitted. Icon changes affect desktop launchers;
+  GNOME Shell refresh and icons of already-running windows still need manual desktop
+  verification. No personal launcher was changed during validation.
 
 ## v0.1.4 release validation — September 7, 2026
 

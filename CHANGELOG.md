@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.5 — 2026-09-07
+
+- Name the second sidebar category from the distribution's native package family
+  using os-release, including DEB on Ubuntu/Debian and RPM on Fedora/openSUSE.
+  Keep unsupported-provider guidance separate from verified application sources.
+- Add an Appearance group at the bottom of app details with the icon theme or
+  custom image and explicit launcher GTK theme overrides when available. Show
+  resolved icon files in Technical Details.
+- Change launcher icons from local images and restore the original icon. Save
+  images durably, preserve other launcher fields, and keep verified RPM/Flatpak
+  attribution when creating a per-user icon override.
+- Explain GNOME's app-grid refresh limitation in Appearance and in a GNOME Tip
+  attached to the save/restore notification, with logout/login guidance when needed.
+- Move list and grid spacing inside scrolling content so scrollbars and overshoot
+  effects reach the page edges while preserving content insets.
+- Refresh README screenshots and synchronize application, build and package metadata.
+
 ## 0.1.4 — 2026-09-07
 
 - Cache successful update checks across page navigation and application restarts,

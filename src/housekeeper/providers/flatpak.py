@@ -99,6 +99,9 @@ class FlatpakIndex:
 
     def associate(self, app):
         entry = app.entries[0]
+        from housekeeper.appearance import verified_icon_source
+
+        entry_path = verified_icon_source(entry.path)
         app_id = entry.flatpak_id
         if not app_id and not entry.visible and entry.desktop_id.endswith(".desktop"):
             app_id = entry.desktop_id.removesuffix(".desktop")
@@ -119,15 +122,15 @@ class FlatpakIndex:
         deployed = [
             a
             for a in matches
-            if a.location and entry.path.resolve().is_relative_to(Path(a.location))
+            if a.location and entry_path.resolve().is_relative_to(Path(a.location))
         ]
         if len(deployed) == 1:
             matches = deployed
         exact = [
             a
             for a in matches
-            if str(entry.path).startswith(a.metadata["installation"] + "/")
-            or entry.path.resolve().is_relative_to(Path(a.metadata["installation"]))
+            if str(entry_path).startswith(a.metadata["installation"] + "/")
+            or entry_path.resolve().is_relative_to(Path(a.metadata["installation"]))
         ]
         if len(exact) == 1:
             matches = exact

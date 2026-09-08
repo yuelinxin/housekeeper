@@ -215,6 +215,13 @@ class InventoryService:
             app, run, completed, lambda error: completed(self._failure(error)), preserve_error=True
         )
 
+    def change_icon(self, app, entry, image, completed, failed):
+        from housekeeper.appearance import save_icon
+
+        self._submit(
+            app, lambda _worker: save_icon(entry, image), completed, failed, worker=object()
+        )
+
     @staticmethod
     def _failure(error):
         outcome = Outcome.CANCELLED if isinstance(error, OperationCancelled) else Outcome.FAILED
