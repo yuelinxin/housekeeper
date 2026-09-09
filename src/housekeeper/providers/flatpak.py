@@ -1,10 +1,11 @@
 """Optional libflatpak inventory and transactions."""
 
+from copy import deepcopy
 from pathlib import Path
 
 from housekeeper import APP_ID
 from housekeeper.i18n import _
-from housekeeper.identity import digest, option
+from housekeeper.identity import digest
 from housekeeper.models import (
     Action,
     AppRecord,
@@ -93,6 +94,8 @@ class FlatpakIndex:
                                 "installation": path,
                                 "app_id": ref.get_name(),
                                 "commit": ref.get_commit() or "",
+                                "installation_id": installation.get_id() or "default",
+                                "current": "true" if ref.get_is_current() else "false",
                             },
                         )
                     )
@@ -107,58 +110,83 @@ class FlatpakIndex:
         return [Path(path) / "exports/share/applications" for path in self.installations]
 
     def associate(self, app):
-        entry = app.entries[0]
-        from housekeeper.appearance import verified_icon_source
+        from housekeeper.providers.flatpak_attribution import binding, parse_launch
 
-        entry_path = verified_icon_source(entry.path)
-        app_id = entry.flatpak_id
-        if not app_id and not entry.visible and entry.desktop_id.endswith(".desktop"):
-            app_id = entry.desktop_id.removesuffix(".desktop")
-        if not app_id:
+        if not app.entries or app.source not in {Source.OTHER, Source.FLATPAK}:
             return None
-        matches = [a for a in self.apps if a.metadata["app_id"] == app_id]
-        if not matches:
-            if entry.flatpak_id:
-                app.source = Source.FLATPAK
-                app.metadata["management_reason"] = "This Flatpak installation is unavailable."
-                return app
+        entry = app.entries[0]
+        # Visibility overlays never establish an ownership relationship.
+        if entry.reason == "Hidden by a desktop entry override":
+            for candidate in self.apps:
+                if entry.desktop_id == candidate.metadata["app_id"] + ".desktop":
+                    candidate.visible, candidate.status = False, entry.reason
             return None
-        branch, arch = option(entry.argv, "--branch"), option(entry.argv, "--arch")
-        if branch:
-            matches = [a for a in matches if a.identity.rsplit("/", 1)[-1] == branch]
-        if arch:
-            matches = [a for a in matches if a.identity.split("/")[-2] == arch]
-        deployed = [
-            a
-            for a in matches
-            if a.location and entry_path.resolve().is_relative_to(Path(a.location))
-        ]
-        if len(deployed) == 1:
-            matches = deployed
-        exact = [
-            a
-            for a in matches
-            if str(entry_path).startswith(a.metadata["installation"] + "/")
-            or entry_path.resolve().is_relative_to(Path(a.metadata["installation"]))
-        ]
-        if len(exact) == 1:
-            matches = exact
+        launch = parse_launch(entry)
+        if launch is None or (entry.flatpak_id and entry.flatpak_id != launch.app_id):
+            return None
+        matches = [a for a in self.apps if a.metadata["app_id"] == launch.app_id]
+        if launch.scope:
+            matches = [
+                a
+                for a in matches
+                if a.scope == launch.scope
+                and (
+                    launch.scope != "System"
+                    or a.metadata.get("installation_id", "default") == "default"
+                )
+            ]
+        elif launch.installation:
+            matches = [
+                a
+                for a in matches
+                if a.scope == "System"
+                and a.metadata.get("installation_id", "default") == launch.installation
+            ]
+        elif any(a.scope == "User" for a in matches):
+            matches = [a for a in matches if a.scope == "User"]
+        if launch.branch:
+            matches = [a for a in matches if a.identity.split("/")[-1] == launch.branch]
+        elif len({a.identity for a in matches}) > 1:
+            matches = [a for a in matches if a.metadata.get("current") == "true"]
+        if launch.arch:
+            matches = [a for a in matches if a.identity.split("/")[-2] == launch.arch]
         if len(matches) != 1:
-            # User overrides can hide all matching installations but must not choose a removal target.
-            if not entry.visible:
-                for candidate in matches:
-                    candidate.visible = False
-                    candidate.status = entry.reason
-            app.source = Source.FLATPAK
-            app.metadata["management_reason"] = (
-                "The Flatpak installation could not be identified uniquely."
-            )
-            return app
+            return None
         match = matches[0]
-        match.entries.append(entry)
-        match.name, match.icon = app.name, app.icon
-        match.visible, match.status = app.visible, app.status
-        return match
+        evidence = binding(entry, match, launch)
+        if not evidence:
+            return None
+        result = deepcopy(match)
+        result.entries = [entry]
+        result.name, result.icon = app.name, app.icon
+        result.visible, result.status = app.visible, app.status
+        result.metadata["flatpak_binding"] = evidence
+        return result
+
+    @staticmethod
+    def validate(app):
+        if not app.entries:
+            return  # Installation records are rechecked by the transaction backend.
+        from housekeeper.discovery import read_entry
+        from housekeeper.identity import classify
+
+        index = FlatpakIndex()
+        for entry in app.entries:
+            try:
+                current = index.associate(classify(read_entry(entry.path, entry.root)))
+            except Exception as error:
+                raise ManagementError(
+                    "The Flatpak launcher cannot be verified. Refresh the inventory."
+                ) from error
+            if (
+                current is None
+                or current.identity != app.identity
+                or current.metadata.get("installation") != app.metadata.get("installation")
+                or current.metadata.get("flatpak_binding") != app.metadata.get("flatpak_binding")
+            ):
+                raise ManagementError(
+                    "The Flatpak launcher or installation changed. Refresh and review a new preview."
+                )
 
 
 class FlatpakProvider:
@@ -178,6 +206,7 @@ class FlatpakProvider:
             return ProviderCapabilities(False, reason=reason, update_reason=reason)
 
     def _transaction(self, app):
+        FlatpakIndex.validate(app)
         fp = load_flatpak()
         installations, warnings = configured_installations(fp)
         match = next(
@@ -230,7 +259,12 @@ class FlatpakProvider:
             app.identity,
             (app.name,),
             "This removes this installation of the application. User data and shared runtimes are kept.",
-            digest(app.metadata["installation"], commit, captured),
+            digest(
+                app.metadata["installation"],
+                commit,
+                captured,
+                app.metadata.get("flatpak_binding", ""),
+            ),
         )
 
     def execute(self, app, plan, progress):
@@ -238,7 +272,12 @@ class FlatpakProvider:
         mismatch = []
 
         def ready(tx):
-            fingerprint = digest(app.metadata["installation"], commit, list(self._operations(tx)))
+            fingerprint = digest(
+                app.metadata["installation"],
+                commit,
+                list(self._operations(tx)),
+                app.metadata.get("flatpak_binding", ""),
+            )
             if fingerprint != plan.fingerprint:
                 mismatch.append(True)
                 return False
@@ -280,6 +319,7 @@ class FlatpakProvider:
             raise ManagementError(_("Run Housekeeper as a regular desktop user."))
         if app.metadata.get("app_id") == APP_ID:
             raise ManagementError(_("Update Housekeeper using your system package manager."))
+        FlatpakIndex.validate(app)
         fp = load_flatpak()
         self.cancel = Gio.Cancellable()
         if self.cancel_requested:
@@ -400,6 +440,7 @@ class FlatpakProvider:
                 app.metadata["installation"],
                 current_commit,
                 app.origin,
+                app.metadata.get("flatpak_binding", ""),
                 remotes,
                 changes,
             ),

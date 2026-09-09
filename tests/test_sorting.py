@@ -118,6 +118,7 @@ def test_flatpak_metrics_keep_installations_separate_and_do_not_infer_dates(monk
         ref = SimpleNamespace(
             get_kind=lambda: "app",
             format_ref=lambda: "app/org.example.Editor/x86_64/stable",
+            get_is_current=lambda: True,
             get_appdata_name=lambda: "Editor",
             get_name=lambda: "org.example.Editor",
             get_appdata_version=lambda: "1",
@@ -128,6 +129,7 @@ def test_flatpak_metrics_keep_installations_separate_and_do_not_infer_dates(monk
         )
         return SimpleNamespace(
             get_path=lambda: SimpleNamespace(get_path=lambda: str(path)),
+            get_id=lambda: "default",
             list_installed_refs=lambda _: [ref],
             get_is_user=lambda: True,
         )

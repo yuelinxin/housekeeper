@@ -156,5 +156,6 @@ def test_flatpak_installations_and_branches_are_not_conflated(entry, tmp_path):
     desktop = replace(
         desktop, path=tmp_path / "system/exports/share/applications/org.example.App.desktop"
     )
-    assert index.associate(classify(desktop)) is beta
+    assert index.associate(classify(desktop)).key == beta.key
+    assert not beta.entries
     assert first.key != beta.key != other.key

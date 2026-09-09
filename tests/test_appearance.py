@@ -158,16 +158,24 @@ def test_icon_override_keeps_rpm_attribution_but_changed_command_does_not(
 
 def test_icon_override_keeps_flatpak_installation_identity(desktop, icon_home, picture, tmp_path):
     system = tmp_path / "system-flatpak"
-    source = desktop(root=system / "exports/share/applications", **{"X-Flatpak": "org.example.App"})
+    source = desktop(
+        root=system / "exports/share/applications",
+        Exec="flatpak run --system org.example.App",
+        **{"X-Flatpak": "org.example.App"},
+    )
     target = save_icon(read_entry(source, source.parent), picture)
     index = FlatpakIndex.__new__(FlatpakIndex)
     index.apps = [
         AppRecord(
-            str(path), "Example", metadata={"app_id": "org.example.App", "installation": str(path)}
+            str(path),
+            "Example",
+            scope="System" if path == system else "User",
+            identity="app/org.example.App/x86_64/stable",
+            metadata={"app_id": "org.example.App", "installation": str(path)},
         )
         for path in (system, tmp_path / "user-flatpak")
     ]
-    assert index.associate(classify(read_entry(target, target.parent))) is index.apps[0]
+    assert index.associate(classify(read_entry(target, target.parent))).key == index.apps[0].key
 
 
 def test_explicit_launcher_theme(entry):
