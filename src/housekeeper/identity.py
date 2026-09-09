@@ -7,10 +7,17 @@ from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
-from housekeeper.models import Action, AppRecord, DesktopEntry, Source
+from housekeeper.launch import parse_launch
+from housekeeper.models import (
+    Action,
+    AppRecord,
+    AttributionResult,
+    AttributionState,
+    DesktopEntry,
+    Source,
+)
 
 BROWSERS = {"google-chrome", "google-chrome-stable", "chrome", "chromium", "chromium-browser"}
-_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def digest(*parts: object) -> str:
@@ -18,14 +25,7 @@ def digest(*parts: object) -> str:
 
 
 def unwrap_env(argv: tuple[str, ...]) -> tuple[str, ...]:
-    if argv and Path(argv[0]).name == "env":
-        index = 1
-        while index < len(argv) and _ASSIGNMENT.match(argv[index]):
-            index += 1
-        if index >= len(argv) or argv[index].startswith("-"):
-            return ()
-        return argv[index:]
-    return argv
+    return parse_launch(argv).argv
 
 
 def option(argv: tuple[str, ...], key: str) -> str:
@@ -47,7 +47,12 @@ def classify(entry: DesktopEntry) -> AppRecord:
         status=entry.reason,
         identity=entry.desktop_id,
     )
-    argv = unwrap_env(entry.argv)
+    launch = entry.launch or parse_launch(entry.argv)
+    argv = launch.argv
+    if launch.reason:
+        app.attribution = AttributionResult(AttributionState.UNSUPPORTED, reason=launch.reason)
+        app.metadata["management_reason"] = launch.reason
+        return app
     if not argv:
         return app
     binary = Path(argv[0]).name

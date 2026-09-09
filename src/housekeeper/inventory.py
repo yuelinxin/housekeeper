@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from housekeeper.attribution import candidate, project, resolve
+from housekeeper.attribution import AttributionIndex, candidate, project, resolve
 from housekeeper.models import Action, AttributionState, ProviderCapabilities, Source
 from housekeeper.updates import assign_update_action
 
@@ -17,7 +17,7 @@ class DiscoverySnapshot:
     capabilities: ProviderCapabilities
 
 
-def discovery_indexes():
+def discovery_indexes() -> tuple[AttributionIndex, ...]:
     from housekeeper.providers.deb import DebIndex
     from housekeeper.providers.flatpak import FlatpakIndex
     from housekeeper.providers.packages import PackageIndex

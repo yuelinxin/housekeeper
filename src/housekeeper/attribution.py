@@ -17,8 +17,10 @@ from housekeeper.models import (
     InstallationInstance,
     ManagementTarget,
     Relationship,
+    RemovalPlan,
     Source,
     UpdateAction,
+    UpdatePlan,
 )
 
 
@@ -152,7 +154,8 @@ def project(app: AppRecord, result: AttributionResult) -> AppRecord:
 def attribute(app: AppRecord, indexes: tuple[AttributionIndex, ...]) -> AppRecord:
     if not app.entries:
         return deepcopy(app)
-    candidates, errors = [], []
+    candidates: list[AttributionCandidate] = []
+    errors: list[str] = []
     for index in indexes:
         try:
             candidates.extend(index.candidates(app.entries[0]))
@@ -170,7 +173,10 @@ def attribute(app: AppRecord, indexes: tuple[AttributionIndex, ...]) -> AppRecor
         return app
     if not candidates and app.source == Source.APPIMAGE:
         return deepcopy(app)
-    return project(app, resolve(tuple(candidates), tuple(sorted(errors))))
+    result = resolve(tuple(candidates), tuple(sorted(errors)))
+    if app.attribution and app.attribution.state == AttributionState.UNSUPPORTED:
+        result = replace(result, state=AttributionState.UNSUPPORTED, reason=app.attribution.reason)
+    return project(app, result)
 
 
 def evidence_digest(app: AppRecord) -> str:
@@ -203,7 +209,7 @@ def plan_binding(app: AppRecord) -> dict[str, str]:
     }
 
 
-def check_binding(app, plan) -> None:
+def check_binding(app: AppRecord, plan: RemovalPlan | UpdatePlan | None) -> None:
     from housekeeper.models import ManagementError
 
     if plan is None:

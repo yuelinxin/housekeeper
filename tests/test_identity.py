@@ -70,7 +70,7 @@ def test_firefoxpwa_is_distinct(entry):
 def test_shell_wrapper_is_not_unwrapped(entry):
     app = classify(entry(("/usr/bin/sh", "-c", "/home/example/app.AppImage")))
     assert app.source == Source.OTHER
-    assert unwrap_env(("env", "--unset=PATH", "example")) == ()
+    assert unwrap_env(("env", "--unset=PATH", "example")) == ("example",)
 
 
 def test_simple_env_assignments_are_unwrapped(entry):

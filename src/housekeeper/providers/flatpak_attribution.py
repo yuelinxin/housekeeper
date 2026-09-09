@@ -3,8 +3,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from housekeeper.identity import digest, unwrap_env
-from housekeeper.models import DesktopEntry
+from housekeeper.identity import digest
+from housekeeper.launch import parse_launch as parse_command
+from housekeeper.models import AppRecord, DesktopEntry
 
 FIELDS = {"%u", "%U", "%f", "%F", "%i", "%c", "%k"}
 
@@ -22,7 +23,10 @@ class FlatpakLaunch:
 
 
 def parse_launch(entry: DesktopEntry) -> FlatpakLaunch | None:
-    argv = unwrap_env(entry.argv)
+    spec = entry.launch or parse_command(entry.argv)
+    if spec.reason:
+        return None
+    argv = spec.argv
     if len(argv) < 3 or Path(argv[0]).name != "flatpak" or argv[1] != "run":
         return None
     values: dict[str, str] = {}
@@ -77,7 +81,7 @@ def parse_launch(entry: DesktopEntry) -> FlatpakLaunch | None:
     )
 
 
-def exported_signature(entry, app, launch):
+def exported_signature(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunch) -> str:
     """Only a matching current deployment export can authorize custom app arguments."""
     from housekeeper.appearance import verified_icon_source
     from housekeeper.discovery import read_entry
@@ -105,7 +109,7 @@ def exported_signature(entry, app, launch):
     return ""
 
 
-def binding(entry, app, launch):
+def binding(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunch) -> str:
     exported = exported_signature(entry, app, launch)
     if not exported and (launch.command or any(a not in FIELDS for a in launch.arguments)):
         return ""

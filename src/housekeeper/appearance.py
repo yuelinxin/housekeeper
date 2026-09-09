@@ -65,7 +65,7 @@ def _comments(keyfile):
     return [line for line in keyfile.to_data()[0].splitlines() if line.lstrip().startswith("#")]
 
 
-def verified_icon_source(path):
+def verified_icon_source(path: Path) -> Path:
     """An icon-only override may retain attribution to its unchanged source.
 
     Never trust a launcher-supplied source path without comparing every other key,

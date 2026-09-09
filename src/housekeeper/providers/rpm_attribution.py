@@ -32,7 +32,7 @@ def service_roots():
     roots.append(home / "dbus-1/services")
     roots.extend(
         Path(path) / "dbus-1/services"
-        for path in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")
+        for path in (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
         if path and Path(path).is_absolute()
     )
     roots.append(Path("/usr/share/dbus-1/services"))
@@ -223,6 +223,8 @@ class RpmAttribution:
             if application is None or not self.verified_file(path, application):
                 return False
             argv = unwrap_env(entry.argv)
+            if current.launch and current.launch.reason:
+                return False
             if not argv:
                 return False
             if Path(entry.executable).name == "gapplication" or entry.dbus_activatable:

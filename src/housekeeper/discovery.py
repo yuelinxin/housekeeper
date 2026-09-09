@@ -9,15 +9,15 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
-from housekeeper.identity import unwrap_env
+from housekeeper.launch import parse_launch, resolve_executable
 from housekeeper.models import DesktopEntry
 
 
 def application_roots(env=None, home=None) -> list[Path]:
     env = os.environ if env is None else env
     home = Path.home() if home is None else home
-    data_home = env.get("XDG_DATA_HOME", str(home / ".local/share"))
-    data_dirs = env.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")
+    data_home = env.get("XDG_DATA_HOME") or str(home / ".local/share")
+    data_dirs = (env.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
     return list(
         dict.fromkeys(
             Path(p) / "applications" for p in [data_home, *data_dirs] if p and Path(p).is_absolute()
@@ -55,10 +55,8 @@ def read_entry(path: Path, root: Path, desktops: set[str] | None = None) -> Desk
         argv = tuple(GLib.shell_parse_argv(command)[1]) if command else ()
     except GLib.Error:
         argv = ()
-    effective = unwrap_env(argv)
-    binary = effective[0] if effective else ""
-    executable = (binary if Path(binary).is_absolute() else shutil.which(binary)) if binary else ""
-    executable = executable or ""
+    launch = parse_launch(argv)
+    executable = resolve_executable(launch)
     resolved = str(Path(executable).resolve()) if executable else ""
     reasons = []
     if boolean("Hidden"):
@@ -97,6 +95,7 @@ def read_entry(path: Path, root: Path, desktops: set[str] | None = None) -> Desk
         resolved_executable=resolved,
         flatpak_id=string("X-Flatpak"),
         dbus_activatable=dbus,
+        launch=launch,
     )
 
 
