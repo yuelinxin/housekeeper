@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.9
+Version:        0.1.10
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -64,6 +64,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Wed Sep 09 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.10-1
+- Verify Flatpak launchers and effective D-Bus services before direct management.
+- Resolve ownership conflicts independently of provider order and fix duplicate entries.
+- Improve XDG/env discovery and validate AppImage format and cross-backend ownership.
+
 * Tue Sep 08 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.9-1
 - Reorganize search, menu, refresh and sorting controls in the adaptive header.
 - Add the Preferences shortcut and a remembered automatic inventory refresh switch.

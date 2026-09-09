@@ -30,6 +30,18 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.10" date="2026-09-09" type="development">
+      <description>
+        <p>Recognize application installations more accurately and verify ownership before management.</p>
+        <ul>
+          <li>Fix duplicate Flatpak and Other entries for D-Bus applications such as Gapless, preserving custom icons.</li>
+          <li>Verify Flatpak launch targets and effective D-Bus services, and reject previews when their ownership changes.</li>
+          <li>Resolve package ownership independently of provider order and disable direct management when sources conflict.</li>
+          <li>Keep distinct application components visible while managing their shared installation once.</li>
+          <li>Honor empty XDG defaults and supported env options, and verify AppImage format and package ownership before Trash.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.9" date="2026-09-08" type="development">
       <description>
         <p>Use a simpler header and choose when the application list refreshes.</p>

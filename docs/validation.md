@@ -1,9 +1,19 @@
-# v0.1.9 development validation
+# v0.1.10 development validation
 
 Updated on September 9, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.10 metadata validation — September 9, 2026
+
+- Python, Meson, RPM spec, the newest AppStream release, changelog and README
+  installation example agree on 0.1.10; release metadata is dated September 9.
+- Meson compilation, offline AppStream validation and desktop-file validation pass.
+  The development launcher reports `Housekeeper 0.1.10`.
+- All 28 update-cache tests pass after the version change; whitespace checks pass.
+  The feature validation below remains applicable. No package artifacts or remote
+  release were published as part of this version metadata update.
 
 ## Effective D-Bus service review — September 9, 2026
 

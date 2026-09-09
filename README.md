@@ -49,7 +49,7 @@ Fedora backends; Housekeeper provides guidance instead. See
 Install a downloaded RPM matching your Fedora release:
 
 ```sh
-sudo dnf install ./housekeeper-0.1.9-1.fc44.noarch.rpm
+sudo dnf install ./housekeeper-0.1.10-1.fc44.noarch.rpm
 ```
 
 Release packages do not configure an automatic update repository.
