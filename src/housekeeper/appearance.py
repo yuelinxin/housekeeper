@@ -65,6 +65,14 @@ def _comments(keyfile):
     return [line for line in keyfile.to_data()[0].splitlines() if line.lstrip().startswith("#")]
 
 
+def equivalent_launcher(path: Path, source: Path) -> bool:
+    """Compare every desktop key except the icon and our icon bookkeeping."""
+    try:
+        return bool(_values(_load(path)) == _values(_load(source)))
+    except (GLib.Error, OSError, ValueError):
+        return False
+
+
 def verified_icon_source(path: Path) -> Path:
     """An icon-only override may retain attribution to its unchanged source.
 
@@ -74,7 +82,7 @@ def verified_icon_source(path: Path) -> Path:
     try:
         keyfile = _load(path)
         source = Path(_get(keyfile, SOURCE))
-        if source.is_absolute() and source != path and _values(keyfile) == _values(_load(source)):
+        if source.is_absolute() and source != path and equivalent_launcher(path, source):
             return source
     except (GLib.Error, OSError, ValueError):
         pass

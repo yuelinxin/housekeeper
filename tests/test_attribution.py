@@ -150,3 +150,15 @@ def test_synthetic_flatpak_hidden_overlay_does_not_authorize_entry(desktop):
     official = next(a for a in records if a.source == Source.FLATPAK)
     assert not official.visible and not official.entries
     assert app.visible
+
+
+def test_dbus_components_with_identical_fallback_commands_remain_distinct(entry):
+    claim = candidate(Source.FLATPAK, "/user", "app/ref", "1", "app/ref", "/export", verified=True)
+    entries = [
+        entry(("/usr/bin/true",), desktop_id=name, dbus_activatable=True)
+        for name in ("org.example.App.desktop", "org.example.App.Editor.desktop")
+    ]
+    apps = [attribute(classify(e), (backend(claim),)) for e in entries]
+    assert len(merge_records(apps)) == 2
+    assert apps[0].target == apps[1].target
+    assert apps[0].component.launch_signature != apps[1].component.launch_signature

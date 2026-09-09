@@ -27,7 +27,7 @@ class FlatpakLaunch:
 
 def parse_launch(entry: DesktopEntry) -> FlatpakLaunch | None:
     spec = entry.launch or parse_command(entry.argv)
-    if spec.reason or entry.dbus_activatable:
+    if spec.reason:
         return None
     argv = spec.argv
     if len(argv) < 3 or Path(argv[0]).name != "flatpak" or argv[1] != "run":
@@ -86,6 +86,7 @@ def parse_launch(entry: DesktopEntry) -> FlatpakLaunch | None:
 
 def exported_signature(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunch) -> str:
     """Only a matching current deployment export can authorize custom app arguments."""
+    from housekeeper.appearance import equivalent_launcher
     from housekeeper.discovery import read_entry
 
     if not app.location:
@@ -96,7 +97,18 @@ def exported_signature(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunc
             if not path.resolve().is_relative_to(root.resolve()):
                 continue
             exported = read_entry(path, root)
-            if parse_launch(exported) != launch:
+            if (
+                parse_launch(exported) != launch
+                or exported.dbus_activatable != entry.dbus_activatable
+            ):
+                continue
+            # Exec is only the fallback for D-Bus activation. Establish ownership
+            # from the installed export, including the desktop ID (the bus name)
+            # and all other semantics, rather than interpreting that fallback as
+            # the actual launch. Icon-only XDG overrides retain this evidence.
+            if entry.dbus_activatable and (
+                exported.desktop_id != entry.desktop_id or not equivalent_launcher(entry.path, path)
+            ):
                 continue
             # The environment and executable are part of the launch, too.
             if (
@@ -119,7 +131,9 @@ def binding(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunch) -> str:
     ):
         return ""
     exported = exported_signature(entry, app, launch)
-    if not exported and (launch.command or any(a not in FIELDS for a in launch.arguments)):
+    if not exported and (
+        entry.dbus_activatable or launch.command or any(a not in FIELDS for a in launch.arguments)
+    ):
         return ""
     # A path inside another installation is contradictory evidence, not a selector.
     return digest(

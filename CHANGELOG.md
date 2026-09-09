@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Correct duplicate Flatpak/Other entries for D-Bus applications such as Gapless by
+  verifying their installed desktop exports, including icon-only user overrides.
+  Keep distinct D-Bus components separate even when their fallback commands match.
 - Verify Flatpak launcher targets and installation selection before association and
   management; unrelated labels and guest apps cannot inherit host uninstall actions.
 - Resolve independent ownership evidence centrally, expose conflicts, and separate

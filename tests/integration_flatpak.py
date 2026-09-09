@@ -23,6 +23,12 @@ desktops = build / "files/share/applications"
 desktops.mkdir(parents=True)
 (desktops / "org.example.HousekeeperFixture.desktop").write_text(
     "[Desktop Entry]\nType=Application\nName=Housekeeper Flatpak Fixture\nExec=example %U\n"
+    "DBusActivatable=true\n"
+)
+services = build / "files/share/dbus-1/services"
+services.mkdir(parents=True)
+(services / "org.example.HousekeeperFixture.service").write_text(
+    "[D-BUS Service]\nName=org.example.HousekeeperFixture\nExec=/app/bin/example\n"
 )
 (build / "metadata").write_text(
     "[Application]\nname=org.example.HousekeeperFixture\n"
@@ -56,14 +62,17 @@ index = FlatpakIndex()
 app = next(a for a in index.apps if a.metadata["app_id"] == "org.example.HousekeeperFixture")
 assert app.scope == "User"
 export = Path(app.metadata["installation"]) / "exports/share/applications"
-app = next(a for a in collect(roots=[export])[0] if a.identity == app.identity)
+records = collect(roots=[export])[0]
+assert len(records) == 1, "An exported D-Bus launcher was duplicated as an installation row"
+app = records[0]
 assert app.entries and app.action == Action.UNINSTALL and app.installation
+assert app.entries[0].dbus_activatable
 provider = FlatpakProvider()
 # A custom copy must not retain management permission after its command changes.
 custom = home / "audit-launchers"
 custom.mkdir()
-launcher = custom / "custom.desktop"
-launcher.write_text(app.entries[0].path.read_text())
+launcher = custom / app.entries[0].desktop_id
+launcher.write_text(app.entries[0].path.read_text() + "\nIcon=/tmp/custom-icon.png\n")
 copied = next(a for a in collect(roots=[custom])[0] if a.entries and a.source == Source.FLATPAK)
 provider.prepare(copied, [copied])
 launcher.write_text(
@@ -77,7 +86,9 @@ else:
     raise AssertionError("A changed launcher retained direct management permission")
 spoofed = next(a for a in collect(roots=[custom])[0] if a.entries)
 assert spoofed.source != Source.FLATPAK and spoofed.action != Action.UNINSTALL
-print("PASS: real exported launcher association and changed/tag-only launcher rejection")
+print(
+    "PASS: real D-Bus export deduplication, icon override, and changed/tag-only launcher rejection"
+)
 plan = provider.prepare(app, index.apps)
 assert data.exists()
 assert any(

@@ -119,6 +119,16 @@ def resolve(
     return AttributionResult(state, candidates, selected, reason, errors)
 
 
+def launch_signature(entries: list[DesktopEntry]) -> str:
+    # D-Bus activation uses the desktop ID, even when fallback commands match.
+    return digest(
+        tuple(
+            (e.launch or e.argv, "dbus", e.desktop_id) if e.dbus_activatable else e.launch or e.argv
+            for e in entries
+        )
+    )
+
+
 def project(app: AppRecord, result: AttributionResult) -> AppRecord:
     app = deepcopy(app)
     app.attribution = result
@@ -130,7 +140,7 @@ def project(app: AppRecord, result: AttributionResult) -> AppRecord:
         app.scope, app.location, app.origin = selected.scope, selected.location, selected.origin
         app.software_size, app.updated_at = selected.software_size, selected.updated_at
         app.metadata.update(dict(selected.metadata))
-        signature = digest(tuple((e.launch or e.argv) for e in app.entries))
+        signature = launch_signature(app.entries)
         if result.state == AttributionState.CONFIRMED:
             app.key = digest("component", selected.instance.id, signature)
         else:
@@ -144,7 +154,7 @@ def project(app: AppRecord, result: AttributionResult) -> AppRecord:
     app.component = AppComponent(
         app.key,
         tuple(e.desktop_id for e in app.entries),
-        digest(tuple(e.launch or e.argv for e in app.entries)),
+        launch_signature(app.entries),
     )
     app.action = Action.NONE
     app.update_action = UpdateAction.INSTRUCTIONS
@@ -167,7 +177,7 @@ def attribute(app: AppRecord, indexes: tuple[AttributionIndex, ...]) -> AppRecor
         app.component = AppComponent(
             app.key,
             tuple(e.desktop_id for e in app.entries),
-            digest(tuple(e.launch or e.argv for e in app.entries)),
+            launch_signature(app.entries),
         )
         app.attribution = AttributionResult(
             AttributionState.UNSUPPORTED,

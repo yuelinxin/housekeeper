@@ -58,6 +58,15 @@ installation. Custom commands and application arguments additionally require an
 equivalent launcher in the current deployment's export. Icon-only overrides retain
 their launch relationship. Guest browser/Steam launchers never inherit the host's
 uninstall action. D-Bus activation is not inferred from the fallback Exec command.
+For D-Bus launchers, ownership requires a matching current deployment export with
+the same desktop ID and every desktop key unchanged except the icon and Housekeeper's
+icon bookkeeping. This associates official exports and icon-only overrides with
+their installation instead of displaying a spurious Other row beside it. Renamed
+D-Bus launchers are not equivalent: the desktop ID determines the activation name
+([Desktop Entry specification](https://specifications.freedesktop.org/desktop-entry/latest/dbus.html)).
+Component signatures include that ID, so distinct D-Bus components sharing an Exec
+fallback stay separate. This establishes ownership, not successful D-Bus activation;
+no application or service is started during verification.
 Wrong labels cannot rename, hide, or confer permissions on the official installation.
 Hidden desktop-ID overlays affect visibility separately from ownership.
 

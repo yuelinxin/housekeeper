@@ -153,3 +153,92 @@ def test_program_named_flatpak_is_not_the_system_manager(desktop, tmp_path):
 def test_dbus_activation_cannot_be_verified_from_exec(desktop):
     path = desktop(Exec="flatpak run org.example.App", DBusActivatable="true")
     assert index(installed()).associate(classify(read_entry(path, path.parent))) is None
+
+
+@pytest.fixture
+def dbus_export(desktop, tmp_path):
+    app = installed(str(tmp_path / "installation"))
+    app.location = str(tmp_path / "deploy")
+    path = desktop(
+        filename="org.example.App.desktop",
+        root=tmp_path / "deploy/export/share/applications",
+        Exec="flatpak run --branch=stable --arch=x86_64 --command=example "
+        "--file-forwarding org.example.App @@u %U @@",
+        DBusActivatable="true",
+        **{"X-Flatpak": "org.example.App"},
+    )
+    db = index(app)
+    db.installations = {app.metadata["installation"]: object()}
+    return db, path
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_dbus_export_is_one_component_not_an_extra_installation(
+    dbus_export, tmp_path, monkeypatch, override
+):
+    from housekeeper.models import AttributionState, ProviderCapabilities
+    from housekeeper.services import collect
+
+    db, exported = dbus_export
+    root = tmp_path / "applications"
+    root.mkdir()
+    path = root / exported.name
+    if override:
+        path.write_text(exported.read_text() + "Icon=/custom/icon.png\n")
+    else:
+        path.symlink_to(exported)
+    monkeypatch.setattr(
+        FlatpakProvider, "capabilities", lambda self: ProviderCapabilities(execute=True)
+    )
+    apps, *_ = collect(roots=[root], indexes=(db,))
+    assert len(apps) == 1
+    app = apps[0]
+    assert app.source == Source.FLATPAK and app.entries[0].path == path
+    assert app.attribution.state == AttributionState.CONFIRMED
+    assert app.action == Action.UNINSTALL and app.installation and app.component
+    if override:
+        assert app.icon == "/custom/icon.png"
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["renamed", "activation", "exec", "label", "action", "working-directory", "missing-export"],
+)
+def test_dbus_export_requires_same_id_and_complete_semantics(dbus_export, tmp_path, change):
+    db, exported = dbus_export
+    path = tmp_path / exported.name
+    text = exported.read_text()
+    if change == "renamed":
+        path = tmp_path / "org.example.Other.desktop"
+    elif change == "activation":
+        text = text.replace("DBusActivatable=true", "DBusActivatable=false")
+    elif change == "exec":
+        text = text.replace("--command=example", "--command=other")
+    elif change == "label":
+        text = text.replace("X-Flatpak=org.example.App", "X-Flatpak=org.example.Other")
+    elif change == "action":
+        text += "Actions=Other;\n[Desktop Action Other]\nName=Other\nExec=/usr/bin/true\n"
+    elif change == "working-directory":
+        text += "Path=/tmp\n"
+    elif change == "missing-export":
+        exported.unlink()
+    path.write_text(text)
+    assert db.associate(classify(read_entry(path, path.parent))) is None
+
+
+@pytest.mark.parametrize("operation", ["_transaction", "_update_transaction"])
+def test_dbus_export_changes_invalidate_all_transactions(
+    dbus_export, tmp_path, monkeypatch, operation
+):
+    from housekeeper.attribution import attribute, revalidate
+
+    db, exported = dbus_export
+    path = tmp_path / exported.name
+    path.write_text(exported.read_text())
+    monkeypatch.setattr("os.geteuid", lambda: 1000)
+    monkeypatch.setattr("housekeeper.inventory.discovery_indexes", lambda: (db,))
+    app = attribute(classify(read_entry(path, path.parent)), (db,))
+    revalidate(app)
+    exported.write_text(exported.read_text() + "Path=/tmp\n")
+    with pytest.raises(ManagementError, match="ownership changed"):
+        getattr(FlatpakProvider(), operation)(app)

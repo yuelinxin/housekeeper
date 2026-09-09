@@ -1,9 +1,34 @@
 # v0.1.9 development validation
 
-Updated on September 8, 2026. These are local development checks, not a claim that
+Updated on September 9, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## Duplicate D-Bus Flatpak entries — September 9, 2026
+
+The previous scan changes rejected every `DBusActivatable=true` launcher before
+checking its deployment export. A real Flatpak installation then appeared alongside
+its unassociated Other launcher. The read-only host scan reproduced this for
+Gapless, Backups, Decoder, Switcheroo and Varia. After the fix each has one Flatpak
+component, and all five pass fresh ownership revalidation. The remaining two
+Document Viewer entries belong to distinct installed packages, Papers and Evince.
+
+- Five new assertions failed against the old implementation before the fix. Coverage
+  now checks official export symlinks, icon-only overrides, changed desktop IDs,
+  activation flags, commands, labels, desktop actions, working directories, missing
+  exports, update/removal revalidation, and distinct D-Bus component identities.
+- Host unit tests: 415 passed, 1 skipped (dpkg-query absent). Ubuntu 24.04 disposable
+  container: 410 passed, 6 skipped (optional RPM bindings absent).
+- Ruff lint/format, configured strict mypy and whitespace checks pass.
+- Fedora 44's disposable integration suite passes. Its real Flatpak fixture now
+  exports a D-Bus desktop entry and service; the scanner returns one component,
+  accepts its icon-only copy, rejects a changed/tag-only copy, and successfully
+  previews/uninstalls the fixture while preserving its application data. No fixture
+  application or D-Bus application service is activated during verification.
+- The existing RPM removal preview limitation remains unchanged and is not counted
+  as a successful uninstall. Logs are at `/tmp/housekeeper-dbus-integration.log`
+  and `/tmp/housekeeper-dbus-ubuntu.log`. Personal applications were only read.
 
 ## Scan attribution audit fixes — September 8, 2026
 
