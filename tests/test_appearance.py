@@ -10,6 +10,7 @@ from housekeeper.appearance import (
     save_icon,
     verified_icon_source,
 )
+from housekeeper.attribution import attribute
 from housekeeper.discovery import read_entry, scan_entries
 from housekeeper.identity import classify
 from housekeeper.models import AppRecord, ManagementError, Source
@@ -148,11 +149,11 @@ def test_icon_override_keeps_rpm_attribution_but_changed_command_does_not(
         [{"name": "example", "version": "1", "arch": "x86_64"}] if Path(path) == source else []
     )
     app = classify(read_entry(target, target.parent))
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == Source.RPM
     target.write_text(target.read_text().replace("main.py", "unrelated.py"))
     app = classify(read_entry(target, target.parent))
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == Source.OTHER
 
 

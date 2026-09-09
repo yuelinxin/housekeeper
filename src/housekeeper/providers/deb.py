@@ -6,7 +6,6 @@ import shutil
 import subprocess
 
 from housekeeper.i18n import _
-from housekeeper.identity import digest
 from housekeeper.models import Source
 
 _FORMAT = "${Package}\t${Version}\t${Architecture}\t${db:Status-Status}\t${Installed-Size}\n"
@@ -46,6 +45,9 @@ def packages(target=None):
 
 
 class DebIndex:
+    roots = ()
+    contexts = ("/:/var/lib/dpkg",)
+
     def __init__(self):
         self._owners = None
         self._packages = []
@@ -70,35 +72,42 @@ class DebIndex:
         for path in diverted:
             self._owners.pop(path, None)
 
-    def enrich(self, app):
-        if app.source != Source.OTHER or not app.entries:
-            return
+    def candidates(self, entry):
         from housekeeper.appearance import verified_icon_source
+        from housekeeper.attribution import candidate
 
         if self._owners is None:
             self._load()
-        entry = app.entries[0]
-        owners = self._owners.get(str(verified_icon_source(entry.path)), set())
-        if len(owners) != 1:
-            return
-        owner = next(iter(owners))
+        path = str(verified_icon_source(entry.path))
+        owners = self._owners.get(path, set())
         matches = [
             package
             for package in self._packages
-            if owner in {package["name"], package["name"] + ":" + package["arch"]}
+            if owners.intersection({package["name"], package["name"] + ":" + package["arch"]})
         ]
-        if len(matches) != 1:
-            return
-        package = matches[0]
-        app.source, app.provider = Source.DEB, "deb"
-        app.scope, app.version = "System", package["version"]
-        app.software_size = package_size(package)
-        app.identity = package["name"] + ":" + package["arch"]
-        app.metadata.update(package)
-        app.metadata["management_reason"] = _(
-            "Manage this DEB package using your system package manager."
+        known = {
+            value
+            for package in matches
+            for value in (package["name"], package["name"] + ":" + package["arch"])
+        }
+        matches.extend(
+            {"name": name, "arch": "unknown", "version": "", "installed_size": ""}
+            for name in sorted(owners - known)
         )
-        app.key = digest("deb", package["name"], package["arch"], entry.argv or (entry.desktop_id,))
+        return tuple(
+            candidate(
+                Source.DEB,
+                "/:/var/lib/dpkg",
+                package["name"] + ":" + package["arch"],
+                package["version"],
+                package["name"] + ":" + package["arch"],
+                path,
+                metadata=package,
+                size=package_size(package),
+                reason=_("Manage this DEB package using your system package manager."),
+            )
+            for package in matches
+        )
 
 
 def installed_size(app):

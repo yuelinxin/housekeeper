@@ -72,7 +72,7 @@ class UpdateCache:
             if len(payload) > MAX_BYTES:
                 raise ValueError("Update cache is too large")
             data = json.loads(payload)
-            if data["schema"] != 1 or data["version"] != VERSION:
+            if data["schema"] != 2 or data["version"] != VERSION:
                 return None
             if data.get("providers", sorted(UPDATE_PROVIDERS)) != sorted(providers):
                 return None
@@ -154,7 +154,7 @@ class UpdateCache:
         try:
             payload = json.dumps(
                 {
-                    "schema": 1,
+                    "schema": 2,
                     "version": VERSION,
                     "checked_at": checked_at,
                     "providers": sorted(providers),

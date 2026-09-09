@@ -867,6 +867,21 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             row.set_subtitle_lines(0)
             expander.add_row(row)
         expander.add_row(self.appearance_group.icon_file)
+        if app.attribution:
+            row = Adw.ActionRow(
+                title=_("Ownership"),
+                subtitle=app.attribution.state.value
+                + (": " + app.attribution.reason if app.attribution.reason else ""),
+            )
+            row.set_subtitle_lines(0)
+            expander.add_row(row)
+            for candidate in app.attribution.candidates:
+                row = Adw.ActionRow(
+                    title=candidate.instance.provider + ": " + candidate.identity,
+                    subtitle=candidate.relationship.value + " · " + candidate.instance.context,
+                )
+                row.set_subtitle_lines(0)
+                expander.add_row(row)
         advanced.add(expander)
         body.append(advanced)
         body.append(self.appearance_group)

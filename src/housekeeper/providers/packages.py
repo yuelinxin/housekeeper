@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from housekeeper.i18n import _
-from housekeeper.identity import digest
 from housekeeper.models import Source
 from housekeeper.sorting import package_timestamp
 
@@ -159,9 +158,13 @@ def load_packages(source):
 
 
 class PackageIndex:
+    roots = (Path("/var/lib/snapd/desktop/applications"),)
+    contexts = ("/var/lib/pacman/local", "/lib/apk/db", "snapd")
+
     def __init__(self):
         self.owners = None
         self.warnings = []
+        self.attribution_errors = []
 
     def _load(self):
         self.owners = {}
@@ -173,41 +176,35 @@ class PackageIndex:
             except Exception as error:
                 LOG.debug("Package inventory unavailable: %s", source.value, exc_info=True)
                 self.warnings.append(f"Could not read {source.value} packages: {error}")
+                self.attribution_errors.append(self.warnings[-1])
 
-    def enrich(self, app):
-        if app.source != Source.OTHER or not app.entries:
-            return
+    def candidates(self, entry):
         from housekeeper.appearance import verified_icon_source
+        from housekeeper.attribution import candidate
 
         if self.owners is None:
             self._load()
-        entry = app.entries[0]
         path = str(verified_icon_source(entry.path))
-        matches = self.owners.get(path, [])
-        if len(matches) != 1:
-            return
-        package = matches[0]
-        app.source, app.provider = package.source, package.source.value
-        app.scope, app.version = "System", package.version
-        app.software_size = package.size
-        app.updated_at = package.updated_at
-        app.identity = package.name + (":" + package.arch if package.arch else "")
-        app.metadata.update(
-            {
-                "name": package.name,
-                "arch": package.arch,
-                "package_database": package.database,
-                "package_revision": package.revision,
-                "package_desktop": path,
-                "management_reason": _("Manage this package using its system package manager."),
-            }
-        )
-        app.key = digest(
-            app.provider,
-            package.database,
-            package.name,
-            package.arch,
-            entry.argv or (entry.desktop_id,),
+        return tuple(
+            candidate(
+                package.source,
+                package.database,
+                package.name + ":" + package.arch,
+                package.version,
+                package.name + (":" + package.arch if package.arch else ""),
+                path,
+                metadata={
+                    "name": package.name,
+                    "arch": package.arch,
+                    "package_database": package.database,
+                    "package_revision": package.revision,
+                    "package_desktop": path,
+                },
+                size=package.size,
+                updated_at=package.updated_at,
+                reason=_("Manage this package using its system package manager."),
+            )
+            for package in self.owners.get(path, [])
         )
 
 

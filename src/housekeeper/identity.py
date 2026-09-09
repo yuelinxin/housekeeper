@@ -3,6 +3,8 @@
 import hashlib
 import json
 import re
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 
 from housekeeper.models import Action, AppRecord, DesktopEntry, Source
@@ -119,11 +121,16 @@ def merge_records(records: list[AppRecord]) -> list[AppRecord]:
     for app in records:
         existing = grouped.get(app.key)
         if existing is None:
-            grouped[app.key] = app
+            grouped[app.key] = deepcopy(app)
             continue
         known = {e.path for e in existing.entries}
         existing.entries.extend(e for e in app.entries if e.path not in known)
         if app.visible and not existing.visible:
             existing.name, existing.icon, existing.status = app.name, app.icon, app.status
         existing.visible = existing.visible or app.visible
+        if existing.component:
+            existing.component = replace(
+                existing.component,
+                launcher_ids=tuple(sorted({e.desktop_id for e in existing.entries})),
+            )
     return sorted(grouped.values(), key=lambda a: (a.name.casefold(), a.key))

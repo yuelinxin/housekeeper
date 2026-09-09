@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from housekeeper.attribution import attribute
 from housekeeper.identity import classify
 from housekeeper.models import AppRecord, Source
 from housekeeper.providers import flatpak, rpm
@@ -97,12 +98,12 @@ def test_rpm_reads_inventory_metrics_from_owned_installed_header(entry, optional
     index.ts = SimpleNamespace(dbMatch=match)
     index._cache = {}
     app = classify(desktop)
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == Source.RPM
     assert app.software_size == optional.get("size")
     assert app.updated_at == optional.get("installtime")
     before = len(calls)
-    index.enrich(classify(desktop))
+    attribute(classify(desktop), (index,))
     assert len(calls) == before  # Reuse ownership metadata across launchers.
 
 

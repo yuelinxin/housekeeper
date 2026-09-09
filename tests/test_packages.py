@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from housekeeper.attribution import attribute
 from housekeeper.identity import classify
 from housekeeper.models import Action, AppRecord, Source, UpdateAction
 from housekeeper.providers import packages, snap
@@ -37,7 +38,7 @@ def pacman_db(tmp_path, monkeypatch):
 
 def test_pacman_source_size_and_stale_version(pacman_db, entry):
     app = classify(replace(entry(), path=Path("/usr/share/applications/editor.desktop")))
-    packages.PackageIndex().enrich(app)
+    app = attribute(app, (packages.PackageIndex(),))
     assert app.source == Source.PACMAN and app.version == "1.2-1"
     assert app.software_size == 12345 and app.updated_at == 1735689600
     assert measure_storage(app) == StorageUsage(12345)
@@ -49,7 +50,7 @@ def test_pacman_source_size_and_stale_version(pacman_db, entry):
     (pacman_db / "desc").write_text((pacman_db / "desc").read_text().replace("1.2-1", "1.2-2"))
     assert measure_storage(app) == StorageUsage()
     updated = classify(app.entries[0])
-    packages.PackageIndex().enrich(updated)
+    updated = attribute(updated, (packages.PackageIndex(),))
     assert updated.key == app.key
 
 
@@ -108,7 +109,7 @@ def apk_db(tmp_path, monkeypatch):
 
 def test_apk_installed_size_and_directory_file_attribution(apk_db, entry):
     app = classify(replace(entry(), path=Path("/usr/share/applications/editor.desktop")))
-    packages.PackageIndex().enrich(app)
+    app = attribute(app, (packages.PackageIndex(),))
     assert app.source == Source.APK and app.identity == "editor:x86_64"
     assert app.software_size == 8192 and app.updated_at is None
     assert measure_storage(app) == StorageUsage(8192)
@@ -133,11 +134,13 @@ def test_database_paths_do_not_escape_root(path):
 @pytest.mark.parametrize(
     "source", [Source.WEB, Source.STEAM, Source.APPIMAGE, Source.FLATPAK, Source.RPM, Source.DEB]
 )
-def test_other_sources_never_trigger_package_queries(source, monkeypatch, entry):
-    monkeypatch.setattr(packages, "load_packages", lambda _: pytest.fail("Unexpected query"))
+def test_candidate_queries_do_not_trust_previous_source(source, monkeypatch, entry):
+    calls = []
+    monkeypatch.setattr(packages, "load_packages", lambda source: calls.append(source) or [])
     app = AppRecord("app", "Example", source=source, entries=[entry()])
-    packages.PackageIndex().enrich(app)
-    assert app.source == source
+    app = attribute(app, (packages.PackageIndex(),))
+    assert calls
+    assert app.action != Action.UNINSTALL
 
 
 def test_ambiguous_owners_and_unowned_wrappers_remain_unknown(pacman_db, monkeypatch, entry):
@@ -145,13 +148,15 @@ def test_ambiguous_owners_and_unowned_wrappers_remain_unknown(pacman_db, monkeyp
     monkeypatch.setattr(
         packages,
         "load_packages",
-        lambda source: [package, package] if source == Source.PACMAN else [],
+        lambda source: (
+            [package, replace(package, name="different")] if source == Source.PACMAN else []
+        ),
     )
     app = classify(replace(entry(), path=Path(package.desktops[0])))
-    packages.PackageIndex().enrich(app)
+    app = attribute(app, (packages.PackageIndex(),))
     assert app.source == Source.OTHER
     app = classify(entry(("/usr/bin/editor",)))
-    packages.PackageIndex().enrich(app)
+    app = attribute(app, (packages.PackageIndex(),))
     assert app.source == Source.OTHER
 
 
@@ -162,7 +167,7 @@ def test_provider_failure_does_not_hide_other_formats(apk_db, monkeypatch, entry
     monkeypatch.setattr(packages, "pacman_packages", unavailable)
     index = packages.PackageIndex()
     app = classify(replace(entry(), path=Path("/usr/share/applications/editor.desktop")))
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == Source.APK
     assert len(index.warnings) == 1
 
@@ -173,7 +178,7 @@ def test_verified_icon_override_preserves_package_ownership(pacman_db, monkeypat
         lambda _: Path("/usr/share/applications/editor.desktop"),
     )
     app = classify(entry())
-    packages.PackageIndex().enrich(app)
+    app = attribute(app, (packages.PackageIndex(),))
     assert app.source == Source.PACMAN
     assert measure_storage(app).software == 12345
 
@@ -230,7 +235,7 @@ def test_snap_reads_enabled_revision_and_excludes_runtimes(snap_api, monkeypatch
     monkeypatch.setattr(packages, "pacman_paths", lambda: (tmp_path / "absent", Path("/")))
     monkeypatch.setattr(packages, "APK_DATABASE", tmp_path / "absent-apk")
     app = classify(replace(entry(), path=Path(snap_info()["apps"][0]["desktop-file"])))
-    packages.PackageIndex().enrich(app)
+    app = attribute(app, (packages.PackageIndex(),))
     assert app.source == Source.SNAP and app.identity == "editor_test"
     assert app.software_size == 123456 and app.updated_at == 1735689600
     assert measure_storage(app) == StorageUsage(123456)

@@ -36,6 +36,8 @@ class UpdateReport:
 
 
 def installation_key(app):
+    if app.installation:
+        return (app.provider, app.installation.id)
     if app.provider == "rpm":
         return ("rpm", app.metadata.get("name", app.identity), app.metadata.get("arch", ""))
     return (app.provider, app.metadata.get("installation", ""), app.identity)
@@ -178,7 +180,11 @@ class UpdateBatch:
                 )
                 if all(verified.get(change_key(original, c)) == c for c in original.changes):
                     completed.extend(item.names)
-                    completed_app_keys.append(app.key)
+                    completed_app_keys.extend(
+                        a.key
+                        for a in self.inventory
+                        if installation_key(a) == installation_key(app)
+                    )
                     continue
                 kwargs = {"refresh": False} if app.provider == "rpm" else {}
                 check = provider.prepare_update(app, self.inventory, progress, **kwargs)
@@ -206,7 +212,9 @@ class UpdateBatch:
                     outcome = result.outcome
                     break
                 completed.extend(item.names)
-                completed_app_keys.append(app.key)
+                completed_app_keys.extend(
+                    a.key for a in self.inventory if installation_key(a) == installation_key(app)
+                )
                 verified.update((change_key(plan, c), c) for c in plan.changes)
             except Exception as error:
                 LOG.warning(

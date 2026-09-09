@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from housekeeper import APP_ID
+from housekeeper.attribution import check_binding, evidence_digest, plan_binding
 from housekeeper.i18n import _
 from housekeeper.identity import digest
 from housekeeper.models import (
@@ -109,6 +110,32 @@ class FlatpakIndex:
     def roots(self):
         return [Path(path) / "exports/share/applications" for path in self.installations]
 
+    def candidates(self, entry):
+        from housekeeper.attribution import candidate
+        from housekeeper.identity import classify
+
+        app = self.associate(classify(entry))
+        if app is None:
+            return ()
+        return (
+            candidate(
+                Source.FLATPAK,
+                app.metadata["installation"],
+                app.identity,
+                app.version,
+                app.identity,
+                str(entry.path),
+                kind="export",
+                verified=True,
+                metadata=app.metadata,
+                scope=app.scope,
+                location=app.location,
+                origin=app.origin,
+                size=app.software_size,
+                updated_at=app.updated_at,
+            ),
+        )
+
     def associate(self, app):
         from housekeeper.providers.flatpak_attribution import binding, parse_launch
 
@@ -116,10 +143,7 @@ class FlatpakIndex:
             return None
         entry = app.entries[0]
         # Visibility overlays never establish an ownership relationship.
-        if entry.reason == "Hidden by a desktop entry override":
-            for candidate in self.apps:
-                if entry.desktop_id == candidate.metadata["app_id"] + ".desktop":
-                    candidate.visible, candidate.status = False, entry.reason
+        if "Hidden by a desktop entry override" in entry.reason:
             return None
         launch = parse_launch(entry)
         if launch is None or (entry.flatpak_id and entry.flatpak_id != launch.app_id):
@@ -206,7 +230,12 @@ class FlatpakProvider:
             return ProviderCapabilities(False, reason=reason, update_reason=reason)
 
     def _transaction(self, app):
-        FlatpakIndex.validate(app)
+        if app.installation:
+            from housekeeper.attribution import revalidate
+
+            revalidate(app)
+        else:
+            FlatpakIndex.validate(app)
         fp = load_flatpak()
         installations, warnings = configured_installations(fp)
         match = next(
@@ -220,6 +249,8 @@ class FlatpakProvider:
         refs = {r.format_ref(): r for r in match.list_installed_refs(None)}
         if app.identity not in refs:
             raise ManagementError("The application is no longer installed. Refresh the inventory.")
+        if app.metadata.get("commit") and refs[app.identity].get_commit() != app.metadata["commit"]:
+            raise ManagementError("The installed Flatpak changed. Refresh the inventory.")
         transaction = fp.Transaction.new_for_installation(match, None)
         transaction.set_include_unused_uninstall_ops(False)
         transaction.set_disable_related(True)
@@ -257,17 +288,28 @@ class FlatpakProvider:
             app.key,
             "flatpak",
             app.identity,
-            (app.name,),
+            tuple(
+                sorted(
+                    {
+                        a.name
+                        for a in inventory
+                        if a.target and app.target and a.target.id == app.target.id
+                    }
+                    or {app.name}
+                )
+            ),
             "This removes this installation of the application. User data and shared runtimes are kept.",
             digest(
                 app.metadata["installation"],
                 commit,
                 captured,
-                app.metadata.get("flatpak_binding", ""),
+                evidence_digest(app),
             ),
+            **plan_binding(app),
         )
 
     def execute(self, app, plan, progress):
+        check_binding(app, plan)
         _fp, transaction, commit = self._transaction(app)
         mismatch = []
 
@@ -276,7 +318,7 @@ class FlatpakProvider:
                 app.metadata["installation"],
                 commit,
                 list(self._operations(tx)),
-                app.metadata.get("flatpak_binding", ""),
+                evidence_digest(app),
             )
             if fingerprint != plan.fingerprint:
                 mismatch.append(True)
@@ -319,7 +361,12 @@ class FlatpakProvider:
             raise ManagementError(_("Run Housekeeper as a regular desktop user."))
         if app.metadata.get("app_id") == APP_ID:
             raise ManagementError(_("Update Housekeeper using your system package manager."))
-        FlatpakIndex.validate(app)
+        if app.installation:
+            from housekeeper.attribution import revalidate
+
+            revalidate(app)
+        else:
+            FlatpakIndex.validate(app)
         fp = load_flatpak()
         self.cancel = Gio.Cancellable()
         if self.cancel_requested:
@@ -440,13 +487,14 @@ class FlatpakProvider:
                 app.metadata["installation"],
                 current_commit,
                 app.origin,
-                app.metadata.get("flatpak_binding", ""),
+                evidence_digest(app),
                 remotes,
                 changes,
             ),
             message,
             total,
             environment=digest(remotes),
+            **plan_binding(app),
         )
 
     @staticmethod
@@ -533,6 +581,7 @@ class FlatpakProvider:
         return UpdateCheckResult(UpdateState.AVAILABLE, plan)
 
     def execute_update(self, app, plan, progress):
+        check_binding(app, plan)
         if (
             plan.app_key != app.key
             or plan.provider != "flatpak"

@@ -5,7 +5,7 @@ import shlex
 
 from housekeeper import APP_ID
 from housekeeper.i18n import _
-from housekeeper.models import Source, UpdateAction
+from housekeeper.models import AttributionState, Source, UpdateAction
 
 
 def assign_update_action(app, capabilities):
@@ -13,6 +13,11 @@ def assign_update_action(app, capabilities):
     app.update_reason = ""
     if app.metadata.get("name") == "housekeeper" or app.metadata.get("app_id") == APP_ID:
         app.update_reason = _("Update Housekeeper itself using your system package manager.")
+        return
+    if app.attribution and app.attribution.state != AttributionState.CONFIRMED:
+        app.update_reason = (
+            app.attribution.reason or "The ownership of this application is not verified."
+        )
         return
     capability = capabilities.get(app.provider)
     if capability is None:

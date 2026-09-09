@@ -4,10 +4,10 @@ import logging
 import os
 from pathlib import Path
 
+from housekeeper.attribution import check_binding, evidence_digest, plan_binding
 from housekeeper.i18n import _
 from housekeeper.identity import digest, unwrap_env
 from housekeeper.models import (
-    Action,
     ManagementError,
     OperationCancelled,
     OperationResult,
@@ -58,6 +58,7 @@ class RpmIndex:
         try:
             import rpm
 
+            self.context = "/:" + rpm.expandMacro("%{_dbpath}")
             self.ts = rpm.TransactionSet()
             self.ts.openDB()
         except (ImportError, OSError, RuntimeError) as error:
@@ -98,20 +99,20 @@ class RpmIndex:
             ]
         return self._headers[path]
 
-    def enrich(self, app):
-        if app.source != Source.OTHER or not self.available:
-            return
-        entry = app.entries[0]
+    def candidates(self, entry):
+        if not self.available:
+            if self.error and Path("/var/lib/rpm").exists():
+                raise RuntimeError(self.error)
+            return ()
         from housekeeper.appearance import verified_icon_source
+        from housekeeper.attribution import candidate
+        from housekeeper.providers.rpm_attribution import RpmAttribution
 
         entry_path = verified_icon_source(entry.path)
         argv = unwrap_env(entry.argv)
-        entry_owners = self.owners(entry_path)
-        if entry_owners:
-            # Suite components and D-Bus apps can share a launcher binary from a
-            # different package. The desktop file identifies the application package.
-            owners = {tuple(sorted(package.items())) for package in entry_owners}
-        else:
+        packages = self.owners(entry_path)
+        kind, subject = "desktop", str(entry_path)
+        if not packages:
             binary = Path(entry.executable).name
             hosts = {
                 "sh",
@@ -134,50 +135,46 @@ class RpmIndex:
                 "xdg-open",
                 "electron",
                 "appimagelauncher",
+                "gnome-terminal",
             }
-            if binary in hosts or binary.startswith("python"):
-                return
-            # Without package-owned desktop metadata, arguments may identify a guest app.
+            if binary in hosts or binary.startswith("python") or not argv:
+                return ()
             if any(arg not in {"%u", "%U", "%f", "%F", "%i", "%c", "%k"} for arg in argv[1:]):
-                return
+                return ()
             paths = {Path(path) for path in (entry.executable, entry.resolved_executable) if path}
-            owners = {
-                tuple(sorted(package.items())) for path in paths for package in self.owners(path)
-            }
-        if len(owners) != 1:
-            return
-        package = dict(next(iter(owners)))
-        app.source, app.provider = Source.RPM, "rpm"
-        app.scope, app.version = "System", package["version"]
-        app.software_size = byte_size(package.get("size"))
-        app.updated_at = package_timestamp(package.get("installtime"))
-        app.identity = "{name}-{version}.{arch}".format(**package)
-        app.metadata.update(package)
-        launch = entry.argv or (entry.desktop_id,)
-        app.key = digest("rpm", package["name"], package["arch"], launch)
-        from housekeeper.providers.rpm_attribution import RpmAttribution
-
+            packages = [package for path in paths for package in self.owners(path)]
+            kind, subject = "command", entry.executable
+        packages = [dict(value) for value in sorted({tuple(sorted(p.items())) for p in packages})]
         if not hasattr(self, "_attribution"):
             self._attribution = RpmAttribution(self)
-        verified = self._attribution.verify(entry, package)
-        app.metadata["rpm_verified"] = "true" if verified else "false"
-        if not verified:
-            app.action = Action.NONE
-            app.metadata["management_reason"] = _(
-                "This RPM owns the launcher or command, but the application's launch target "
-                "could not be verified. Review it using your system package manager."
+        result = []
+        for package in packages:
+            verified = self._attribution.verify(entry, package)
+            reason = (
+                ""
+                if verified
+                else _(
+                    "This RPM owns the launcher or command, but the application's launch target "
+                    "could not be verified. Review it using your system package manager."
+                )
             )
-            return
-        supported, reason = host_support()
-        if package["name"] == "housekeeper":
-            supported, reason = (
-                False,
-                "Manage Housekeeper itself using your system package manager.",
+            result.append(
+                candidate(
+                    Source.RPM,
+                    getattr(self, "context", "/"),
+                    package["name"] + ":" + package["arch"],
+                    package["version"],
+                    "{name}-{version}.{arch}".format(**package),
+                    subject,
+                    kind=kind,
+                    verified=verified,
+                    reason=reason,
+                    metadata={**package, "rpm_verified": "true" if verified else "false"},
+                    size=byte_size(package.get("size")),
+                    updated_at=package_timestamp(package.get("installtime")),
+                )
             )
-        if supported and os.geteuid() != 0:
-            app.action = Action.UNINSTALL
-        elif reason:
-            app.metadata["management_reason"] = reason
+        return tuple(result)
 
 
 class RpmProvider:
@@ -187,25 +184,11 @@ class RpmProvider:
 
     @staticmethod
     def _validate_app(app):
-        from housekeeper.identity import classify
+        from housekeeper.attribution import revalidate
 
         if not app.entries or app.metadata.get("rpm_verified") != "true":
             raise ManagementError(_("The application's RPM launch target has not been verified."))
-        index = RpmIndex()
-        for entry in app.entries:
-            current = classify(entry)
-            index.enrich(current)
-            if (
-                current.metadata.get("rpm_verified") != "true"
-                or current.identity != app.identity
-                or current.version != app.version
-                or current.key != app.key
-            ):
-                raise ManagementError(
-                    _(
-                        "The launcher or its RPM ownership changed. Refresh and review the application."
-                    )
-                )
+        revalidate(app)
 
     def capabilities(self):
         supported, reason = host_support()
@@ -356,7 +339,15 @@ class RpmProvider:
                 "Use your system package manager to review this operation."
             )
         names = sorted(
-            {a.name for a in inventory if a.provider == "rpm" and a.identity == app.identity}
+            {
+                a.name
+                for a in inventory
+                if (
+                    a.target.id == app.target.id
+                    if a.target and app.target
+                    else a.provider == "rpm" and a.identity == app.identity
+                )
+            }
         )
         return RemovalPlan(
             app.key,
@@ -365,10 +356,13 @@ class RpmProvider:
             tuple(names),
             "This removes the software package and all application entries it provides. "
             "User data is kept. Additional packages will not be removed.",
-            digest(package_id, sorted(affected_ids)),
+            digest(package_id, sorted(affected_ids), evidence_digest(app)),
+            **plan_binding(app),
         )
 
     def execute(self, app, plan, progress):
+        self._validate_app(app)
+        check_binding(app, plan)
         from housekeeper.models import ManagementError, OperationResult, Outcome
 
         current = self.prepare(app, [app])
@@ -584,7 +578,15 @@ class RpmProvider:
                 )
         changes = tuple(changes)
         names = sorted(
-            {a.name for a in inventory if a.provider == "rpm" and a.identity == app.identity}
+            {
+                a.name
+                for a in inventory
+                if (
+                    a.target.id == app.target.id
+                    if a.target and app.target
+                    else a.provider == "rpm" and a.identity == app.identity
+                )
+            }
         )
         message = _(
             "Update this package and the dependencies listed below. Personal application data is kept."
@@ -601,12 +603,14 @@ class RpmProvider:
             changes,
             digest(app.key, current.get_id(), changes, repositories),
             message,
+            **plan_binding(app),
             environment=digest(repositories),
         )
         return UpdateCheckResult(UpdateState.AVAILABLE, plan)
 
     def execute_update(self, app, plan, progress):
         self._validate_app(app)
+        check_binding(app, plan)
         if plan.app_key != app.key or plan.provider != "rpm":
             raise ManagementError(_("The update plan belongs to another application."))
         client, pk, gio, _glib = self._client("update")

@@ -4,6 +4,7 @@ import os
 import stat
 from pathlib import Path
 
+from housekeeper.attribution import check_binding, plan_binding
 from housekeeper.identity import digest
 from housekeeper.models import (
     FileSnapshot,
@@ -89,9 +90,11 @@ class AppImageProvider:
             "These files will be moved to Trash. Configuration, caches, icons, and other files are kept.",
             digest(files),
             tuple(files),
+            **plan_binding(app),
         )
 
     def execute(self, app, plan, progress):
+        check_binding(app, plan)
         fresh = self.prepare(app, [app])
         if fresh.files != plan.files:
             raise ManagementError("The files changed since the preview. Review a new plan.")

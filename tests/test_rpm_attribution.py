@@ -5,12 +5,13 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from housekeeper.attribution import attribute
 from housekeeper.discovery import read_entry
 from housekeeper.identity import classify
 from housekeeper.models import Action, ManagementError, ProviderCapabilities, UpdateAction
 from housekeeper.providers.rpm import RpmIndex, RpmProvider
 from housekeeper.providers.rpm_attribution import RpmAttribution
-from housekeeper.updates import assign_update_action, update_instructions
+from housekeeper.updates import update_instructions
 
 
 @pytest.fixture
@@ -68,9 +69,12 @@ def installation(tmp_path, monkeypatch):
 
     def record(path):
         app = classify(read_entry(path, path.parent))
-        index().enrich(app)
-        assign_update_action(
-            app, {"rpm": ProviderCapabilities(update_preview=True, update_execute=True)}
+        app = attribute(app, (index(),))
+        from housekeeper.inventory import assign_actions
+
+        assign_actions(
+            app,
+            {"rpm": ProviderCapabilities(execute=True, update_preview=True, update_execute=True)},
         )
         return app
 

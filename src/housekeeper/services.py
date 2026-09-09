@@ -13,97 +13,112 @@ from housekeeper.models import (
     OperationResult,
     Outcome,
     Source,
+    UpdateAction,
 )
-from housekeeper.updates import assign_update_action
 
 LOG = logging.getLogger(__name__)
 
 
-def collect(partial=None, roots=None):
-    entries, warnings = scan_entries(roots)
-    records = [classify(entry) for entry in entries]
-    if partial:
-        partial(merge_records(records))
-    from housekeeper.providers.deb import DebIndex
-    from housekeeper.providers.flatpak import FlatpakIndex, FlatpakProvider
-    from housekeeper.providers.packages import PackageIndex
-    from housekeeper.providers.rpm import RpmIndex, RpmProvider
+def collect(partial=None, roots=None, *, indexes=None):
+    from copy import deepcopy
 
-    flatpaks, rpms = FlatpakIndex(), RpmIndex()
-    debs = DebIndex()
-    packages = PackageIndex()
-    if roots is None:
-        extra_roots = [p for p in flatpaks.roots if p not in application_roots()]
-        snap_desktops = Path("/var/lib/snapd/desktop/applications")
-        if snap_desktops.is_dir() and snap_desktops not in application_roots():
-            extra_roots.append(snap_desktops)
-        extra_entries, extra_warnings = scan_entries(extra_roots)
-        known_ids = {e.desktop_id for e in entries}
-        records.extend(classify(e) for e in extra_entries if e.desktop_id not in known_ids)
-        warnings.extend(extra_warnings)
-    warnings.extend(flatpaks.warnings)
-    rpm_capability = RpmProvider().capabilities()
-    output = []
-    for record in records:
-        if record.source == Source.OTHER:
-            matched = flatpaks.associate(record)
-            if matched is not None:
-                output.append(matched)
-                continue
-        for index in (rpms, debs, packages):
-            try:
-                index.enrich(record)
-            except Exception as error:
-                LOG.debug("Native package lookup failed", exc_info=True)
-                warnings.append(f"Could not identify a system package: {error}")
-        if record.source == Source.RPM and not rpm_capability.execute:
-            record.action = Action.NONE
-            record.metadata["management_reason"] = rpm_capability.reason
+    from housekeeper.attribution import attribute
+    from housekeeper.inventory import (
+        assign_actions,
+        discover,
+        discovery_indexes,
+        installation_record,
+    )
+    from housekeeper.providers.appimage import AppImageProvider
+    from housekeeper.providers.flatpak import FlatpakProvider
+    from housekeeper.providers.rpm import RpmProvider
+
+    if partial:
+        initial, _ = scan_entries(roots)
+        provisional = [classify(entry) for entry in initial]
+        for app in provisional:
+            app.action = Action.NONE
+            app.update_action = UpdateAction.INSTRUCTIONS
+        partial(deepcopy(merge_records(provisional)))
+    indexes = discovery_indexes() if indexes is None else tuple(indexes)
+    snapshots = [discover(index) for index in indexes]
+    scan_roots = (
+        list(roots)
+        if roots is not None
+        else list(
+            dict.fromkeys(
+                [*application_roots(), *(root for snapshot in snapshots for root in snapshot.roots)]
+            )
+        )
+    )
+    entries, warnings = scan_entries(scan_roots)
+    records = [attribute(classify(entry), indexes) for entry in entries]
+    for index in indexes:
+        # Apply XDG visibility separately from association and authorization.
+        for app in getattr(index, "apps", ()):
+            hidden = next(
+                (
+                    entry
+                    for entry in entries
+                    if "Hidden by a desktop entry override" in entry.reason
+                    and entry.desktop_id == app.metadata.get("app_id", "") + ".desktop"
+                ),
+                None,
+            )
+            copy = deepcopy(app)
+            if hidden:
+                copy.visible, copy.status = False, hidden.reason
+            bound = any(
+                record.installation
+                and record.installation.context == app.metadata.get("installation")
+                and record.installation.identity == app.identity
+                for record in records
+            )
+            if not bound:
+                records.append(installation_record(copy))
+        warnings.extend(getattr(index, "warnings", ()))
+    output = merge_records(records)
+    image_provider = AppImageProvider()
+    capabilities = {
+        "rpm": RpmProvider().capabilities(),
+        "flatpak": FlatpakProvider().capabilities(),
+    }
+    for record in output:
+        assign_actions(record, capabilities)
+        if record.attribution:
+            warnings.extend(record.attribution.errors)
         if record.scope == "Unknown" and record.entries:
             record.metadata["entry_scope"] = (
                 "User" if record.entries[0].path.is_relative_to(Path.home()) else "System"
             )
-            if record.source == Source.APPIMAGE and record.location:
-                record.scope = (
-                    "User" if Path(record.location).is_relative_to(Path.home()) else "Unknown"
-                )
-        if record.source in {Source.WEB, Source.STEAM} and not record.entries[0].executable:
-            record.action = Action.INSTRUCTIONS
-            record.metadata["management_reason"] = "The application's manager is unavailable."
-        output.append(record)
-    warnings.extend(packages.warnings)
-    output.extend(flatpaks.apps)
-    output = merge_records(output)
-    from housekeeper.providers.appimage import AppImageProvider
-
-    image_provider = AppImageProvider()
-    update_capabilities = {"rpm": rpm_capability, "flatpak": FlatpakProvider().capabilities()}
-    for record in output:
-        assign_update_action(record, update_capabilities)
         if record.source == Source.APPIMAGE:
             from housekeeper.storage import measure_storage
 
             record.software_size = measure_storage(record).software
+            record.scope = (
+                "User" if Path(record.location).is_relative_to(Path.home()) else "Unknown"
+            )
             try:
                 image_provider.prepare(record, output)
                 record.action = Action.TRASH
             except (ManagementError, OSError, RuntimeError) as error:
+                record.action = Action.NONE
                 record.metadata["management_reason"] = str(error)
-        elif record.source == Source.OTHER:
+        elif record.source == Source.OTHER and not record.metadata.get("management_reason"):
             record.metadata["management_reason"] = (
-                "No supported package manager could establish this application's ownership. "
-                "Review its file location or the publisher's uninstall instructions."
+                "No supported package manager could establish this application's ownership."
             )
     monitors = list(
         dict.fromkeys(
-            [
-                *(application_roots() if roots is None else roots),
-                *flatpaks.roots,
-                *(entry.path.parent for app in output for entry in app.entries),
-            ]
+            [*scan_roots, *(entry.path.parent for app in output for entry in app.entries)]
         )
     )
-    return output, list(dict.fromkeys(warnings)), monitors, flatpaks.installations
+    installations = {
+        path: installation
+        for index in indexes
+        for path, installation in getattr(index, "installations", {}).items()
+    }
+    return output, list(dict.fromkeys(warnings)), monitors, installations
 
 
 class InventoryService:

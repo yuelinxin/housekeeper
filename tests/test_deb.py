@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from housekeeper.attribution import attribute
 from housekeeper.identity import classify
 from housekeeper.models import Action, AppRecord, Source, UpdateAction
 from housekeeper.providers import deb
@@ -34,7 +35,7 @@ def test_deb_attribution_size_and_manual_management(database):
     desktop, rows, calls = database
     app = classify(desktop)
     index = deb.DebIndex()
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert (app.source, app.provider, app.scope) == (Source.DEB, "deb", "System")
     assert app.identity == "example:amd64"
     assert app.version == "1:2.0-3"
@@ -50,7 +51,7 @@ def test_deb_attribution_size_and_manual_management(database):
     rows["packages"] = rows["packages"].replace("1:2.0-3", "1:2.0-4")
     assert measure_storage(app) == StorageUsage()
     updated = classify(desktop)
-    deb.DebIndex().enrich(updated)
+    updated = attribute(updated, (deb.DebIndex(),))
     assert updated.key == key
 
 
@@ -59,7 +60,7 @@ def test_uninstalled_or_partial_packages_are_not_attributed(database, status):
     desktop, rows, _ = database
     rows["packages"] = rows["packages"].replace("installed", status)
     app = classify(desktop)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.OTHER
 
 
@@ -68,7 +69,7 @@ def test_ambiguous_or_mismatched_owners_are_not_attributed(database, owners):
     desktop, rows, _ = database
     rows["owners"] = f"{owners}: {desktop.path}\n"
     app = classify(desktop)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.OTHER
 
 
@@ -76,12 +77,12 @@ def test_multiarch_uses_exact_owner(database):
     desktop, rows, _ = database
     rows["packages"] += "example\t1:2.0-3\tarm64\tinstalled\t99\n"
     app = classify(desktop)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.identity == "example:amd64"
     assert measure_storage(app) == StorageUsage(42 * 1024)
     rows["owners"] = f"example: {desktop.path}\n"
     app = classify(desktop)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.OTHER
 
 
@@ -89,10 +90,10 @@ def test_diverted_and_unowned_launchers_are_unknown(database):
     desktop, rows, _ = database
     rows["owners"] += f"diversion by other from: {desktop.path}\n"
     app = classify(desktop)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.OTHER
     rows["owners"] = f"example: {desktop.path}.backup\n"
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.OTHER
 
 
@@ -102,9 +103,10 @@ def test_diverted_and_unowned_launchers_are_unknown(database):
 def test_guest_apps_and_other_providers_are_not_reclassified(database, source):
     desktop, _, calls = database
     app = AppRecord("app", "Example", source=source, entries=[desktop])
-    deb.DebIndex().enrich(app)
-    assert app.source == source
-    assert not calls
+    app = attribute(app, (deb.DebIndex(),))
+    assert app.source == (source if source in {Source.WEB, Source.STEAM} else Source.DEB)
+    assert calls
+    assert app.action == Action.NONE
 
 
 def test_icon_override_uses_only_verified_source(database, monkeypatch):
@@ -112,11 +114,11 @@ def test_icon_override_uses_only_verified_source(database, monkeypatch):
     override = replace(desktop, path=desktop.path.parent / "override.desktop")
     monkeypatch.setattr("housekeeper.appearance.verified_icon_source", lambda _: desktop.path)
     app = classify(override)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.DEB
     monkeypatch.setattr("housekeeper.appearance.verified_icon_source", lambda path: path)
     app = classify(override)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.OTHER
 
 
@@ -125,7 +127,7 @@ def test_unknown_and_zero_sizes(database, size, expected):
     desktop, rows, _ = database
     rows["packages"] = rows["packages"].replace("\t42\n", "\t" + size + "\n")
     app = classify(desktop)
-    deb.DebIndex().enrich(app)
+    app = attribute(app, (deb.DebIndex(),))
     assert app.source == Source.DEB
     assert measure_storage(app).software == expected
     assert app.software_size == expected
@@ -135,7 +137,7 @@ def test_index_batches_queries_across_launchers(database):
     desktop, _, calls = database
     index = deb.DebIndex()
     for _ in range(10):
-        index.enrich(classify(desktop))
+        attribute(classify(desktop), (index,))
     assert len(calls) == 2
 
 
@@ -182,7 +184,7 @@ def test_real_dpkg_query_with_isolated_database(tmp_path, monkeypatch, desktop):
     )
     (db / "info/example.list").write_text(str(path) + "\n")
     monkeypatch.setenv("DPKG_ADMINDIR", str(db))
-    monkeypatch.setattr("housekeeper.providers.rpm.RpmIndex.enrich", lambda *args: None)
+    monkeypatch.setattr("housekeeper.providers.rpm.RpmIndex.candidates", lambda *args: ())
     apps, warnings, *_ = collect(roots=[Path(path).parent])
     app = next(app for app in apps if app.source == Source.DEB)
     assert not warnings

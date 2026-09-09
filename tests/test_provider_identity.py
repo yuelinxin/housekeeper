@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from housekeeper.attribution import attribute
 from housekeeper.identity import classify, digest
 from housekeeper.models import AppRecord, Source
 from housekeeper.providers.flatpak import FlatpakIndex
@@ -28,7 +29,7 @@ def test_user_launcher_does_not_attribute_guest_to_host_package(entry, argv):
         if str(path).endswith(".desktop")
         else [{"name": "host-package", "version": "1-1", "arch": "x86_64"}]
     )
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == Source.OTHER
 
 
@@ -56,7 +57,7 @@ def test_rpm_desktop_owner_identifies_app_using_shared_binary(
             {"name": binary_package, "version": "1-1", "arch": arch} for arch in ("x86_64", "i686")
         ]
     )
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == Source.RPM and app.provider == "rpm"
     assert app.metadata["name"] == package_name
     assert app.identity == package_name + "-2-1.x86_64"
@@ -69,7 +70,7 @@ def test_ambiguous_rpm_desktop_owner_does_not_fall_back_to_binary(entry):
     index = RpmIndex.__new__(RpmIndex)
     index.ts = object()
     index.owners = lambda path: packages if path == app.entries[0].path else packages[:1]
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == Source.OTHER
 
 
@@ -89,7 +90,7 @@ def test_unowned_direct_rpm_launcher_requires_unambiguous_binary(entry, ambiguou
     index = RpmIndex.__new__(RpmIndex)
     index.ts = object()
     index.owners = owners
-    index.enrich(app)
+    app = attribute(app, (index,))
     assert app.source == (Source.OTHER if ambiguous else Source.RPM)
 
 
@@ -132,7 +133,7 @@ def test_sandboxed_external_app_never_maps_to_host_flatpak(entry, argv):
     assert app.source in {Source.STEAM, Source.WEB}
 
 
-def test_hidden_override_without_flatpak_key_hides_synthetic_apps(entry):
+def test_hidden_override_cannot_authorize_or_mutate_installations(entry):
     index = FlatpakIndex.__new__(FlatpakIndex)
     index.apps = [flatpak_app("/system-flatpak"), flatpak_app("/user-flatpak")]
     hidden = entry(
@@ -141,7 +142,7 @@ def test_hidden_override_without_flatpak_key_hides_synthetic_apps(entry):
         reason="Hidden by a desktop entry override",
     )
     index.associate(classify(hidden))
-    assert all(not app.visible for app in index.apps)
+    assert all(app.visible and not app.entries for app in index.apps)
 
 
 def test_flatpak_installations_and_branches_are_not_conflated(entry, tmp_path):

@@ -33,6 +33,102 @@ class UpdateAction(str, Enum):
     INSTRUCTIONS = "instructions"
 
 
+class AttributionState(str, Enum):
+    CONFIRMED = "confirmed"
+    CONFLICT = "conflict"
+    INSUFFICIENT = "insufficient"
+    UNAVAILABLE = "unavailable"
+    UNSUPPORTED = "unsupported"
+    CHANGED = "changed"
+
+
+class Relationship(str, Enum):
+    OWNS = "owns"
+    HOSTS = "hosts"
+
+
+@dataclass(frozen=True)
+class LaunchSpec:
+    argv: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...] = ()
+    unset: tuple[str, ...] = ()
+    clear_environment: bool = False
+    wrappers: tuple[str, ...] = ()
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class InstallationInstance:
+    id: str
+    provider: str
+    context: str
+    identity: str
+    version: str
+
+
+@dataclass(frozen=True)
+class ManagementTarget:
+    id: str
+    instance_id: str
+    kind: str
+    value: str
+
+
+@dataclass(frozen=True)
+class AppComponent:
+    id: str
+    launcher_ids: tuple[str, ...]
+    launch_signature: str
+
+
+@dataclass(frozen=True)
+class AttributionEvidence:
+    kind: str
+    subject: str
+    verified: bool = False
+
+
+@dataclass(frozen=True)
+class AttributionCandidate:
+    instance: InstallationInstance
+    target: ManagementTarget
+    source: Source
+    identity: str
+    evidence: tuple[AttributionEvidence, ...]
+    state: AttributionState
+    reason: str = ""
+    relationship: Relationship = Relationship.OWNS
+    metadata: tuple[tuple[str, str], ...] = ()
+    scope: str = "System"
+    location: str = ""
+    origin: str = ""
+    software_size: int | None = None
+    updated_at: int | None = None
+
+
+@dataclass(frozen=True)
+class AttributionResult:
+    state: AttributionState
+    candidates: tuple[AttributionCandidate, ...] = ()
+    selected: AttributionCandidate | None = None
+    reason: str = ""
+    errors: tuple[str, ...] = ()
+
+
+class FileOwnershipState(str, Enum):
+    OWNED = "owned"
+    UNOWNED = "unowned"
+    ERROR = "error"
+    NOT_APPLICABLE = "not_applicable"
+
+
+@dataclass(frozen=True)
+class FileOwnershipResult:
+    state: FileOwnershipState
+    owners: tuple[str, ...] = ()
+    reason: str = ""
+
+
 @dataclass(frozen=True)
 class DesktopEntry:
     desktop_id: str
@@ -48,6 +144,7 @@ class DesktopEntry:
     flatpak_id: str = ""
     dbus_activatable: bool = False
     root: Path = Path("/")
+    launch: LaunchSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +180,10 @@ class AppRecord:
     update_reason: str = ""
     software_size: int | None = None
     updated_at: int | None = None
+    component: AppComponent | None = None
+    installation: InstallationInstance | None = None
+    target: ManagementTarget | None = None
+    attribution: AttributionResult | None = None
 
     @property
     def search_text(self) -> str:
@@ -119,6 +220,9 @@ class RemovalPlan:
     fingerprint: str
     files: tuple[FileSnapshot, ...] = ()
     metadata: tuple[tuple[str, str], ...] = ()
+    instance_id: str = ""
+    target_id: str = ""
+    evidence_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -143,6 +247,9 @@ class UpdatePlan:
     message: str
     download_size: int | None = None
     environment: str = ""
+    instance_id: str = ""
+    target_id: str = ""
+    evidence_digest: str = ""
 
 
 class UpdateState(str, Enum):

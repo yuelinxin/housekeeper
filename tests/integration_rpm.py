@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from housekeeper.attribution import attribute
 from housekeeper.discovery import read_entry
 from housekeeper.identity import classify
 from housekeeper.models import ManagementError, Outcome
@@ -22,7 +23,7 @@ if (
 
 path = Path("/usr/share/applications/housekeeper-fixture.desktop")
 app = classify(read_entry(path, path.parent, {"GNOME"}))
-RpmIndex().enrich(app)
+app = attribute(app, (RpmIndex(),))
 assert app.metadata["name"] == "housekeeper-fixture"
 manager = RpmProvider()
 mode = sys.argv[1]
