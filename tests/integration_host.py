@@ -93,6 +93,8 @@ rules.write_text(
 
 
 def as_user(script, *args):
+    activation = script == "integration_flatpak.py"
+    session = "activation-session.conf" if activation else "session.conf"
     run(
         "runuser",
         "-u",
@@ -102,8 +104,15 @@ def as_user(script, *args):
         "HOUSEKEEPER_DISPOSABLE_TEST=1",
         f"PYTHONPATH={root / 'src'}",
         "GIO_USE_VFS=local",
+        *(
+            [
+                "XDG_DATA_DIRS=/home/hk-test/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share"
+            ]
+            if activation
+            else []
+        ),
         "dbus-run-session",
-        f"--config-file={root / 'tests/session.conf'}",
+        f"--config-file={root / 'tests' / session}",
         "--",
         "/usr/bin/python3",
         str(root / "tests" / script),

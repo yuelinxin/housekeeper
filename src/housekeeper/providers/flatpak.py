@@ -141,7 +141,11 @@ class FlatpakIndex:
         )
 
     def associate(self, app):
-        from housekeeper.providers.flatpak_attribution import binding, parse_launch
+        from housekeeper.providers.flatpak_attribution import (
+            binding,
+            parse_launch,
+            select_installation,
+        )
 
         if not app.entries or app.source not in {Source.OTHER, Source.FLATPAK}:
             return None
@@ -152,40 +156,10 @@ class FlatpakIndex:
         launch = parse_launch(entry)
         if launch is None or (entry.flatpak_id and entry.flatpak_id != launch.app_id):
             return None
-        matches = [a for a in self.apps if a.metadata["app_id"] == launch.app_id]
-        if launch.branch:
-            matches = [a for a in matches if a.identity.split("/")[-1] == launch.branch]
-        if launch.arch:
-            matches = [a for a in matches if a.identity.split("/")[-2] == launch.arch]
-        if launch.scope:
-            matches = [
-                a
-                for a in matches
-                if a.scope == launch.scope
-                and (
-                    launch.scope != "System"
-                    or a.metadata.get("installation_id", "default") == "default"
-                )
-            ]
-        elif launch.installation:
-            matches = [
-                a
-                for a in matches
-                if a.scope == "System"
-                and a.metadata.get("installation_id", "default") == launch.installation
-            ]
-        elif any(a.scope == "User" for a in matches):
-            matches = [a for a in matches if a.scope == "User"]
-        if launch.branch:
-            matches = [a for a in matches if a.identity.split("/")[-1] == launch.branch]
-        elif any("current" in a.metadata for a in matches):
-            matches = [a for a in matches if a.metadata.get("current") == "true"]
-        if launch.arch:
-            matches = [a for a in matches if a.identity.split("/")[-2] == launch.arch]
-        if len(matches) != 1:
+        match = select_installation(launch, self.apps)
+        if match is None:
             return None
-        match = matches[0]
-        evidence = binding(entry, match, launch)
+        evidence = binding(entry, match, launch, self.apps)
         if not evidence:
             return None
         result = deepcopy(match)

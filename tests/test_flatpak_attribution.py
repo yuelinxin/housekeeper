@@ -156,7 +156,7 @@ def test_dbus_activation_cannot_be_verified_from_exec(desktop):
 
 
 @pytest.fixture
-def dbus_export(desktop, tmp_path):
+def dbus_export(desktop, tmp_path, monkeypatch, flatpak_command):
     app = installed(str(tmp_path / "installation"))
     app.location = str(tmp_path / "deploy")
     path = desktop(
@@ -169,7 +169,143 @@ def dbus_export(desktop, tmp_path):
     )
     db = index(app)
     db.installations = {app.metadata["installation"]: object()}
+    services = tmp_path / "deploy/export/share/dbus-1/services"
+    services.mkdir(parents=True)
+    (services / "org.example.App.service").write_text(
+        "[D-BUS Service]\nName=org.example.App\n"
+        f"Exec={flatpak_command} run --branch=stable --arch=x86_64 "
+        "--command=/app/bin/example org.example.App --gapplication-service\n"
+    )
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_DATA_DIRS", str(services.parent.parent))
     return db, path
+
+
+def test_dbus_user_override_cannot_authorize_different_installation(dbus_export, tmp_path):
+    db, exported = dbus_export
+    db.apps.append(installed("/system", "System"))
+    original = tmp_path / "deploy/export/share/dbus-1/services/org.example.App.service"
+    override = tmp_path / "data/dbus-1/services/org.example.App.service"
+    override.parent.mkdir(parents=True)
+    override.write_text(original.read_text().replace(" run ", " run --system "))
+    assert db.associate(classify(read_entry(exported, exported.parent))) is None
+
+
+@pytest.mark.parametrize("change", ["target", "contents", "precedence", "symlink"])
+@pytest.mark.parametrize("operation", ["revalidate", "_transaction", "_update_transaction"])
+def test_effective_dbus_service_changes_invalidate_revalidation(
+    dbus_export, tmp_path, monkeypatch, change, operation
+):
+    from housekeeper.attribution import attribute, revalidate
+
+    db, exported = dbus_export
+    service = tmp_path / "deploy/export/share/dbus-1/services/org.example.App.service"
+    monkeypatch.setattr("housekeeper.inventory.discovery_indexes", lambda: (db,))
+    monkeypatch.setattr("os.geteuid", lambda: 1000)
+    app = attribute(classify(read_entry(exported, exported.parent)), (db,))
+    revalidate(app)
+    if change == "target":
+        service.write_text(service.read_text().replace(" run ", " run --system "))
+    elif change == "contents":
+        service.write_text(service.read_text() + "# changed after preview\n")
+    elif change == "precedence":
+        override = tmp_path / "data/dbus-1/services/org.example.App.service"
+        override.parent.mkdir(parents=True)
+        override.write_text(service.read_text())
+    else:
+        replacement = service.with_name("replacement")
+        replacement.write_bytes(service.read_bytes())
+        service.unlink()
+        service.symlink_to(replacement)
+    with pytest.raises(ManagementError, match="ownership changed"):
+        if operation == "revalidate":
+            revalidate(app)
+        else:
+            getattr(FlatpakProvider(), operation)(app)
+
+
+@pytest.mark.parametrize("selector", ["--user", "--system", "--installation=extra"])
+def test_service_selection_uses_full_installation_context(dbus_export, tmp_path, selector):
+    db, exported = dbus_export
+    if selector != "--user":
+        db.apps[0].scope = "System"
+        if selector == "--installation=extra":
+            db.apps[0].metadata["installation_id"] = "extra"
+        exported.write_text(exported.read_text().replace(" run ", f" run {selector} "))
+    service = tmp_path / "deploy/export/share/dbus-1/services/org.example.App.service"
+    override = tmp_path / "data/dbus-1/services/alternate-name.service"
+    override.parent.mkdir(parents=True)
+    override.write_text(service.read_text().replace(" run ", f" run {selector} "))
+    assert db.associate(classify(read_entry(exported, exported.parent))) is not None
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing",
+        "invalid",
+        "duplicate",
+        "wrong-name",
+        "systemd",
+        "command",
+        "arguments",
+        "wrapper",
+        "branch",
+        "architecture",
+        "broken-link",
+        "unsupported-alias",
+    ],
+)
+def test_effective_service_uncertainty_never_falls_through(dbus_export, tmp_path, mutation):
+    db, exported = dbus_export
+    service = tmp_path / "deploy/export/share/dbus-1/services/org.example.App.service"
+    override = tmp_path / "data/dbus-1/services/org.example.App.service"
+    override.parent.mkdir(parents=True)
+    contents = service.read_text()
+    if mutation == "missing":
+        service.unlink()
+    elif mutation == "invalid":
+        override.write_text("not a service file")
+    elif mutation == "duplicate":
+        override.write_text(contents)
+        override.with_name("other.service").write_text(contents)
+    elif mutation == "wrong-name":
+        override.write_text(contents.replace("Name=org.example.App", "Name=org.example.Other"))
+    elif mutation == "systemd":
+        override.write_text(contents + "SystemdService=elsewhere.service\n")
+    elif mutation == "command":
+        override.write_text(contents.replace("--command=/app/bin/example", "--command=sh"))
+    elif mutation == "arguments":
+        override.write_text(contents.replace("--gapplication-service", "--guest-application"))
+    elif mutation == "wrapper":
+        override.write_text(contents.replace("Exec=", "Exec=/usr/bin/env "))
+    elif mutation == "branch":
+        db.apps.append(installed(branch="beta"))
+        override.write_text(contents.replace("--branch=stable", "--branch=beta"))
+    elif mutation == "architecture":
+        db.apps.append(replace(db.apps[0], identity="app/org.example.App/aarch64/stable"))
+        override.write_text(contents.replace("--arch=x86_64", "--arch=aarch64"))
+    elif mutation == "unsupported-alias":
+        override.with_name("alias.service").write_text(contents + "[Unsupported]\nKey=value\n")
+    else:
+        override.symlink_to(tmp_path / "absent")
+    assert db.associate(classify(read_entry(exported, exported.parent))) is None
+
+
+def test_runtime_service_has_priority_and_requires_exact_filename(dbus_export, tmp_path):
+    db, exported = dbus_export
+    service = tmp_path / "deploy/export/share/dbus-1/services/org.example.App.service"
+    user = tmp_path / "data/dbus-1/services/org.example.App.service"
+    user.parent.mkdir(parents=True)
+    user.write_text(service.read_text().replace(" run ", " run --system "))
+    runtime = tmp_path / "runtime/dbus-1/services"
+    runtime.mkdir(parents=True)
+    wrong_name = runtime / "ignored.service"
+    wrong_name.write_bytes(service.read_bytes())
+    assert db.associate(classify(read_entry(exported, exported.parent))) is None
+    wrong_name.rename(runtime / "org.example.App.service")
+    assert db.associate(classify(read_entry(exported, exported.parent))) is not None
 
 
 @pytest.mark.parametrize("override", [False, True])

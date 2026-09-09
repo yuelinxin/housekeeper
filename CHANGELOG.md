@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Verify the effective D-Bus service and installation before authorizing Flatpak
+  management; service overrides, contents and symlink changes invalidate previews.
 - Correct duplicate Flatpak/Other entries for D-Bus applications such as Gapless by
   verifying their installed desktop exports, including icon-only user overrides.
   Keep distinct D-Bus components separate even when their fallback commands match.

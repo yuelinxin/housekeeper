@@ -5,6 +5,36 @@ the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
 
+## Effective D-Bus service review — September 9, 2026
+
+The P1 review was reproduced: a higher-priority user service using `flatpak run
+--system` did not prevent attribution to the user installation selected by the
+desktop fallback. Four independent service mutations (target, contents, new
+override, symlink destination) also passed the old revalidation. All five new
+regressions failed before the fix.
+
+The fix resolves the service with standard session precedence, compares its full
+installation/ref and entry point with the installed export, and binds both service
+snapshots into the shared authorization evidence. Tests also cover runtime filename
+rules, alternate service filenames, duplicate claims, malformed/unsupported files,
+missing targets, wrappers, systemd delegation, branch/architecture and named
+installation selectors, and both removal/update transaction entrypoints.
+
+- Host full suite: 444 passed, 1 skipped (dpkg-query absent). Ubuntu 24.04 full
+  suite: 439 passed, 6 skipped (optional RPM bindings absent).
+- Strict mypy now includes the new service resolver (seven modules); Ruff checks
+  and whitespace validation pass.
+- Fedora 44's disposable integration suite passes. Its Flatpak fixture uses a
+  session bus with standard service directories, verifies that a newly effective
+  service invalidates an existing removal preview, rejects a system-scope override,
+  then successfully previews/uninstalls the normal user fixture. Application data
+  remains intact; no fixture application service is activated.
+- A read-only host rescan still gives one verified Flatpak record each for Gapless,
+  Backups, Decoder, Switcheroo and Varia. Personal applications were not changed.
+- Native RPM removal retains the previously documented unsupported-backend limit.
+  Detailed logs: `/tmp/housekeeper-dbus-service-integration.log` and
+  `/tmp/housekeeper-dbus-service-ubuntu.log`.
+
 ## Duplicate D-Bus Flatpak entries — September 9, 2026
 
 The previous scan changes rejected every `DBusActivatable=true` launcher before

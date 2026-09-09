@@ -68,6 +68,26 @@ app = records[0]
 assert app.entries and app.action == Action.UNINSTALL and app.installation
 assert app.entries[0].dbus_activatable
 provider = FlatpakProvider()
+service = (
+    Path(app.metadata["installation"])
+    / "exports/share/dbus-1/services"
+    / "org.example.HousekeeperFixture.service"
+)
+override = home / ".local/share/dbus-1/services" / service.name
+override.parent.mkdir(parents=True, exist_ok=True)
+original_plan = provider.prepare(app, [app])
+override.write_bytes(service.read_bytes() + b"\n# Higher priority service after preview\n")
+try:
+    provider.execute(app, original_plan, lambda *_: None)
+except ManagementError:
+    pass
+else:
+    raise AssertionError("A new effective D-Bus service did not invalidate the preview")
+override.write_text(service.read_text().replace(" run ", " run --system "))
+unconfirmed = next(a for a in collect(roots=[export])[0] if a.entries)
+assert unconfirmed.source != Source.FLATPAK and unconfirmed.action != Action.UNINSTALL
+override.unlink()
+print("PASS: effective D-Bus override target and stale-preview rejection")
 # A custom copy must not retain management permission after its command changes.
 custom = home / "audit-launchers"
 custom.mkdir()

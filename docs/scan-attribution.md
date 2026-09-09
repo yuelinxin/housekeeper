@@ -65,8 +65,26 @@ their installation instead of displaying a spurious Other row beside it. Renamed
 D-Bus launchers are not equivalent: the desktop ID determines the activation name
 ([Desktop Entry specification](https://specifications.freedesktop.org/desktop-entry/latest/dbus.html)).
 Component signatures include that ID, so distinct D-Bus components sharing an Exec
-fallback stay separate. This establishes ownership, not successful D-Bus activation;
-no application or service is started during verification.
+fallback stay separate.
+
+Desktop-export equality alone does not authorize D-Bus management. Resolve the
+effective service in standard session order: runtime, user data, XDG data directories,
+then the D-Bus data directory. Runtime service filenames must match the bus name;
+other directories also permit alternate filenames declaring that name. Duplicate
+claims in a directory, unreadable/unsupported files and missing services block
+authorization rather than falling through to a lower-priority export. See the
+[D-Bus daemon directory rules](https://dbus.freedesktop.org/doc/dbus-daemon.1.html).
+
+Both the effective service and the current deployment's service must select the
+same complete installation/ref as the desktop entry, using the same Flatpak
+selector resolution. Their entry point, guest arguments and other activation
+fields must agree. Systemd delegation and service-command wrappers remain manual.
+The binding includes service paths, resolved symlink targets, complete contents,
+search order and the selected installation/ref. Every management entrypoint
+therefore invalidates its preview when this evidence changes, even if the desktop
+entry is untouched. Verification covers standard session service directories, not
+arbitrary bus configuration or already-running bus-name owners. No application or
+service is started during verification.
 Wrong labels cannot rename, hide, or confer permissions on the official installation.
 Hidden desktop-ID overlays affect visibility separately from ownership.
 
