@@ -44,7 +44,7 @@ class UpdatesPage(Adw.NavigationPage):
             icon_name="view-refresh-symbolic", tooltip_text=_("Check for Updates")
         )
         self.refresh_button.connect("clicked", lambda _b: self.check())
-        header.pack_end(self.refresh_button)
+        header.pack_start(self.refresh_button)
         toolbar.add_top_bar(header)
         content = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,

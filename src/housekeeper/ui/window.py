@@ -97,6 +97,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     toast_overlay = Gtk.Template.Child()
     split = Gtk.Template.Child()
     sidebar = Gtk.Template.Child()
+    sidebar_header = Gtk.Template.Child()
+    search_button = Gtk.Template.Child()
     sidebar_button = Gtk.Template.Child()
     updates_sidebar = Gtk.Template.Child()
     updates_row = Gtk.Template.Child()
@@ -106,6 +108,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     overview_box = Gtk.Template.Child()
     overview_toolbar = Gtk.Template.Child()
     header = Gtk.Template.Child()
+    refresh_button = Gtk.Template.Child()
 
     def __init__(self, application, settings):
         super().__init__(application=application)
@@ -128,6 +131,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.monitors = []
         self.monitor_paths = set()
         self.refresh_source = 0
+        self.auto_refresh_source = 0
         self.refresh_pending = False
         self.initialized = False
         self.closed = False
@@ -153,6 +157,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.sidebar_button.connect("clicked", lambda _b: self.split.set_show_sidebar(True))
         self.connect("close-request", self._close)
         self.connect("notify::is-active", self._activated)
+        self.settings.connect("changed::auto-refresh", self._auto_refresh_changed)
         self.refresh()
 
     def _build_overview(self):
@@ -164,7 +169,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             margin_bottom=12,
         )
         self.search.connect("search-changed", self._search_changed)
-        self.overview_box.append(self.search)
+        self.search.connect("stop-search", lambda *_: self.search_button.set_active(False))
+        self.search_revealer = Gtk.Revealer(
+            child=self.search, transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN
+        )
+        self.overview_box.append(self.search_revealer)
+        self.search_button.connect("toggled", self._search_toggled)
         self.banner = Adw.Banner(
             title=_("Some sources could not be read"), button_label=_("Details")
         )
@@ -250,7 +260,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                     self.updates_page.check() if self.section == "updates" else self.refresh()
                 ),
             ),
-            ("search", lambda *_: self.search.grab_focus()),
+            ("search", self._show_search),
             ("preferences", lambda *_: self.preferences()),
             ("about", lambda *_: self.about()),
         ):
@@ -276,18 +286,18 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         )
         self._sort_tooltip()
         menu = Gio.Menu()
-        menu.append(_("Refresh"), "win.refresh")
         menu.append(_("Preferences"), "win.preferences")
         menu.append(_("About Housekeeper"), "win.about")
-        self.header.pack_end(
+        self.sidebar_header.pack_end(
             Gtk.MenuButton(
                 icon_name="open-menu-symbolic", menu_model=menu, tooltip_text=_("Main Menu")
             )
         )
-        self.header.pack_end(self.sort_button)
+        self.header.pack_start(self.sort_button)
         self.header.pack_end(self.view_controls)
         self.get_application().set_accels_for_action("win.search", ["<Primary>f"])
         self.get_application().set_accels_for_action("win.refresh", ["<Primary>r", "F5"])
+        self.get_application().set_accels_for_action("win.preferences", ["<Primary>comma"])
 
     def _factory_setup(self, _factory, item, mode):
         box = Gtk.Box(
@@ -325,6 +335,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         app = obj.record
         picture, name, subtitle, badge, metric = item.widgets
         set_icon(picture, app.icon)
+        picture.set_opacity(1.0 if app.visible else 0.5)
         name.set_label(app.name)
         subtitle.set_label(
             app.status or (BADGES[app.source.value] if mode == "grid" else app.scope)
@@ -476,6 +487,24 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.navigation.pop_to_tag("overview")
             self.detail_app = None
 
+    def _show_search(self, *_args):
+        if not self.search_button.get_active():
+            self.search_button.set_active(True)
+            return
+        self._source_activated(
+            self.sidebar, self.sidebar.get_selected_row() or self.sidebar.get_row_at_index(0)
+        )
+        self.search.grab_focus()
+
+    def _search_toggled(self, button):
+        active = button.get_active()
+        self.search_revealer.set_reveal_child(active)
+        if active:
+            self._show_search()
+        else:
+            self.search.set_text("")
+            self._search_changed(self.search)
+
     def _search_changed(self, entry):
         self.query = entry.get_text().casefold()
         self.filter.changed(Gtk.FilterChange.DIFFERENT)
@@ -595,7 +624,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 monitor = Gio.File.new_for_path(str(target)).monitor_directory(
                     Gio.FileMonitorFlags.NONE, None
                 )
-                monitor.connect("changed", lambda *_: self._schedule_refresh())
+                monitor.connect("changed", lambda *_: self._schedule_auto_refresh())
                 self.monitors.append(monitor)
                 self.monitor_paths.add(str(target))
             except GLib.Error:
@@ -605,7 +634,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             if key not in self.monitor_paths:
                 try:
                     monitor = installation.create_monitor(None)
-                    monitor.connect("changed", lambda *_: self._schedule_refresh())
+                    monitor.connect("changed", lambda *_: self._schedule_auto_refresh())
                     self.monitors.append(monitor)
                     self.monitor_paths.add(key)
                 except GLib.Error:
@@ -624,9 +653,32 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
         self.refresh_source = GLib.timeout_add(750, run)
 
+    def _schedule_auto_refresh(self):
+        if self.closed or not self.settings.get_boolean("auto-refresh"):
+            return
+        if self.auto_refresh_source:
+            GLib.source_remove(self.auto_refresh_source)
+
+        def run():
+            # Keep automatic requests separate from queued manual refreshes.
+            if self.service.scanning or self.service.busy or self.operation_active:
+                return GLib.SOURCE_CONTINUE
+            self.auto_refresh_source = 0
+            self.refresh()
+            return GLib.SOURCE_REMOVE
+
+        self.auto_refresh_source = GLib.timeout_add(750, run)
+
+    def _auto_refresh_changed(self, *_):
+        if self.auto_refresh_source:
+            GLib.source_remove(self.auto_refresh_source)
+            self.auto_refresh_source = 0
+        if self.initialized:
+            self._schedule_auto_refresh()
+
     def _activated(self, *_):
         if self.is_active() and self.initialized:
-            self._schedule_refresh()
+            self._schedule_auto_refresh()
 
     def _open_position(self, _view, position):
         if self.service.scanning:
@@ -1258,6 +1310,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(title=_("Application Inventory"))
         row = Adw.SwitchRow(
+            title=_("Automatically Refresh App List"),
+            subtitle=_("Refresh when returning to Housekeeper or installed applications change."),
+        )
+        self.settings.bind("auto-refresh", row, "active", Gio.SettingsBindFlags.DEFAULT)
+        group.add(row)
+        row = Adw.SwitchRow(
             title=_("Show Hidden and Auxiliary Entries"),
             subtitle=_("Include entries normally omitted by the desktop launcher."),
         )
@@ -1339,6 +1397,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.settings.set_int("window-width", max(360, min(10000, self.get_width())))
             self.settings.set_int("window-height", max(420, min(10000, self.get_height())))
         self.closed = True
+        if self.auto_refresh_source:
+            GLib.source_remove(self.auto_refresh_source)
+            self.auto_refresh_source = 0
         for monitor in self.monitors:
             monitor.cancel()
         if self.refresh_source:

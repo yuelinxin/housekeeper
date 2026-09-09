@@ -30,6 +30,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.9" date="2026-09-08" type="development">
+      <description>
+        <p>Use a simpler header and choose when the application list refreshes.</p>
+        <ul>
+          <li>Open search from the sidebar header and find the main menu beside the Housekeeper title.</li>
+          <li>Access refresh and sorting at the start of the content header, with the sidebar button first in narrow windows.</li>
+          <li>Open Preferences with Ctrl+comma and choose automatic or manual application-list refresh.</li>
+          <li>Distinguish hidden applications by their semi-transparent icons in list and grid views.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.8" date="2026-09-08" type="development">
       <description>
         <p>Keep remaining updates visible and recognize more RPM application launchers.</p>

@@ -1,9 +1,34 @@
-# v0.1.8 development validation
+# v0.1.9 development validation
 
 Updated on September 8, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.9 validation — September 8, 2026
+
+- Application, Meson, RPM spec, latest AppStream release, changelog and README
+  installation example agree on 0.1.9. Meson compilation, offline AppStream and
+  desktop-file validation pass; the desktop file retains its optional category
+  hint. The development launcher reports `Housekeeper 0.1.9`.
+- Source archive generation passes; the archive prefix uses 0.1.9 and includes
+  the refreshed README screenshots.
+- The system-Python unit suite passes 330 tests with one skip because dpkg-query
+  is unavailable. Ruff lint/format, configured mypy checks and whitespace checks pass.
+- The full synthetic GTK smoke suite passes on an isolated Xvfb display in
+  31.61 seconds. The 1,000-record filter takes 59.13 ms with 189.4 MiB peak RSS.
+  Earlier desktop-session runs were interrupted by selection and rendering
+  assertions; the isolated run avoids interference from desktop input.
+- Focused GTK checks verify search reveal/clear and focus, header order at normal
+  and 360-pixel widths, refresh actions on both pages, default-on automatic refresh,
+  cancellation of queued automatic requests without losing manual requests,
+  startup loading with automatic refresh disabled, and hidden-icon opacity in both
+  views including restoration when records change. GTK parses the Preferences
+  accelerator as Ctrl+comma.
+- README list and grid screenshots are recaptured from the current UI using
+  synthetic application records. No personal application is updated or removed.
+- RPM/SRPM packaging, real package-manager transactions and the full Fedora 43/44
+  desktop acceptance matrix are not repeated for this UI release preparation.
 
 ## v0.1.8 metadata validation — September 8, 2026
 

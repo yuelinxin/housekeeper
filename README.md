@@ -10,9 +10,17 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 
 ![Housekeeper in list view](docs/screenshots/list-light.png)
 
+<details>
+<summary>Grid view</summary>
+
+![Housekeeper in grid view](docs/screenshots/grid-light.png)
+
+</details>
+
 ## Features
 
 - Browse a searchable list or grid, filter by source, and sort by name, size, or Last Updated.
+- Open search with Ctrl+F and Preferences with Ctrl+comma; choose automatic or manual list refresh.
 - Inspect versions, file locations, installation scope, and hidden entries.
 - Customize launcher icons and restore the originals.
 - Preview RPM and Flatpak updates and removal where supported, preserving personal data.
@@ -41,7 +49,7 @@ Fedora backends; Housekeeper provides guidance instead. See
 Install a downloaded RPM matching your Fedora release:
 
 ```sh
-sudo dnf install ./housekeeper-0.1.8-1.fc44.noarch.rpm
+sudo dnf install ./housekeeper-0.1.9-1.fc44.noarch.rpm
 ```
 
 Release packages do not configure an automatic update repository.

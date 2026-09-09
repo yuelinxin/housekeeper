@@ -12,6 +12,7 @@
       <summary>Application sort order</summary>
     </key>
     <key name="show-hidden" type="b"><default>false</default><summary>Show hidden and auxiliary entries</summary></key>
+    <key name="auto-refresh" type="b"><default>true</default><summary>Automatically refresh the application inventory</summary></key>
     <key name="update-check-mode" type="s">
       <choices><choice value="on-entry"/><choice value="manual"/></choices>
       <default>'on-entry'</default>

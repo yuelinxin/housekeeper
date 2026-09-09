@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.9 — 2026-09-08
+
+- Place search and the main menu on either side of the Housekeeper sidebar title.
+  Hide the search field until requested; Ctrl+F opens it, and Escape or the search
+  button closes it and clears the filter.
+- Move refresh to the left of the application and Updates headers, with sorting
+  beside application refresh. Keep the sidebar button first in narrow windows.
+- Add Ctrl+comma to open Preferences and a remembered automatic app-list refresh
+  switch, enabled by default. Disabling it cancels queued automatic refreshes while
+  preserving startup loading, manual refreshes, and refreshes after app operations.
+- Display hidden application icons at 50% opacity in both list and grid views.
+- Refresh the README screenshots and synchronize application and release metadata.
+
 ## 0.1.8 — 2026-09-08
 
 - Remove successfully updated applications from the visible and persisted update
