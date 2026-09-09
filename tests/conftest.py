@@ -1,3 +1,7 @@
+import os
+import shutil
+from pathlib import Path
+
 import pytest
 
 from housekeeper.models import DesktopEntry
@@ -21,6 +25,10 @@ def desktop(tmp_path):
 @pytest.fixture
 def entry(tmp_path):
     def make(argv=("/usr/bin/true",), desktop_id="example.desktop", **kwargs):
+        if argv and Path(argv[0]).name == "flatpak":
+            kwargs.setdefault(
+                "resolved_executable", str(Path(shutil.which(argv[0]) or argv[0]).resolve())
+            )
         return DesktopEntry(
             desktop_id,
             tmp_path / desktop_id,
@@ -31,3 +39,17 @@ def entry(tmp_path):
         )
 
     return make
+
+
+@pytest.fixture
+def flatpak_command(tmp_path, monkeypatch):
+    from housekeeper.providers import flatpak_attribution
+
+    directory = tmp_path / "manager"
+    directory.mkdir()
+    binary = directory / "flatpak"
+    binary.write_text("#!/bin/sh\nexit 99\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("PATH", str(directory) + os.pathsep + os.environ.get("PATH", os.defpath))
+    monkeypatch.setattr(flatpak_attribution, "MANAGER_SEARCH_PATH", str(directory))
+    return binary

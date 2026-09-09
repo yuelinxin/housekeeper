@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from appimage_fixture import image_bytes
+
 from housekeeper.discovery import read_entry
 from housekeeper.identity import classify
 from housekeeper.models import Outcome
@@ -14,7 +16,7 @@ if os.environ.get("HOUSEKEEPER_DISPOSABLE_TEST") != "1" or not (
     raise SystemExit("This script requires the disposable test container.")
 home = Path.home()
 binary = home / "HousekeeperFixture.AppImage"
-binary.write_text("This temporary fixture is never executed.\n")
+binary.write_bytes(image_bytes())
 binary.chmod(0o755)
 launcher = home / ".local/share/applications/housekeeper-fixture.desktop"
 launcher.parent.mkdir(parents=True, exist_ok=True)

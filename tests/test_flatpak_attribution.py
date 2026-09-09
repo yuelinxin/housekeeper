@@ -8,6 +8,8 @@ from housekeeper.models import Action, AppRecord, ManagementError, Source
 from housekeeper.providers.flatpak import FlatpakIndex, FlatpakProvider
 from housekeeper.providers.flatpak_attribution import parse_launch
 
+pytestmark = pytest.mark.usefixtures("flatpak_command")
+
 
 def installed(path="/user", scope="User", branch="stable", **metadata):
     return AppRecord(
@@ -108,6 +110,7 @@ def test_exported_command_requires_matching_current_deployment(desktop, tmp_path
 
 @pytest.mark.parametrize("operation", ["_transaction", "_update_transaction"])
 def test_changed_launcher_rejected_before_transaction(desktop, monkeypatch, operation):
+    monkeypatch.setattr("os.geteuid", lambda: 1000)
     path = desktop(Exec="flatpak run org.example.App")
     db = index(installed())
     app = db.associate(classify(read_entry(path, path.parent)))
@@ -137,3 +140,16 @@ def test_hidden_label_does_not_hide_unrelated_installation(entry):
     )
     assert db.associate(classify(hidden)) is None
     assert db.apps[0].visible
+
+
+def test_program_named_flatpak_is_not_the_system_manager(desktop, tmp_path):
+    binary = tmp_path / "flatpak"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    path = desktop(Exec=f"{binary} run org.example.App")
+    assert index(installed()).associate(classify(read_entry(path, path.parent))) is None
+
+
+def test_dbus_activation_cannot_be_verified_from_exec(desktop):
+    path = desktop(Exec="flatpak run org.example.App", DBusActivatable="true")
+    assert index(installed()).associate(classify(read_entry(path, path.parent))) is None

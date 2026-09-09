@@ -21,7 +21,7 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["src/housekeeper/models.py", "src/housekeeper/identity.py", "src/housekeeper/launch.py", "src/housekeeper/attribution.py", "src/housekeeper/providers/flatpak_attribution.py"]
+files = ["src/housekeeper/models.py", "src/housekeeper/identity.py", "src/housekeeper/launch.py", "src/housekeeper/appimage_format.py", "src/housekeeper/attribution.py", "src/housekeeper/providers/flatpak_attribution.py"]
 strict = true
 
 [[tool.mypy.overrides]]

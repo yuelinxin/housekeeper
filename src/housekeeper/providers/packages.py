@@ -27,6 +27,8 @@ class InstalledPackage:
     desktops: tuple[str, ...]
     revision: str = ""
     updated_at: int | None = None
+    files: tuple[str, ...] = ()
+    root: str = "/"
 
 
 def byte_size(value):
@@ -35,11 +37,15 @@ def byte_size(value):
     return value if type(value) is int and 0 <= value < 2**64 else None
 
 
-def desktop_path(value, root=Path("/")):
+def package_path(value, root=Path("/")):
     path = PurePosixPath(value)
-    if not value or path.is_absolute() or ".." in path.parts or not value.endswith(".desktop"):
+    if not value or path.is_absolute() or ".." in path.parts:
         return None
     return str(root / value)
+
+
+def desktop_path(value, root=Path("/")):
+    return package_path(value, root) if value.endswith(".desktop") else None
 
 
 def sections(path):
@@ -75,7 +81,7 @@ def pacman_paths():
     return values[0] / "local", values[1]
 
 
-def pacman_packages():
+def pacman_packages(*, strict=False):
     database, root = pacman_paths()
     if not database.exists():
         return []
@@ -85,10 +91,13 @@ def pacman_packages():
             continue
         try:
             fields = sections(directory / "desc")
-            files = sections(directory / "files").get("%FILES%", [])
+            file_sections = sections(directory / "files")
+            if strict and "%FILES%" not in file_sections:
+                raise ValueError("Pacman file list is incomplete")
+            files = file_sections.get("%FILES%", [])
             name, version, arch = (fields[key] for key in ("%NAME%", "%VERSION%", "%ARCH%"))
             if any(len(value) != 1 for value in (name, version, arch)):
-                continue
+                raise ValueError("Invalid Pacman package identity")
             size = fields.get("%SIZE%", [])
             installed = fields.get("%INSTALLDATE%", [])
             result.append(
@@ -101,19 +110,25 @@ def pacman_packages():
                     byte_size(size[0]) if len(size) == 1 else None,
                     tuple(path for file in files if (path := desktop_path(file, root))),
                     updated_at=package_timestamp(installed[0]) if len(installed) == 1 else None,
+                    files=tuple(path for file in files if (path := package_path(file, root))),
+                    root=str(root),
                 )
             )
         except (OSError, ValueError, KeyError):
+            if strict:
+                raise
             LOG.debug("Unreadable Pacman package record: %s", directory, exc_info=True)
     return result
 
 
-def apk_packages():
+def apk_packages(*, strict=False):
     if not APK_DATABASE.exists():
         return []
     result = []
     for block in APK_DATABASE.read_text(encoding="utf-8").split("\n\n"):
-        fields, desktops, directory = {}, [], None
+        if not block.strip():
+            continue
+        fields, desktops, files, directory = {}, [], [], None
         malformed = False
         for line in block.splitlines():
             if len(line) < 2 or line[1] != ":":
@@ -123,13 +138,19 @@ def apk_packages():
             if key == "F":
                 directory = value
             elif key == "R" and directory is not None:
-                if "/" not in value and (path := desktop_path(directory + "/" + value)):
-                    desktops.append(path)
+                if "/" not in value and (path := package_path(directory + "/" + value)):
+                    files.append(path)
+                    if path.endswith(".desktop"):
+                        desktops.append(path)
+                else:
+                    malformed = True
             elif key in {"P", "V", "A", "I", "f"}:
                 if key in fields:
                     malformed = True
                 fields[key] = value
         if malformed or fields.get("f") or not all(fields.get(key) for key in ("P", "V", "A")):
+            if strict:
+                raise ValueError("APK file ownership metadata is incomplete")
             continue
         result.append(
             InstalledPackage(
@@ -140,6 +161,7 @@ def apk_packages():
                 str(APK_DATABASE),
                 byte_size(fields.get("I")),
                 tuple(desktops),
+                files=tuple(files),
             )
         )
     return result
@@ -188,7 +210,7 @@ class PackageIndex:
         return tuple(
             candidate(
                 package.source,
-                package.database,
+                package.root + ":" + package.database,
                 package.name + ":" + package.arch,
                 package.version,
                 package.name + (":" + package.arch if package.arch else ""),

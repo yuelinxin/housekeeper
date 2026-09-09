@@ -1,5 +1,7 @@
 """Read-only Flatpak launch relationships, independent of transaction APIs."""
 
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,6 +10,7 @@ from housekeeper.launch import parse_launch as parse_command
 from housekeeper.models import AppRecord, DesktopEntry
 
 FIELDS = {"%u", "%U", "%f", "%F", "%i", "%c", "%k"}
+MANAGER_SEARCH_PATH = os.defpath
 
 
 @dataclass(frozen=True)
@@ -24,7 +27,7 @@ class FlatpakLaunch:
 
 def parse_launch(entry: DesktopEntry) -> FlatpakLaunch | None:
     spec = entry.launch or parse_command(entry.argv)
-    if spec.reason:
+    if spec.reason or entry.dbus_activatable:
         return None
     argv = spec.argv
     if len(argv) < 3 or Path(argv[0]).name != "flatpak" or argv[1] != "run":
@@ -83,7 +86,6 @@ def parse_launch(entry: DesktopEntry) -> FlatpakLaunch | None:
 
 def exported_signature(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunch) -> str:
     """Only a matching current deployment export can authorize custom app arguments."""
-    from housekeeper.appearance import verified_icon_source
     from housekeeper.discovery import read_entry
 
     if not app.location:
@@ -102,14 +104,20 @@ def exported_signature(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunc
                 or exported.resolved_executable != entry.resolved_executable
             ):
                 continue
-            source = verified_icon_source(entry.path)
-            return digest(str(path), path.read_bytes().hex(), str(source))
+            return digest(str(path), path.read_bytes().hex())
     except (OSError, ValueError, RuntimeError):
         return ""
     return ""
 
 
 def binding(entry: DesktopEntry, app: AppRecord, launch: FlatpakLaunch) -> str:
+    manager = shutil.which("flatpak", path=MANAGER_SEARCH_PATH)
+    if (
+        not manager
+        or not entry.resolved_executable
+        or Path(entry.resolved_executable) != Path(manager).resolve()
+    ):
+        return ""
     exported = exported_signature(entry, app, launch)
     if not exported and (launch.command or any(a not in FIELDS for a in launch.arguments)):
         return ""

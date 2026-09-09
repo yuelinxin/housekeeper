@@ -8,6 +8,8 @@ from housekeeper.models import AppRecord, Source
 from housekeeper.providers.flatpak import FlatpakIndex
 from housekeeper.providers.rpm import RpmIndex
 
+pytestmark = pytest.mark.usefixtures("flatpak_command")
+
 
 @pytest.mark.parametrize(
     "argv",

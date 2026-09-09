@@ -149,7 +149,9 @@ def test_query_is_offline_bounded_and_handles_missing_tool(monkeypatch):
 
     def run(argv, **kwargs):
         calls.append((argv, kwargs))
-        return SimpleNamespace(returncode=1)
+        return SimpleNamespace(
+            returncode=1, stderr="dpkg-query: no path found matching pattern *.desktop"
+        )
 
     monkeypatch.setattr(deb.subprocess, "run", run)
     assert deb.query("--search", "*.desktop") == ""

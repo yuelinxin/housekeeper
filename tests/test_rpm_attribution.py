@@ -65,6 +65,7 @@ def installation(tmp_path, monkeypatch):
         value = RpmIndex.__new__(RpmIndex)
         value.ts = NS(dbMatch=lambda _tag, path: [h for h in packages if path in h["filenames"]])
         value._cache = {}
+        value.context = "/:/usr/lib/sysimage/rpm"
         return value
 
     def record(path):
@@ -236,6 +237,27 @@ def test_provider_revalidates_evidence_after_scan_before_any_packagekit_call(
         lambda: provider.execute_update(app, None, lambda *_: None),
     ):
         with pytest.raises(ManagementError, match="changed"):
+            operation()
+
+
+def test_custom_rpm_database_cannot_target_the_host_packagekit(installation, monkeypatch):
+    from dataclasses import replace
+
+    f = installation
+    package = f.package("example")
+    app = f.record(f.desktop(package, f.file(package, "bin/example")))
+    app.installation = replace(app.installation, context="/:/custom/rpm-database")
+    provider = RpmProvider()
+    monkeypatch.setattr(
+        provider, "_client", lambda *_: pytest.fail("Unexpected host PackageKit request")
+    )
+    for operation in (
+        lambda: provider.prepare(app, [app]),
+        lambda: provider.execute(app, None, lambda *_: None),
+        lambda: provider.prepare_update(app, [app], lambda *_: None),
+        lambda: provider.execute_update(app, None, lambda *_: None),
+    ):
+        with pytest.raises(ManagementError, match="host package database"):
             operation()
 
 

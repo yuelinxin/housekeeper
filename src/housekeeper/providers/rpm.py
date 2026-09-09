@@ -50,6 +50,17 @@ def host_support(os_release=None, markers=None):
     return True, ""
 
 
+def manages_context(app):
+    """PackageKit operates on the host database, never a user-selected RPM database."""
+    if app.installation is None:
+        return False
+    context = app.installation.context
+    if not context.startswith("/:"):
+        return False
+    database = Path(context[2:]).resolve()
+    return database in {Path("/var/lib/rpm").resolve(), Path("/usr/lib/sysimage/rpm").resolve()}
+
+
 class RpmIndex:
     def __init__(self):
         self.ts = None
@@ -188,6 +199,10 @@ class RpmProvider:
 
         if not app.entries or app.metadata.get("rpm_verified") != "true":
             raise ManagementError(_("The application's RPM launch target has not been verified."))
+        if not manages_context(app):
+            raise ManagementError(
+                "This RPM installation is outside the host package database. Use its package manager."
+            )
         revalidate(app)
 
     def capabilities(self):

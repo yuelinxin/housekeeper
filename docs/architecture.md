@@ -31,8 +31,9 @@ Providers repeat the evidence check before previews and execution; cached attrib
 never bypasses it. These local checks do not lock files or prove arbitrary wrapper
 script behavior, and do not replace the existing PackageKit transaction checks.
 
-Providers enrich records; the inventory service merges only proven identical launch
-targets within the same installation. RPM package versions are metadata, not stable
+Providers return independent immutable ownership candidates. The inventory service
+resolves launcher/command evidence and conflicts before projecting UI records and
+merging only confirmed identical launch targets within the same installation. RPM package versions are metadata, not stable
 UI identity. Flatpak identity includes the installation path and full ref. Web-app
 identity includes the browser, profile, explicit data root, and app ID.
 
@@ -42,7 +43,8 @@ icon override's original path) is used. Unowned launchers, diverted files, and b
 or Steam guest apps are not attributed to host packages. Name and architecture form
 stable package identity; updates and removal remain in the external system manager.
 
-The service publishes an initial desktop inventory and then enriched records. The
+The service publishes an immutable initial desktop snapshot without direct actions,
+then resolved application records. The
 UI shares a Gio.ListStore, filter, sorter, and selection between both virtualized
 views. Name sorting uses the current locale and is the default; a remembered setting
 also selects largest software size or Last Updated, newest first. Numeric ties use
@@ -53,8 +55,11 @@ run in a single worker. No application database is written.
 
 ## Internal interfaces
 
-`DesktopEntry` describes a launcher, while `AppRecord` describes an application
-installation and its related launchers. `ProviderCapabilities` describes available
+`DesktopEntry` and `LaunchSpec` describe a launcher and its environment.
+`AppComponent`, `InstallationInstance`, and `ManagementTarget` separate presentation,
+installation identity, and actual operation targets; `AppRecord` is their UI projection.
+`AttributionResult` preserves candidates, verification states and conflicts. See
+[scan attribution](scan-attribution.md) for selection and revalidation rules. `ProviderCapabilities` describes available
 operations. `RemovalPlan` is a preview of exact targets with a fingerprint;
 `OperationResult` distinguishes success, failure, cancellation, and partial completion.
 

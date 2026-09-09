@@ -5,6 +5,47 @@ the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
 
+## Scan attribution audit fixes — September 8, 2026
+
+The audit regressions were reproduced before implementation. The final source was
+validated in disposable Fedora 43, Fedora 44 and Ubuntu 24.04 containers, with the
+checkout mounted read-only. No personal applications were transaction targets.
+See [the implemented ownership rules](scan-attribution.md).
+
+| Environment | Unit tests | Build and GTK smoke |
+| --- | --- | --- |
+| Fedora 43 | 403 passed, 1 skipped (dpkg-query absent) | Passed |
+| Fedora 44 | 403 passed, 1 skipped (dpkg-query absent) | Passed |
+| Ubuntu 24.04 | 398 passed, 6 skipped (optional RPM bindings absent) | Passed, including real dpkg attribution |
+
+- Ruff lint, formatting and whitespace checks pass. Strict mypy covers six modules:
+  models, identity, launch parsing, attribution, Flatpak launch attribution and
+  AppImage header identification.
+- GTK smoke verifies component browsing, conflict records with management/update
+  instructions, blocked direct callbacks, narrow layouts, update previews and
+  refresh/cache flows. Smoke took approximately 31.6 seconds on each runtime.
+  The 1,000-record filter took 39.88 ms (Fedora 43), 56.46 ms (Fedora 44) and
+  49.19 ms (Ubuntu), with about 182 MiB peak RSS. Existing deprecation/rendering
+  warnings remain non-fatal; these synthetic measurements are not idle app memory.
+- Both Fedora transaction suites pass signed RPM updates and no-update checks,
+  denied authorization, and real two-application updates with shared dependencies.
+- Both suites pass association of a real Flatpak-exported desktop entry, verification
+  of an equivalent user copy, and rejection after its command changes or it contains
+  only an unrelated X-Flatpak tag. No fixture launch command is executed.
+- Real user Flatpak preview/uninstall, application/runtime updates, shared-runtime
+  batches, changed dependency rejection and retained user data pass. System Flatpak
+  tests pass helper authorization, denied/stale-plan rejection, exact commits and
+  cooperative cancellation during a real extra-data download.
+- Real GIO Trash moves only the temporary format-identifiable AppImage and its
+  launcher while retaining unrelated application data.
+- Native RPM removal remains unavailable on these tested backends. Fedora 43 rejects
+  `allow_deps=False`; Fedora 44 does not provide a safe single-package simulation.
+  The tests confirm refusal and preservation of the fixture package. Native removal
+  authorization is **not verified** by these runs.
+- Package artifacts were not released and the application version is unchanged.
+  Detailed run logs and screenshots were written to
+  `/tmp/housekeeper-validation/{43,44,ubuntu}/` on the development host.
+
 ## v0.1.9 validation — September 8, 2026
 
 - Application, Meson, RPM spec, latest AppStream release, changelog and README

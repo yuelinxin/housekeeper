@@ -1151,6 +1151,15 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             details = "\n\n".join(lines)
         else:
             details = "\n".join(plan.affected)
+        if app.installation:
+            target = app.target.value if app.target else plan.target
+            details = (
+                _("Installation: %s") % app.installation.context
+                + "\n"
+                + _("Target: %s") % target
+                + "\n\n"
+                + details
+            )
         affected = Gtk.Label(label=details, wrap=True, selectable=True, xalign=0)
         scroll = Gtk.ScrolledWindow(
             child=affected,

@@ -2,6 +2,16 @@
 
 ## Local tests
 
+Scan audit regressions live in `test_scan_regressions.py`, `test_attribution.py`,
+`test_flatpak_attribution.py`, `test_launch.py`, and `test_file_ownership.py`.
+They cover provider permutations, conflicting owners, changed installation selectors,
+current deployment exports, spoofed command names, XDG defaults, environment lookup,
+format-identifiable AppImage fixtures, and unavailable versus negative file queries.
+Batch/cache tests verify component completion, evidence-bound previews and rejection
+of schema 1. GTK smoke checks that conflict records cannot invoke direct operations.
+The AppImage transaction fixture remains confined to the disposable container.
+
+
 `test_rpm_attribution.py` uses temporary files and synthetic installed RPM metadata to
 verify launcher/entry-point digests, symlink targets, shared command dependencies,
 dependency versions and architectures, PATH shadowing, D-Bus service ownership and

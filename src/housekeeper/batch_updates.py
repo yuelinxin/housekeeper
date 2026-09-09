@@ -149,6 +149,9 @@ class UpdateBatch:
                 fresh.installation,
                 fresh.target,
                 fresh.current_version,
+                fresh.instance_id,
+                fresh.target_id,
+                fresh.evidence_digest,
             )
             == (
                 original.app_key,
@@ -156,6 +159,9 @@ class UpdateBatch:
                 original.installation,
                 original.target,
                 original.current_version,
+                original.instance_id,
+                original.target_id,
+                original.evidence_digest,
             )
             and fresh.changes == remaining
         ):

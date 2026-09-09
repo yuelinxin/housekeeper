@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Verify Flatpak launcher targets and installation selection before association and
+  management; unrelated labels and guest apps cannot inherit host uninstall actions.
+- Resolve independent ownership evidence centrally, expose conflicts, and separate
+  visible components from installations and transaction targets. Revalidate all
+  direct operations and invalidate older cached previews.
+- Honor empty XDG defaults and common env options using the effective launch PATH.
+- Identify AppImages by ELF/type markers and query all applicable supported file
+  ownership backends before allowing Trash, including on non-RPM systems.
+
+
 ## 0.1.9 — 2026-09-08
 
 - Place search and the main menu on either side of the Housekeeper sidebar title.

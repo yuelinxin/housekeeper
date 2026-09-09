@@ -60,10 +60,13 @@ class FlatpakIndex:
         self.installations = {}
         self.apps = []
         self.warnings = []
+        self.available = False
+        self.attribution_errors = []
         try:
             fp = load_flatpak()
         except (ImportError, ValueError):
             return
+        self.available = True
         candidates, self.warnings = configured_installations(fp)
         for installation in candidates:
             path = installation.get_path().get_path()
@@ -102,6 +105,7 @@ class FlatpakIndex:
                     )
             except Exception as error:
                 self.warnings.append(f"Could not read a Flatpak installation: {error}")
+        self.attribution_errors = list(self.warnings)
         from housekeeper.providers.flatpak_history import enrich_history
 
         enrich_history(self.apps, self.installations)
@@ -149,6 +153,10 @@ class FlatpakIndex:
         if launch is None or (entry.flatpak_id and entry.flatpak_id != launch.app_id):
             return None
         matches = [a for a in self.apps if a.metadata["app_id"] == launch.app_id]
+        if launch.branch:
+            matches = [a for a in matches if a.identity.split("/")[-1] == launch.branch]
+        if launch.arch:
+            matches = [a for a in matches if a.identity.split("/")[-2] == launch.arch]
         if launch.scope:
             matches = [
                 a
@@ -170,7 +178,7 @@ class FlatpakIndex:
             matches = [a for a in matches if a.scope == "User"]
         if launch.branch:
             matches = [a for a in matches if a.identity.split("/")[-1] == launch.branch]
-        elif len({a.identity for a in matches}) > 1:
+        elif any("current" in a.metadata for a in matches):
             matches = [a for a in matches if a.metadata.get("current") == "true"]
         if launch.arch:
             matches = [a for a in matches if a.identity.split("/")[-2] == launch.arch]

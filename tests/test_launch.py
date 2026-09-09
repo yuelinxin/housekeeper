@@ -34,7 +34,7 @@ def test_path_override_and_unset_are_used_for_resolution(desktop, tmp_path, monk
         (root / "tool").write_text("#!/bin/sh\nexit 1\n")
         (root / "tool").chmod(0o755)
     monkeypatch.setenv("PATH", str(original))
-    path = desktop(Exec=f"env PATH={changed} tool")
+    path = desktop(Exec=f"/usr/bin/env PATH={changed} tool")
     entry = read_entry(path, path.parent)
     assert entry.executable == str(changed / "tool")
     assert os.environ["PATH"] == str(original)

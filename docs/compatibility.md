@@ -52,8 +52,10 @@ of a successful real RPM removal or graphical Polkit authentication.
   their entry. Other Chromium derivatives and sandboxed browser wrappers are manual
   unless their launch structure can be identified without ambiguity.
 - PWAsForFirefox entries are identified by their `firefoxpwa site launch` command.
-- AppImage trash currently depends on available RPM ownership evidence. On systems
-  without that evidence, file locations remain available for manual review.
+- AppImage identification checks ELF/type markers rather than a filename suffix.
+  Trash requires successful negative answers from every applicable supported file
+  ownership backend (RPM, dpkg, Pacman, APK, Flatpak and Snap). Unavailable or
+  conflicting ownership remains manual, including on non-RPM systems.
 - An entry supplied by an unsupported manager is still shown. Removing a shortcut
   alone is never presented as uninstalling the application.
 - Hidden and auxiliary entries are opt-in. Explicit hidden overrides continue to

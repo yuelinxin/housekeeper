@@ -28,6 +28,10 @@ def assign_update_action(app, capabilities):
         app.update_reason = app.metadata.get("management_reason") or _(
             "The application's RPM launch target could not be verified."
         )
+    elif app.provider == "rpm" and app.installation is not None and not _host_rpm_context(app):
+        app.update_reason = _(
+            "This RPM installation is outside the host package database. Use its package manager."
+        )
     elif os.geteuid() == 0:
         app.update_reason = _("Run Housekeeper as a regular desktop user.")
     elif capability.update_preview and capability.update_execute:
@@ -73,3 +77,9 @@ def authorization_notice(app):
             "using your password or configured fingerprint. Housekeeper does not collect your password."
         )
     return ""
+
+
+def _host_rpm_context(app):
+    from housekeeper.providers.rpm import manages_context
+
+    return manages_context(app)

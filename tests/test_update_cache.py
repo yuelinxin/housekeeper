@@ -46,6 +46,14 @@ def test_round_trip_with_paths_and_exact_plan(cached):
     assert cache.path.stat().st_mode & 0o777 == 0o600
 
 
+def test_previous_schema_cannot_restore_unbound_previews(cached):
+    cache, app, _ = cached
+    payload = json.loads(cache.path.read_text())
+    payload["schema"] = 1
+    cache.path.write_text(json.dumps(payload))
+    assert cache.load([app]) is None
+
+
 def test_empty_results_are_cached(cached):
     cache, app, _ = cached
     cache.save(UpdateReport(()), [app], 1_700_000_001)

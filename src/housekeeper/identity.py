@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
+from housekeeper.appimage_format import appimage_format
 from housekeeper.launch import parse_launch
 from housekeeper.models import (
     Action,
@@ -108,10 +109,34 @@ def classify(entry: DesktopEntry) -> AppRecord:
         app.identity = game
         app.management = ("steam://open/games",)
         app.key = digest("steam", game)
-    elif binary.casefold().endswith(".appimage") and Path(argv[0]).is_absolute():
+    elif Path(
+        entry.resolved_executable or entry.executable or argv[0]
+    ).is_absolute() and appimage_format(
+        Path(entry.resolved_executable or entry.executable or argv[0])
+    ):
         app.source, app.provider = Source.APPIMAGE, "appimage"
-        app.location = entry.resolved_executable or argv[0]
-        app.key = digest("appimage", app.location, argv[1:])
+        app.location = entry.resolved_executable or entry.executable or argv[0]
+        from housekeeper.attribution import candidate, project, resolve
+
+        app = project(
+            app,
+            resolve(
+                (
+                    candidate(
+                        Source.APPIMAGE,
+                        str(Path(app.location).parent),
+                        app.location,
+                        "",
+                        app.location,
+                        app.location,
+                        kind="file",
+                        verified=True,
+                        scope="User",
+                        location=app.location,
+                    ),
+                )
+            ),
+        )
     elif binary in {"steam", "firefoxpwa"} and len(argv) > 1 and argv[1] not in {"%u", "%U"}:
         app.provider, app.action = binary, Action.INSTRUCTIONS
         app.source = Source.STEAM if binary == "steam" else Source.WEB

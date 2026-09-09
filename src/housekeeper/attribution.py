@@ -164,6 +164,11 @@ def attribute(app: AppRecord, indexes: tuple[AttributionIndex, ...]) -> AppRecor
             errors.append(f"{type(index).__name__}: {error}")
     if app.source in {Source.WEB, Source.STEAM}:
         app = deepcopy(app)
+        app.component = AppComponent(
+            app.key,
+            tuple(e.desktop_id for e in app.entries),
+            digest(tuple(e.launch or e.argv for e in app.entries)),
+        )
         app.attribution = AttributionResult(
             AttributionState.UNSUPPORTED,
             tuple(replace(c, relationship=Relationship.HOSTS) for c in candidates),
@@ -172,7 +177,15 @@ def attribute(app: AppRecord, indexes: tuple[AttributionIndex, ...]) -> AppRecor
         )
         return app
     if not candidates and app.source == Source.APPIMAGE:
-        return deepcopy(app)
+        app = deepcopy(app)
+        if errors and app.attribution:
+            app.attribution = replace(
+                app.attribution,
+                state=AttributionState.UNAVAILABLE,
+                errors=tuple(sorted(errors)),
+                reason="Some ownership checks failed. Direct management is disabled.",
+            )
+        return app
     result = resolve(tuple(candidates), tuple(sorted(errors)))
     if app.attribution and app.attribution.state == AttributionState.UNSUPPORTED:
         result = replace(result, state=AttributionState.UNSUPPORTED, reason=app.attribution.reason)

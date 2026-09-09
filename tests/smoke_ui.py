@@ -510,6 +510,30 @@ def activate(app):
             prepare.assert_not_called()
             prepare_update.assert_not_called()
             assert message.call_count == 2
+        from housekeeper.attribution import candidate, project, resolve
+
+        claims = tuple(
+            candidate(
+                source, "/test", source.value, "1", source.value, "/example.desktop", verified=True
+            )
+            for source in (Source.RPM, Source.DEB)
+        )
+        conflict = project(original, resolve(claims))
+        assign_update_action(
+            conflict, {"rpm": ProviderCapabilities(update_preview=True, update_execute=True)}
+        )
+        window.show_details(conflict, replace=True)
+        assert window.manage_button.get_label() == "Show Management Instructions"
+        assert window.update_button.get_label() == "Update Instructions"
+        with (
+            patch.object(window.service, "prepare") as prepare,
+            patch.object(window.service, "prepare_update") as prepare_update,
+            patch.object(window, "message"),
+        ):
+            window.manage_button.emit("clicked")
+            window.update_button.emit("clicked")
+            prepare.assert_not_called()
+            prepare_update.assert_not_called()
         window.show_details(original, replace=True)
         storage_callbacks = []
         with patch.object(

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from appimage_fixture import image_bytes
 
 from housekeeper.discovery import read_entry
 from housekeeper.identity import classify
@@ -11,7 +12,7 @@ from housekeeper.providers.appimage import AppImageProvider
 @pytest.fixture
 def image_app(tmp_path, desktop):
     binary = tmp_path / "Example.AppImage"
-    binary.write_bytes(b"independent test file, never executed")
+    binary.write_bytes(image_bytes())
     binary.chmod(0o755)
     entry_path = desktop(Exec=str(binary))
     app = classify(read_entry(entry_path, tmp_path, {"GNOME"}))
@@ -92,10 +93,14 @@ def test_shared_target_not_removable(image_app, tmp_path):
 
 
 def test_missing_ownership_backend_fails_closed(image_app, tmp_path, monkeypatch):
-    class Missing:
-        available = False
+    from housekeeper.models import FileOwnershipResult, FileOwnershipState
 
-    monkeypatch.setattr("housekeeper.providers.rpm.RpmIndex", Missing)
+    monkeypatch.setattr(
+        "housekeeper.ownership.FileOwnershipIndex.query",
+        lambda self, path: FileOwnershipResult(
+            FileOwnershipState.ERROR, reason="Required ownership backend is unavailable."
+        ),
+    )
     with pytest.raises(ManagementError, match="cannot be verified"):
         AppImageProvider(home=tmp_path).prepare(image_app, [image_app])
 
@@ -103,3 +108,62 @@ def test_missing_ownership_backend_fails_closed(image_app, tmp_path, monkeypatch
 def test_target_outside_home_rejected(image_app, tmp_path):
     with pytest.raises(ManagementError, match="home directory"):
         provider(tmp_path / "another-home").prepare(image_app, [image_app])
+
+
+@pytest.mark.parametrize("name", ["Example.AppImage", "without-extension"])
+@pytest.mark.parametrize("kind", [1, 2])
+def test_format_identification_does_not_require_suffix(desktop, tmp_path, name, kind):
+    from housekeeper.models import Source
+
+    binary = tmp_path / name
+    binary.write_bytes(image_bytes(kind))
+    binary.chmod(0o755)
+    path = desktop(Exec=str(binary))
+    app = classify(read_entry(path, path.parent))
+    assert app.source == Source.APPIMAGE
+    assert provider(tmp_path).prepare(app, [app]).target == str(binary)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [b"#!/bin/sh\nexit 0\n", b"\x7fELF\x02\x01\x01\x00AI\x02", image_bytes()[:60], image_bytes(3)],
+)
+def test_invalid_format_is_rejected_even_with_appimage_suffix(desktop, tmp_path, data):
+    from housekeeper.appimage_format import appimage_format
+    from housekeeper.models import Source
+
+    binary = tmp_path / "ordinary.AppImage"
+    binary.write_bytes(data)
+    binary.chmod(0o755)
+    path = desktop(Exec=str(binary))
+    assert appimage_format(binary) is None
+    assert classify(read_entry(path, path.parent)).source != Source.APPIMAGE
+
+
+def test_ownership_failure_and_changed_owner_block_trash(image_app, tmp_path):
+    from housekeeper.models import FileOwnershipResult, FileOwnershipState
+
+    state = FileOwnershipState.UNOWNED
+    manager = AppImageProvider(
+        home=tmp_path,
+        ownership=lambda p: FileOwnershipResult(
+            state, ("deb:owner",) if state == FileOwnershipState.OWNED else ()
+        ),
+        trash=lambda p: pytest.fail("Unexpected trash"),
+    )
+    plan = manager.prepare(image_app, [image_app])
+    state = FileOwnershipState.ERROR
+    with pytest.raises(ManagementError, match="cannot be verified"):
+        manager.execute(image_app, plan, lambda *_: None)
+    state = FileOwnershipState.OWNED
+    with pytest.raises(ManagementError, match="software package"):
+        manager.execute(image_app, plan, lambda *_: None)
+
+
+def test_changed_desktop_command_rejected(image_app, tmp_path):
+    manager = provider(tmp_path, trash=lambda p: pytest.fail("Unexpected trash"))
+    plan = manager.prepare(image_app, [image_app])
+    entry = image_app.entries[0]
+    entry.path.write_text(entry.path.read_text().replace(image_app.location, "/usr/bin/true"))
+    with pytest.raises(ManagementError, match="launcher changed"):
+        manager.execute(image_app, plan, lambda *_: None)

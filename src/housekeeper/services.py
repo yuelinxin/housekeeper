@@ -30,8 +30,6 @@ def collect(partial=None, roots=None, *, indexes=None):
         installation_record,
     )
     from housekeeper.providers.appimage import AppImageProvider
-    from housekeeper.providers.flatpak import FlatpakProvider
-    from housekeeper.providers.rpm import RpmProvider
 
     if partial:
         initial, _ = scan_entries(roots)
@@ -52,7 +50,7 @@ def collect(partial=None, roots=None, *, indexes=None):
         )
     )
     entries, warnings = scan_entries(scan_roots)
-    records = [attribute(classify(entry), indexes) for entry in entries]
+    records = [attribute(classify(entry), tuple(snapshots)) for entry in entries]
     for index in indexes:
         # Apply XDG visibility separately from association and authorization.
         for app in getattr(index, "apps", ()):
@@ -78,10 +76,15 @@ def collect(partial=None, roots=None, *, indexes=None):
                 records.append(installation_record(copy))
         warnings.extend(getattr(index, "warnings", ()))
     output = merge_records(records)
-    image_provider = AppImageProvider()
+    from housekeeper.ownership import FileOwnershipIndex
+
+    ownership = FileOwnershipIndex()
+    image_provider = AppImageProvider(ownership=ownership.query)
     capabilities = {
-        "rpm": RpmProvider().capabilities(),
-        "flatpak": FlatpakProvider().capabilities(),
+        name: snapshot.capabilities
+        for snapshot in snapshots
+        for name in snapshot.ownership_backends
+        if name in {"rpm", "flatpak"}
     }
     for record in output:
         assign_actions(record, capabilities)

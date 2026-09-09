@@ -2,6 +2,7 @@
 
 import os
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import gi
@@ -56,6 +57,11 @@ def read_entry(path: Path, root: Path, desktops: set[str] | None = None) -> Desk
     except GLib.Error:
         argv = ()
     launch = parse_launch(argv)
+    if launch.wrappers:
+        wrapper = shutil.which(argv[0])
+        expected = shutil.which("env", path=os.defpath)
+        if not wrapper or not expected or Path(wrapper).resolve() != Path(expected).resolve():
+            launch = replace(launch, reason="The env wrapper is not the system command.")
     executable = resolve_executable(launch)
     resolved = str(Path(executable).resolve()) if executable else ""
     reasons = []

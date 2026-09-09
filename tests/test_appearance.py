@@ -17,6 +17,8 @@ from housekeeper.models import AppRecord, ManagementError, Source
 from housekeeper.providers.flatpak import FlatpakIndex
 from housekeeper.providers.rpm import RpmIndex
 
+pytestmark = pytest.mark.usefixtures("flatpak_command")
+
 
 @pytest.fixture
 def icon_home(tmp_path, monkeypatch):

@@ -49,6 +49,37 @@ def plan(record, changes=None):
     )
 
 
+def test_component_batch_executes_shared_target_once_and_refreshes_every_component():
+    from housekeeper.models import InstallationInstance, ManagementTarget
+
+    first = app()
+    first.installation = InstallationInstance("installation", "flatpak", "/user", "suite", "1")
+    first.target = ManagementTarget("target", "installation", "ref", "suite")
+    second = replace(first, key="second", name="Second component")
+    executions = []
+    provider = NS(
+        prepare_update=lambda record, *_: UpdateCheckResult(UpdateState.AVAILABLE, plan(record)),
+        execute_update=lambda *args: (
+            executions.append(args) or OperationResult(Outcome.SUCCESS, "done")
+        ),
+    )
+    batch = UpdateBatch(lambda record: provider, [first, second])
+    report = batch.check(lambda *_: None)
+    assert len(report.items) == 1 and report.items[0].names == (first.name, second.name)
+    result = batch.execute(report.items, lambda *_: None)
+    assert len(executions) == 1
+    assert set(result.completed_app_keys) == {first.key, second.key}
+
+
+def test_shared_dependency_exception_does_not_ignore_ownership_changes():
+    original = replace(
+        plan(app()), instance_id="installation", target_id="target", evidence_digest="old"
+    )
+    changed = replace(original, fingerprint="different", evidence_digest="changed")
+    with pytest.raises(ManagementError):
+        UpdateBatch._remaining_plan(original, changed, {})
+
+
 def test_check_deduplicates_installations_but_keeps_all_names():
     a = app()
     duplicate = replace(a, key="alias", name="Alias")

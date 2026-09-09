@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 from housekeeper.i18n import _
 from housekeeper.models import Source
@@ -23,10 +24,35 @@ def query(*args):
         timeout=10,
         env={**os.environ, "LC_ALL": "C"},
     )
-    if result.returncode == 1:
-        return ""  # No matching installed package or path.
+    if result.returncode == 1 and (
+        "no path found matching pattern" in result.stderr
+        or "no packages found matching" in result.stderr
+    ):
+        return ""  # Only explicit negative answers establish absence.
     result.check_returncode()
     return result.stdout
+
+
+def file_owners(path):
+    # dpkg-query uses glob patterns even for absolute paths. Quote literal metacharacters.
+    pattern = "".join(
+        {"*": "[*]", "?": "[?]", "[": "[[]", "]": "[]]", "\\": "\\\\"}.get(c, c) for c in str(path)
+    )
+    output = query("--search", "--", pattern)
+    owners = set()
+    for line in output.splitlines():
+        names, separator, filename = line.partition(": ")
+        if not separator:
+            raise ValueError("Malformed dpkg ownership response")
+        if filename != str(path):
+            continue
+        if names.startswith(("diversion ", "local diversion ")):
+            raise ValueError("The file is diverted; ownership cannot be verified")
+        values = names.split(", ")
+        if not all(_PACKAGE.fullmatch(name) for name in values):
+            raise ValueError("Invalid dpkg file owner")
+        owners.update("deb:" + name for name in values)
+    return tuple(sorted(owners))
 
 
 def packages(target=None):
@@ -54,6 +80,8 @@ class DebIndex:
 
     def _load(self):
         # Two queries per inventory, rather than starting dpkg-query for every app.
+        if Path("/var/lib/dpkg/status").exists() and not shutil.which("dpkg-query"):
+            raise RuntimeError("The dpkg database exists but dpkg-query is unavailable.")
         self._owners = {}
         self._packages = packages()
         if not self._packages:
