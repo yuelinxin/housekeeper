@@ -9,8 +9,8 @@ from housekeeper.batch_updates import UPDATE_PROVIDERS, installation_key
 from housekeeper.i18n import _
 from housekeeper.models import Outcome
 from housekeeper.ui.icons import icon_image
+from housekeeper.ui.update_confirmation import configure_update_confirmation
 from housekeeper.update_cache import UpdateCache, cache_expired
-from housekeeper.updates import authorization_notice
 
 
 class UpdatesPage(Adw.NavigationPage):
@@ -86,7 +86,7 @@ class UpdatesPage(Adw.NavigationPage):
         self.empty = Adw.StatusPage(
             title=_("Check for Updates"),
             icon_name="software-update-available-symbolic",
-            description=_("Available app and runtime updates will appear here."),
+            description=_("Available desktop app updates will appear here."),
         )
         self.stack = Gtk.Stack(vexpand=True)
         self.stack.add_named(self.empty, "empty")
@@ -419,45 +419,9 @@ class UpdatesPage(Adw.NavigationPage):
         dialog = Adw.MessageDialog(
             transient_for=self.window,
             modal=True,
-            heading=(
-                _("Update %s?") % ", ".join(items[0].names)
-                if len(items) == 1
-                else _("Update %d apps?") % len(items)
-            ),
-            body=_(
-                "Review all application and dependency changes. Updates run in order and stop if a plan changes or an update fails. Personal application data is kept."
-            ),
         )
-        notice = next(
-            (authorization_notice(item.app) for item in items if authorization_notice(item.app)), ""
-        )
-        if notice:
-            dialog.set_body(dialog.get_body() + "\n\n" + notice)
         self.window.confirm_dialog = dialog
-        lines = []
-        for item in items:
-            lines.append(f"{', '.join(item.names)} · {item.app.scope}\n{item.plan.message}")
-            for change in item.plan.changes:
-                old, new = change.current_version, change.target_version
-                if item.app.provider == "flatpak":
-                    old, new = old[:12], new[:12]
-                operation = _("Install") if change.operation == "install" else _("Update")
-                lines.append(
-                    f"{operation}: {change.identity}\n{old or _('Not installed')} → {new}\n{change.source}"
-                )
-            if item.plan.download_size is not None:
-                lines.append(
-                    _("Estimated download: %s") % GLib.format_size(item.plan.download_size)
-                )
-        preview = Gtk.Label(label="\n\n".join(lines), wrap=True, selectable=True, xalign=0)
-        dialog.set_extra_child(
-            Gtk.ScrolledWindow(
-                child=preview,
-                max_content_height=300,
-                propagate_natural_height=True,
-                hscrollbar_policy=Gtk.PolicyType.NEVER,
-            )
-        )
+        configure_update_confirmation(dialog, items)
         dialog.add_response("cancel", _("Cancel"))
         dialog.add_response("update", _("Update"))
         dialog.set_response_appearance("update", Adw.ResponseAppearance.SUGGESTED)

@@ -1,9 +1,63 @@
-# v0.1.10 development validation
+# v0.1.11 development validation
 
 Updated on September 9, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.11 metadata validation — September 9, 2026
+
+- Python, Meson, RPM spec, the newest AppStream release, changelog, validation
+  heading and README installation example agree on 0.1.11. Source archives and
+  release workflows derive their version from the Python package.
+- Meson compilation, offline AppStream validation and desktop-file validation pass;
+  the development launcher reports `Housekeeper 0.1.11`.
+- All 30 update-cache tests pass after the version change. Ruff lint, formatting
+  and whitespace checks pass. Feature validation below covers update discovery,
+  dependency filtering and the compact confirmation dialogs.
+
+## Compact update confirmation — September 9, 2026
+
+- Fedora 44 synthetic GTK smoke passes with both update entrypoints using the
+  compact confirmation, Details initially collapsed, exact operations and
+  authorization guidance retained, launcher aliases excluded from headings, and
+  existing cancellation/execution flows intact.
+- Inspected rendered Cursor examples in collapsed, expanded, batch and narrow
+  layouts. The RPM version summary omits release/epoch clutter only when the
+  upstream version changes; a synthetic revision-only update retains full versions.
+- Ruff lint, formatting and whitespace checks pass. Screenshot fixtures and tests
+  do not invoke real update providers. Log:
+  `/tmp/housekeeper-update-dialog-smoke.log`; screenshots:
+  `/tmp/housekeeper-update-dialog-shots/`.
+
+## Desktop update discovery and filtering — September 9, 2026
+
+- Fedora 44 disposable unit suite: 460 passed, 1 skipped (`dpkg-query` absent).
+  The host sandbox blocked eight unrelated image-decoder tests; all passed inside
+  the container. Update, batch, cache and service tests passed on the host as well.
+- Query-count fixtures verify one PackageKit refresh and one update query for 101
+  desktop records, and one Flatpak discovery per installation. Only matching
+  candidates receive previews. These are call counts, not elapsed-time benchmarks.
+- The offline Fedora 44 integration suite passes signed RPM application/dependency
+  updates, a shared-dependency batch, Flatpak user/system updates, stale-plan and
+  authorization rejection, and cancellation of a real extra-data download. The
+  extended fixture publishes a newer shared runtime without changing either app;
+  neither app appears in the update list or receives an available individual plan.
+  Native removal authorization retains the existing unsupported-preview limitation.
+- Synthetic GTK smoke passes, including update cache restoration and batch completion.
+  Its RPM fixtures now use exact package name/architecture identities.
+- Ruff lint, formatting and whitespace checks pass. The unchanged host update cache
+  was inspected read-only: ten previous rows become eight, excluding the hidden
+  LibreOffice start center and XSLT filters while preserving Writer, Calc and Impress.
+- The seven configured core modules pass mypy with `--follow-imports=silent`.
+  Default mypy also follows existing untyped provider/inventory modules and is not
+  clean: the unmodified HEAD produces 348 errors. New API annotations reduce this
+  to 325, with no additional diagnostic kinds/counts per file relative to HEAD.
+  The comparison used mypy 2.3.1 in a temporary compatible Python environment;
+  no type-check configuration was relaxed in the repository.
+- Logs: `/tmp/housekeeper-update-integration-44.log` and
+  `/tmp/housekeeper-update-smoke-44.log`. No host applications were updated,
+  no host cache was rewritten, and no release was built or published.
 
 ## v0.1.10 metadata validation — September 9, 2026
 

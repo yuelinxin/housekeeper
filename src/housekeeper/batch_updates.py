@@ -15,6 +15,7 @@ from housekeeper.models import (
     UpdatePlan,
     UpdateState,
 )
+from housekeeper.updates import has_application_update
 
 LOG = logging.getLogger(__name__)
 UPDATE_PROVIDERS = ("rpm", "flatpak")
@@ -47,6 +48,10 @@ def change_key(plan, change):
     return (plan.provider, plan.installation, change.identity)
 
 
+def discovery_key(app):
+    return (app.provider, app.metadata.get("installation", "") if app.provider == "flatpak" else "")
+
+
 class UpdateBatch:
     """One service task; cancellation follows the current provider between transactions."""
 
@@ -63,16 +68,18 @@ class UpdateBatch:
             if self.provider:
                 self.provider.request_cancel()
 
-    def _activate(self, app):
+    def _activate(self, app, provider=None):
         with self.lock:
             if self.cancelled:
                 raise OperationCancelled(_("The update operation was cancelled."))
-            self.provider = self.factory(app)
+            self.provider = provider if provider is not None else self.factory(app)
             return self.provider
 
     def check(self, progress, providers=UPDATE_PROVIDERS):
         groups, unsupported = {}, 0
         for app in self.inventory:
+            if not app.visible:
+                continue
             if app.provider in UPDATE_PROVIDERS and app.provider not in providers:
                 continue
             if app.update_action != UpdateAction.CHECK:
@@ -80,6 +87,10 @@ class UpdateBatch:
                 continue
             groups.setdefault(installation_key(app), []).append(app)
         items, errors = [], []
+        discoveries, discovery_errors = {}, {}
+        source_apps = {}
+        for apps in groups.values():
+            source_apps.setdefault(discovery_key(apps[0]), []).append(apps[0])
         refreshed = False
         total = len(groups)
         if self.cancelled:
@@ -101,16 +112,45 @@ class UpdateBatch:
                 progress(f"{label}\n{message}" if message else label, index / total, can_cancel)
 
             try:
-                provider = self._activate(app)
+                source = discovery_key(app)
+                if source in discovery_errors:
+                    raise ManagementError(discovery_errors[source])
+                discovery = discoveries.get(source)
+                provider = self._activate(app, discovery[0] if discovery else None)
                 progress(label, index / total, True)
+                if discovery is None and hasattr(provider, "discover_updates"):
+                    try:
+                        candidates = provider.discover_updates(
+                            source_apps[source], checking_progress
+                        )
+                    except OperationCancelled:
+                        raise
+                    except Exception as error:
+                        # A broken source is attempted once, never once per application.
+                        discovery_errors[source] = str(error)
+                        raise
+                    discovery = (provider, candidates)
+                    discoveries[source] = discovery
+                    if app.provider == "rpm":
+                        refreshed = True
+                if self.cancelled:
+                    raise OperationCancelled(_("The update check was cancelled."))
                 kwargs = {"refresh": not refreshed} if app.provider == "rpm" else {}
-                check = provider.prepare_update(app, self.inventory, checking_progress, **kwargs)
-                if app.provider == "rpm":
-                    refreshed = True
-                if check.state == UpdateState.AVAILABLE:
-                    if check.plan is None or not check.plan.changes:
-                        raise ManagementError(_("The manager did not provide an update preview."))
-                    items.append(UpdateItem(app, check.plan, tuple(a.name for a in apps)))
+                if discovery is not None and app.provider == "rpm":
+                    kwargs["use_discovery"] = True
+                if discovery is None or app.key in discovery[1]:
+                    check = provider.prepare_update(
+                        app, self.inventory, checking_progress, **kwargs
+                    )
+                    if app.provider == "rpm":
+                        refreshed = True
+                    if check.state == UpdateState.AVAILABLE:
+                        if check.plan is None or not check.plan.changes:
+                            raise ManagementError(
+                                _("The manager did not provide an update preview.")
+                            )
+                        if has_application_update(app, check.plan):
+                            items.append(UpdateItem(app, check.plan, tuple(a.name for a in apps)))
             except OperationCancelled:
                 return UpdateReport(tuple(items), tuple(errors), True, unsupported)
             except Exception as error:

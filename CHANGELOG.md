@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.11 — 2026-09-09
+
+- Simplify update confirmation to the application name and version change, with
+  complete dependencies, sources and authorization guidance in collapsed Details.
+  Use the same layout for individual and batch updates; keep launcher aliases out
+  of the heading, center the Details control, and show full package revisions in Details.
+- Discover Flatpak update candidates once per installation and query PackageKit
+  updates once per check. Resolve full plans only for matching desktop applications.
+- Exclude hidden auxiliary entries, such as LibreOffice XSLT filters, from the
+  Updates page. Runtime or extension changes alone no longer mark an application
+  as updatable. Keep required dependencies in application transaction previews and
+  filter older cached rows using the same rules.
+
 ## 0.1.10 — 2026-09-09
 
 - Verify the effective D-Bus service and installation before authorizing Flatpak

@@ -5,7 +5,20 @@ import shlex
 
 from housekeeper import APP_ID
 from housekeeper.i18n import _
-from housekeeper.models import AttributionState, Source, UpdateAction
+from housekeeper.models import AppRecord, AttributionState, Source, UpdateAction, UpdatePlan
+
+
+def has_application_update(app: AppRecord, plan: UpdatePlan) -> bool:
+    """Dependency changes alone never make a desktop application updatable."""
+    identity = app.identity
+    if app.provider == "rpm":
+        identity = f"{app.metadata.get('name', '')}.{app.metadata.get('arch', '')}"
+    return any(
+        change.identity == identity
+        and change.operation == "update"
+        and change.target_version != change.current_version
+        for change in plan.changes
+    )
 
 
 def assign_update_action(app, capabilities):

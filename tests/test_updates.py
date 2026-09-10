@@ -86,6 +86,7 @@ def rpm_update(monkeypatch):
         preview=[Package()],
         calls=[],
         refreshed=0,
+        queried=0,
         deployed=(),
         error=None,
         exit_code=1,
@@ -112,10 +113,14 @@ def rpm_update(monkeypatch):
         )
         return Results(exit_code=backend.exit_code, error=backend.error)
 
+    def get_updates(*_args):
+        backend.queried += 1
+        return Results(backend.candidates)
+
     client = NS(
         resolve=lambda _f, names, *_a: Results([p for p in backend.installed if p.name in names]),
         refresh_cache=refresh,
-        get_updates=lambda *_a: Results(backend.candidates),
+        get_updates=get_updates,
         update_packages=update,
     )
     monkeypatch.setattr(provider, "_client", lambda _kind: (client, pk, Gio, GLib))
@@ -140,6 +145,44 @@ def test_rpm_check_preview_and_dependency_update(rpm_update):
     assert result.outcome == Outcome.SUCCESS
     assert backend.refreshed == 1
     assert backend.calls[-1] == (2, ["example;2-1;x86_64;updates"])
+
+
+def test_rpm_batch_queries_updates_once_and_only_previews_matching_desktop_apps(rpm_update):
+    from housekeeper.batch_updates import UpdateBatch
+
+    provider, app, backend = rpm_update
+    app = replace(app, update_action=UpdateAction.CHECK)
+    current = [
+        replace(app, key=str(i), metadata={"name": f"current{i}", "arch": "x86_64"})
+        for i in range(100)
+    ]
+    backend.candidates.extend([Package("system-library"), Package("current0", arch="aarch64")])
+    backend.preview.append(Package("dependency", info="installing"))
+    report = UpdateBatch(lambda _: provider, [*current, app]).check(lambda *_: None)
+    assert not report.errors and len(report.items) == 1
+    assert backend.refreshed == 1 and backend.queried == 1 and len(backend.calls) == 1
+    assert len(report.items[0].plan.changes) == 2
+    # Even the same provider object must query again when executing; discovery is not authorization.
+    result = provider.execute_update(app, report.items[0].plan, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS and backend.queried == 2
+
+
+def test_rpm_discovery_empty_and_failed_queries_are_distinct(rpm_update):
+    provider, app, backend = rpm_update
+    backend.candidates = []
+    assert provider.discover_updates([app], lambda *_: None) == set()
+    backend.error = NS(get_details=lambda: "Network unavailable")
+    with pytest.raises(ManagementError, match="Network"):
+        provider.discover_updates([app], lambda *_: None)
+    assert provider._discovered_updates is None
+
+
+def test_rpm_cancelled_discovery_does_not_refresh_sources(rpm_update):
+    provider, app, backend = rpm_update
+    provider.request_cancel()
+    with pytest.raises(OperationCancelled):
+        provider.discover_updates([app], lambda *_: None)
+    assert backend.refreshed == backend.queried == 0
 
 
 def test_rpm_current_requires_successful_query(rpm_update):
@@ -250,6 +293,79 @@ class Ref:
 
     def get_origin(self):
         return self.origin
+
+    def get_kind(self):
+        return "app" if self.identity.startswith("app/") else "runtime"
+
+
+@pytest.fixture
+def flatpak_discovery(monkeypatch):
+    provider = FlatpakProvider()
+    app = AppRecord(
+        "app",
+        "App",
+        provider="flatpak",
+        identity="app/example/x86_64/stable",
+        metadata={"installation": "/user"},
+    )
+    backend = NS(candidates=[], calls=[], error=None)
+
+    def query(cancel):
+        backend.calls.append(cancel)
+        if backend.error:
+            raise backend.error
+        return backend.candidates
+
+    installation = NS(
+        get_path=lambda: Gio.File.new_for_path("/user"),
+        drop_caches=lambda _c: None,
+        list_installed_refs_for_update=query,
+    )
+    monkeypatch.setattr(
+        "housekeeper.providers.flatpak.load_flatpak", lambda: NS(RefKind=NS(APP="app"))
+    )
+    monkeypatch.setattr(
+        "housekeeper.providers.flatpak.configured_installations", lambda _fp: ([installation], [])
+    )
+    return provider, app, backend
+
+
+def test_flatpak_bulk_discovery_matches_full_ref_and_excludes_runtimes(flatpak_discovery):
+    provider, app, backend = flatpak_discovery
+    backend.candidates = [Ref(app.identity), Ref("runtime/platform/x86_64/stable")]
+    others = [
+        replace(app, key="branch", identity="app/example/x86_64/beta"),
+        replace(app, key="runtime", identity="runtime/platform/x86_64/stable"),
+    ]
+    assert provider.discover_updates([app, *others], lambda *_: None) == {app.key}
+    assert len(backend.calls) == 1
+
+
+def test_flatpak_empty_and_failed_discovery_are_distinct(flatpak_discovery):
+    provider, app, backend = flatpak_discovery
+    assert provider.discover_updates([app], lambda *_: None) == set()
+    backend.error = GLib.Error.new_literal(Gio.io_error_quark(), "Offline", Gio.IOErrorEnum.FAILED)
+    with pytest.raises(ManagementError, match="Offline"):
+        provider.discover_updates([app], lambda *_: None)
+
+
+def test_flatpak_discovery_rejects_wrong_installation(flatpak_discovery):
+    provider, app, backend = flatpak_discovery
+    with pytest.raises(ManagementError, match="unavailable"):
+        provider.discover_updates(
+            [replace(app, metadata={"installation": "/system"})], lambda *_: None
+        )
+    assert not backend.calls
+
+
+@pytest.mark.parametrize("during", [False, True])
+def test_flatpak_discovery_acknowledges_cancellation(flatpak_discovery, during):
+    provider, app, backend = flatpak_discovery
+    if not during:
+        provider.request_cancel()
+    with pytest.raises(OperationCancelled):
+        provider.discover_updates([app], lambda *_: provider.request_cancel())
+    assert len(backend.calls) == int(during)
 
 
 class FlatpakTransaction:
@@ -385,9 +501,18 @@ def test_flatpak_current_and_dependency_only_updates(flatpak_update):
     backend.operations = []
     assert provider.prepare_update(app, [app], lambda *_: None).state == UpdateState.CURRENT
     backend.operations = [operation("runtime/org.example.Runtime/x86_64/stable")]
-    plan = provider.prepare_update(app, [app], lambda *_: None).plan
-    assert "application itself is current" in plan.message
-    assert plan.target == "old"
+    result = provider.prepare_update(app, [app], lambda *_: None)
+    assert result.state == UpdateState.CURRENT and result.plan is None
+    assert not any(tx.executed for tx in backend.transactions)
+
+
+def test_flatpak_same_commit_operation_with_new_runtime_is_not_an_app_update(flatpak_update):
+    provider, app, backend = flatpak_update
+    backend.operations = [
+        operation(app.identity, "old"),
+        operation("runtime/platform/x86_64/stable"),
+    ]
+    assert provider.prepare_update(app, [app], lambda *_: None).state == UpdateState.CURRENT
 
 
 def test_flatpak_partial_completion(flatpak_update):

@@ -28,8 +28,10 @@ def run(*args):
     subprocess.run(args, check=True)
 
 
-def publish(version):
+def publish(version, *, only_runtime=False):
     for identity, runtime in ((runtime_id, True), (app_id, False), (second_id, False)):
+        if only_runtime and not runtime:
+            continue
         build = home / f"update-build-{version}-{identity}"
         content = build / ("usr" if runtime else "files")
         (content / "bin").mkdir(parents=True)
@@ -106,3 +108,16 @@ for item in report.items:
     assert installed[item.app.key].metadata["commit"] == item.plan.target
 assert data.read_text() == "Personal data survives updates."
 print("PASS: real two-app Flatpak batch with a shared runtime and exact committed targets")
+
+# A newer shared runtime alone must not turn either desktop application into an update row.
+publish(5, only_runtime=True)
+apps = [
+    replace(a, update_action=UpdateAction.CHECK)
+    for a in FlatpakIndex().apps
+    if a.metadata["app_id"] in {app_id, second_id}
+]
+report = UpdateBatch(lambda _a: FlatpakProvider(), apps).check(lambda *_: None)
+assert not report.errors and not report.items, report
+assert FlatpakProvider().prepare_update(apps[0], apps, lambda *_: None).state == UpdateState.CURRENT
+assert all(a.metadata["commit"] == installed[a.key].metadata["commit"] for a in apps)
+print("PASS: runtime-only updates do not appear as desktop application updates")

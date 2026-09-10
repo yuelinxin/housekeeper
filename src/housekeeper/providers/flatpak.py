@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 from housekeeper import APP_ID
 from housekeeper.attribution import check_binding, evidence_digest, plan_binding
@@ -14,6 +15,7 @@ from housekeeper.models import (
     OperationCancelled,
     OperationResult,
     Outcome,
+    Progress,
     ProviderCapabilities,
     RemovalPlan,
     Source,
@@ -23,9 +25,10 @@ from housekeeper.models import (
     UpdateState,
 )
 from housekeeper.providers.packages import byte_size
+from housekeeper.updates import has_application_update
 
 
-def load_flatpak():
+def load_flatpak() -> Any:
     import gi
 
     gi.require_version("Flatpak", "1.0")
@@ -34,10 +37,11 @@ def load_flatpak():
     return Flatpak
 
 
-def configured_installations(fp):
+def configured_installations(fp: Any) -> tuple[list[Any], list[str]]:
     from gi.repository import Gio, GLib
 
-    candidates, warnings = [], []
+    candidates: list[Any] = []
+    warnings: list[str] = []
     for name, discover in (
         ("user", lambda: [fp.Installation.new_user(None)]),
         ("system", lambda: fp.get_system_installations(None)),
@@ -59,7 +63,7 @@ class FlatpakIndex:
     def __init__(self):
         self.installations = {}
         self.apps = []
-        self.warnings = []
+        self.warnings: list[str] = []
         self.available = False
         self.attribution_errors = []
         try:
@@ -517,6 +521,40 @@ class FlatpakProvider:
             refuse(_("This source requires an authenticator. Use your software manager.")),
         )
 
+    def discover_updates(self, apps: list[AppRecord], progress: Progress) -> set[str]:
+        """Query one installation once; candidates still need exact transaction previews."""
+        from gi.repository import Gio, GLib
+
+        self.cancel = Gio.Cancellable()
+        if self.cancel_requested:
+            raise OperationCancelled(_("The update check was cancelled."))
+        path = apps[0].metadata.get("installation")
+        if not path or any(app.metadata.get("installation") != path for app in apps):
+            raise ManagementError(_("The Flatpak installation could not be identified uniquely."))
+        fp = load_flatpak()
+        installations, warnings = configured_installations(fp)
+        installation = next((i for i in installations if i.get_path().get_path() == path), None)
+        if installation is None:
+            raise ManagementError(
+                _("The Flatpak installation is unavailable. ") + " ".join(warnings)
+            )
+        progress(_("Checking Flatpak application updates"), None, True)
+        try:
+            installation.drop_caches(self.cancel)
+            refs = installation.list_installed_refs_for_update(self.cancel)
+        except GLib.Error as error:
+            if self.cancel.is_cancelled():
+                raise OperationCancelled(_("The update check was cancelled.")) from error
+            raise ManagementError(
+                _("Flatpak could not check for updates: ") + error.message
+            ) from error
+        if self.cancel.is_cancelled():
+            raise OperationCancelled(_("The update check was cancelled."))
+        # libflatpak can also return apps whose only change is a missing related ref.
+        # prepare_update checks the application's own resolved commit before listing it.
+        identities = {ref.format_ref() for ref in refs if ref.get_kind() == fp.RefKind.APP}
+        return {app.key for app in apps if app.identity in identities}
+
     def prepare_update(self, app, inventory, progress):
         from gi.repository import GLib
 
@@ -558,7 +596,7 @@ class FlatpakProvider:
         if not captured:
             raise ManagementError(_("Flatpak did not provide a complete update check."))
         plan = captured[0]
-        if not plan.changes:
+        if not has_application_update(app, plan):
             return UpdateCheckResult(UpdateState.CURRENT)
         return UpdateCheckResult(UpdateState.AVAILABLE, plan)
 

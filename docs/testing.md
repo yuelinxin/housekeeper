@@ -25,6 +25,11 @@ the complete inventory to enabled providers. GTK smoke exercises manual entry,
 manual refresh, deferred-entry cancellation, weekly checks, source switches,
 both sources disabled, late results after a source change, and Preferences controls.
 
+GTK smoke checks that single and batch update confirmations start with Details
+collapsed, show short summaries, retain complete transaction and authorization
+information in the expander, and omit launcher aliases from the heading. The
+expanded preview is captured separately from the default compact dialog.
+
 `test_sorting.py` checks numeric order, unknown and zero values, deterministic ties,
 timestamp validation, RPM metadata reuse and Flatpak installation separation. Package
 fixtures verify Pacman and Snap dates and keep unsupported dates unknown. GTK smoke
@@ -175,8 +180,8 @@ there is no application self-updater or configured COPR repository.
 ## Updates page and batch regression checks
 
 Cache and GTK smoke regressions cover removing successfully updated installations from
-the remaining list after both batch and details-page updates, including runtime-only
-updates with unchanged app records. They check preserved selection, count, original
+the remaining list after both batch and details-page updates, including unchanged
+inventory records. They check preserved selection, count, original
 check time, cache restoration, partial completion, cancellation/failure, duplicate
 launcher identities, incomplete check details, and the final up-to-date empty state.
 Unrelated inventory changes must continue to mark the saved report stale.
@@ -191,6 +196,13 @@ partial results, and navigation back to the inventory without executing package 
 The offline Flatpak integration fixture publishes two applications sharing a runtime.
 Both previews include that runtime; the batch must update it once, reconcile the second
 preview, and verify both applications' exact target commits and retained personal data.
+It then publishes only a newer runtime and verifies an empty application update list.
+
+Update discovery regressions check one Flatpak query per installation, one RPM
+refresh/update query for 101 desktop records, previews only for matching candidates,
+exact architecture/branch matching, hidden NoDisplay entries, retained dependencies,
+same-commit repairs, legacy cache filtering, failed sources and cancellation. Query
+counts verify eliminated repeated work; they are not elapsed-time benchmarks.
 
 The signed RPM fixture also installs two version-1 applications with a shared strict
 versioned dependency, then checks and updates both in a batch. Version queries must

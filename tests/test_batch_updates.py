@@ -154,6 +154,103 @@ def test_batch_cancel_before_start():
     assert worker.check(lambda *_: None).cancelled
 
 
+def test_bulk_discovery_previews_only_candidates_per_installation():
+    records = [app(str(i)) for i in range(100)] + [app("system", installation="system")]
+    records.append(replace(records[0], key="alias", name="Alias"))
+    discoveries, previews = [], []
+
+    def factory(record):
+        def discover(apps, progress):
+            discoveries.append(tuple(a.key for a in apps))
+            progress("Querying installation", None, True)
+            return {apps[0].key}
+
+        def prepare(record, inventory, progress):
+            assert inventory == records
+            previews.append(record.key)
+            return UpdateCheckResult(UpdateState.AVAILABLE, plan(record))
+
+        return NS(discover_updates=discover, prepare_update=prepare)
+
+    report = UpdateBatch(factory, records).check(lambda *_: None)
+    assert not report.errors
+    assert [len(group) for group in discoveries] == [100, 1]
+    assert previews == ["0", "system"]
+    assert report.items[0].names == ("0", "Alias")
+
+
+def test_failed_discovery_is_not_retried_for_each_app_and_other_installation_continues():
+    calls = []
+
+    def factory(record):
+        def discover(apps, progress):
+            calls.append(record.metadata["installation"])
+            if record.metadata["installation"] == "user":
+                raise ManagementError("Offline")
+            return set()
+
+        return NS(discover_updates=discover, prepare_update=lambda *_: pytest.fail("No preview"))
+
+    records = [app(), app("b"), app("system", installation="system")]
+    report = UpdateBatch(factory, records).check(lambda *_: None)
+    assert calls == ["user", "system"]
+    assert report.errors == ("A: Offline", "B: Offline")
+    assert not report.items and not report.cancelled
+
+
+def test_cancellation_after_discovery_never_starts_preview():
+    events = []
+    worker = None
+
+    def discover(apps, progress):
+        worker.request_cancel()
+        return {a.key for a in apps}
+
+    provider = NS(
+        discover_updates=discover,
+        prepare_update=lambda *_: pytest.fail("Cancelled discovery must not start a preview"),
+        request_cancel=lambda: None,
+    )
+    worker = UpdateBatch(lambda _: provider, [app()])
+    assert worker.check(lambda *event: events.append(event)).cancelled
+    assert all(fraction < 1 for _, fraction, _ in events)
+
+
+def test_hidden_auxiliary_entries_are_excluded_but_dependencies_are_retained(desktop, tmp_path):
+    from housekeeper.discovery import read_entry
+    from housekeeper.identity import classify
+
+    hidden = classify(read_entry(desktop(NoDisplay="true"), tmp_path, {"GNOME"}))
+    hidden = replace(hidden, provider="rpm", update_action=UpdateAction.CHECK)
+    visible = app()
+    dependency = change("runtime/org.example.Runtime/x86_64/stable")
+    calls = []
+
+    def prepare(record, inventory, progress):
+        assert inventory == [hidden, visible]
+        calls.append(record.key)
+        return UpdateCheckResult(
+            UpdateState.AVAILABLE, plan(record, (change(record.identity), dependency))
+        )
+
+    report = UpdateBatch(lambda _: NS(prepare_update=prepare), [hidden, visible]).check(
+        lambda *_: None
+    )
+    assert calls == [visible.key] and report.unsupported == 0
+    assert report.items[0].plan.changes[-1] == dependency
+
+
+def test_runtime_only_plan_does_not_mark_application_updatable():
+    record = app()
+    provider = NS(
+        prepare_update=lambda *_: UpdateCheckResult(
+            UpdateState.AVAILABLE, plan(record, (change("runtime"),))
+        )
+    )
+    report = UpdateBatch(lambda _: provider, [record]).check(lambda *_: None)
+    assert not report.items and not report.errors
+
+
 def test_check_uses_one_monotonic_progress_for_all_sources():
     records = [app(), replace(app("rpm"), provider="rpm"), app("last")]
     records.append(replace(records[0], key="alias"))

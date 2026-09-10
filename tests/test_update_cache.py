@@ -61,6 +61,25 @@ def test_empty_results_are_cached(cached):
     assert not result.report.items and not result.stale
 
 
+def test_legacy_dependency_only_plan_is_hidden_without_renewing_check_time(cached):
+    cache, app, report = cached
+    item = report.items[0]
+    dependency = replace(item.plan.changes[0], identity="runtime/example/x86_64/stable")
+    item = replace(item, plan=replace(item.plan, changes=(dependency,)))
+    cache.save(replace(report, items=(item,)), [app], 1_700_000_000)
+    result = cache.load([app])
+    assert not result.report.items and result.checked_at == 1_700_000_000
+
+
+def test_cached_hidden_auxiliary_entry_is_not_an_update_row(cached):
+    cache, app, report = cached
+    hidden = replace(app, visible=False)
+    cache.save(
+        replace(report, items=(replace(report.items[0], app=hidden),)), [hidden], 1_700_000_000
+    )
+    assert not cache.load([hidden]).report.items
+
+
 @pytest.mark.parametrize("age,expired", [(86400, False), (604799, False), (604800, True)])
 def test_weekly_interval(cached, age, expired):
     cache, app, _ = cached
@@ -165,7 +184,12 @@ def test_xdg_cache_location(monkeypatch, tmp_path):
 def test_completed_update_keeps_remaining_cache_and_original_check_time(cached):
     cache, app, report = cached
     other = replace(app, key="other", identity="other", name=app.name)
-    other_item = UpdateItem(other, replace(report.items[0].plan, app_key=other.key), (other.name,))
+    other_plan = replace(
+        report.items[0].plan,
+        app_key=other.key,
+        changes=(replace(report.items[0].plan.changes[0], identity=other.identity),),
+    )
+    other_item = UpdateItem(other, other_plan, (other.name,))
     report = replace(report, items=(*report.items, other_item))
     cache.save(report, [app, other], 1_700_000_000)
     cache.reconcile([app, other], completed_keys=(app.key,))

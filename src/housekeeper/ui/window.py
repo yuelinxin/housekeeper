@@ -11,6 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from housekeeper import APP_ID, VERSION
+from housekeeper.batch_updates import UpdateItem
 from housekeeper.i18n import _
 from housekeeper.models import (
     Action,
@@ -25,8 +26,9 @@ from housekeeper.services import InventoryService
 from housekeeper.sorting import sort_key
 from housekeeper.ui.appearance import ICON_REFRESH_NOTICE, AppearanceGroup
 from housekeeper.ui.icons import icon_image, set_icon
+from housekeeper.ui.update_confirmation import configure_update_confirmation
 from housekeeper.ui.updates import UpdatesPage
-from housekeeper.updates import authorization_notice, update_instructions
+from housekeeper.updates import update_instructions
 
 SOURCES = {
     "all": (_("All Apps"), "view-app-grid-symbolic"),
@@ -1130,44 +1132,31 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         dialog = Adw.MessageDialog(
             transient_for=self,
             heading=(_("Update %s?") if update else _("Remove %s?")) % app.name,
-            body="\n\n".join(filter(None, (plan.message, authorization_notice(app))))
-            if update
-            else plan.message,
+            body="" if update else plan.message,
             modal=True,
         )
         self.confirm_dialog = dialog
         if update:
-            lines = [_("Installation: %s") % app.scope]
-            for change in plan.changes:
-                old, new = change.current_version, change.target_version
-                if app.provider == "flatpak":
-                    old, new = old[:12], new[:12]
-                operation = _("Install") if change.operation == "install" else _("Update")
-                lines.append(
-                    f"{operation}: {change.identity}\n{old or _('Not installed')} → {new}\n{change.source}"
-                )
-            if plan.download_size is not None:
-                lines.append(_("Estimated download: %s") % GLib.format_size(plan.download_size))
-            details = "\n\n".join(lines)
+            configure_update_confirmation(dialog, (UpdateItem(app, plan, (app.name,)),))
         else:
             details = "\n".join(plan.affected)
-        if app.installation:
-            target = app.target.value if app.target else plan.target
-            details = (
-                _("Installation: %s") % app.installation.context
-                + "\n"
-                + _("Target: %s") % target
-                + "\n\n"
-                + details
+            if app.installation:
+                target = app.target.value if app.target else plan.target
+                details = (
+                    _("Installation: %s") % app.installation.context
+                    + "\n"
+                    + _("Target: %s") % target
+                    + "\n\n"
+                    + details
+                )
+            affected = Gtk.Label(label=details, wrap=True, selectable=True, xalign=0)
+            scroll = Gtk.ScrolledWindow(
+                child=affected,
+                max_content_height=220,
+                propagate_natural_height=True,
+                hscrollbar_policy=Gtk.PolicyType.NEVER,
             )
-        affected = Gtk.Label(label=details, wrap=True, selectable=True, xalign=0)
-        scroll = Gtk.ScrolledWindow(
-            child=affected,
-            max_content_height=220,
-            propagate_natural_height=True,
-            hscrollbar_policy=Gtk.PolicyType.NEVER,
-        )
-        dialog.set_extra_child(scroll)
+            dialog.set_extra_child(scroll)
         dialog.add_response("cancel", _("Cancel"))
         response_id = "update" if update else "remove"
         dialog.add_response(

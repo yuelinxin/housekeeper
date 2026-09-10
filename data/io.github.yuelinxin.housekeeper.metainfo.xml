@@ -30,6 +30,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.11" date="2026-09-09" type="development">
+      <description>
+        <p>Check desktop application updates with fewer repeated queries and simpler confirmation dialogs.</p>
+        <ul>
+          <li>Discover Flatpak updates once per installation and query RPM updates once per check, preparing full previews only for matching applications.</li>
+          <li>Hide auxiliary launchers such as LibreOffice XSLT filters and avoid presenting runtime-only changes as application updates.</li>
+          <li>Keep required dependencies in update plans and apply the same application filtering to cached results.</li>
+          <li>Show concise application names and version changes, with complete transaction and authorization information behind a centered Details expander.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.10" date="2026-09-09" type="development">
       <description>
         <p>Recognize application installations more accurately and verify ownership before management.</p>

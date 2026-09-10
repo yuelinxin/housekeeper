@@ -677,6 +677,10 @@ def activate(app):
         window.update_button.emit("clicked")
         assert window.operation_active and not window.manage_button.get_sensitive()
         assert window.confirm_dialog.get_default_response() == "cancel"
+        assert window.confirm_dialog.get_body() == "1.0 → 2.0\nPersonal data is kept."
+        details = window.confirm_dialog.get_extra_child().get_last_child()
+        assert isinstance(details, Gtk.Expander) and not details.get_expanded()
+        assert "fixture.x86_64" in details.get_child().get_child().get_child().get_label()
         assert (
             window.confirm_dialog.get_response_appearance("update")
             == Adw.ResponseAppearance.SUGGESTED
@@ -689,8 +693,17 @@ def activate(app):
         saved[0]("Stale progress must be ignored", 1, False)
         assert window.confirm_dialog is not None
 
-    def check_update_execute():
+    def check_update_expanded():
         capture(window.confirm_dialog, "update-preview.png")
+        details = window.confirm_dialog.get_extra_child().get_last_child()
+        details.set_expanded(True)
+        assert (
+            "system authentication dialog"
+            in details.get_child().get_child().get_child().get_label()
+        )
+
+    def check_update_execute():
+        capture(window.confirm_dialog, "update-preview-details.png")
         window.service.execute_update = lambda _a, _plan, progress, _completed: progress(
             "Updating synthetic application", 0.5, False
         )
@@ -845,7 +858,9 @@ def activate(app):
         items = []
         for record in (window.records[0], window.records[2], window.records[3]):
             target = (
-                record.identity if record.provider == "flatpak" else record.identity + ".x86_64"
+                record.identity
+                if record.provider == "flatpak"
+                else f"{record.metadata['name']}.{record.metadata['arch']}"
             )
             change = UpdateChange(target, "2.0", "update", "updates", "1.0", "2.0")
             plan = UpdatePlan(
@@ -975,9 +990,21 @@ def activate(app):
         page.selected_button.emit("clicked")
         assert window.confirm_dialog.get_default_response() == "cancel"
         assert window.confirm_dialog.get_heading() == "Update Boxes?"
-        assert "system authentication dialog" in window.confirm_dialog.get_body()
+        assert "system authentication dialog" not in window.confirm_dialog.get_body()
+        details = window.confirm_dialog.get_extra_child().get_last_child()
+        assert not details.get_expanded()
+        assert (
+            "system authentication dialog"
+            in details.get_child().get_child().get_child().get_label()
+        )
         window.confirm_dialog.response("cancel")
         assert not window.operation_active
+        item = replace(page.items[0], names=(page.items[0].app.name, "Boxes - URL Handler"))
+        page.confirm((item,))
+        assert window.confirm_dialog.get_heading() == "Update Boxes?"
+        details = window.confirm_dialog.get_extra_child().get_last_child()
+        assert "Boxes - URL Handler" in details.get_child().get_child().get_child().get_label()
+        window.confirm_dialog.response("cancel")
 
         window.set_size_request(1040, 720)
         window.set_default_size(1040, 720)
@@ -990,6 +1017,10 @@ def activate(app):
         assert window.updates_row.compute_bounds(window)[1].get_y() > window.get_height() / 2
         page.all_button.emit("clicked")
         assert window.confirm_dialog.get_heading() == "Update 3 apps?"
+        assert window.confirm_dialog.get_body() == "Personal data is kept."
+        content = window.confirm_dialog.get_extra_child()
+        assert isinstance(content.get_first_child(), Gtk.ScrolledWindow)
+        assert not content.get_last_child().get_expanded()
         window.confirm_dialog.response("cancel")
         window.set_size_request(1200, 720)
         window.set_default_size(1200, 720)
@@ -1075,8 +1106,8 @@ def activate(app):
         assert page.status.get_label() == "1 updates available"
         assert page.cache.load(window.records).report.items == original[2:]
         close_messages()
-        # Runtime-only success may leave the app record unchanged, so inventory equality
-        # cannot be the only way completed rows disappear.
+        # A details-page update may finish before the inventory is refreshed, so
+        # inventory equality cannot be the only way completed rows disappear.
         with patch.object(window, "refresh"):
             page.finished(
                 OperationResult(Outcome.SUCCESS, "Done", completed_app_keys=(original[2].app.key,))
@@ -1243,6 +1274,7 @@ def activate(app):
             check_narrow,
             check_narrow_details,
             check_update_preview,
+            check_update_expanded,
             check_update_execute,
             check_operation,
             check_update_preferences,

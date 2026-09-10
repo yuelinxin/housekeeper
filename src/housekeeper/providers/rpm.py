@@ -3,15 +3,18 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from housekeeper.attribution import check_binding, evidence_digest, plan_binding
 from housekeeper.i18n import _
 from housekeeper.identity import digest, unwrap_env
 from housekeeper.models import (
+    AppRecord,
     ManagementError,
     OperationCancelled,
     OperationResult,
     Outcome,
+    Progress,
     ProviderCapabilities,
     Source,
     UpdateChange,
@@ -192,6 +195,7 @@ class RpmProvider:
     def __init__(self):
         self.cancel = None
         self.cancel_requested = False
+        self._discovered_updates: tuple[Any, ...] | None = None
 
     @staticmethod
     def _validate_app(app):
@@ -223,7 +227,7 @@ class RpmProvider:
             True, supported, supported, reason, update_supported, update_supported, update_reason
         )
 
-    def _client(self, operation="remove"):
+    def _client(self, operation: str = "remove") -> tuple[Any, Any, Any, Any]:
         import gi
 
         gi.require_version("PackageKitGlib", "1.0")
@@ -422,7 +426,7 @@ class RpmProvider:
         return rpm.labelCompare(evr(left), evr(right))
 
     @staticmethod
-    def _update_progress(status, progress, message):
+    def _update_progress(status: Any, progress: Progress, message: str) -> None:
         if status.get_status().value_nick == "waiting-for-auth":
             message = _(
                 "Waiting for administrator authorization. Complete the system password or fingerprint prompt."
@@ -430,7 +434,7 @@ class RpmProvider:
         value = status.get_percentage()
         progress(message, value / 100 if 0 <= value <= 100 else None, status.get_allow_cancel())
 
-    def _check_update(self, result, pk):
+    def _check_update(self, result: Any, pk: Any) -> None:
         if result.get_exit_code() == pk.ExitEnum.CANCELLED or (
             self.cancel is not None and self.cancel.is_cancelled()
         ):
@@ -482,14 +486,51 @@ class RpmProvider:
                 versions[key] = f"{header['epoch'] or 0}:{header['version']}-{header['release']}"
         return versions
 
-    def prepare_update(self, app, inventory, progress, *, refresh=True):
+    def discover_updates(self, apps: list[AppRecord], progress: Progress) -> set[str]:
+        """Refresh and query PackageKit once for an entire desktop inventory."""
+        self._discovered_updates = None
+        client, pk, gio, glib = self._client("update")
+        self.cancel = gio.Cancellable()
+        if self.cancel_requested:
+            raise OperationCancelled(_("The update check was cancelled."))
+
+        def report(p: Any, _kind: Any, _data: Any) -> None:
+            self._update_progress(p, progress, _("Checking system package updates"))
+
+        try:
+            progress(_("Refreshing configured software sources"), None, True)
+            self._check_update(client.refresh_cache(True, self.cancel, report, None), pk)
+            result = client.get_updates(0, self.cancel, report, None)
+            self._check_update(result, pk)
+            self._discovered_updates = tuple(result.get_package_array())
+        except glib.Error as error:
+            if self.cancel.is_cancelled():
+                raise OperationCancelled(_("The update check was cancelled.")) from error
+            raise ManagementError(
+                _("PackageKit could not check for updates: ") + error.message
+            ) from error
+        identities = {(p.get_name(), p.get_arch()) for p in self._discovered_updates}
+        return {
+            app.key
+            for app in apps
+            if (app.metadata.get("name"), app.metadata.get("arch")) in identities
+        }
+
+    def prepare_update(self, app, inventory, progress, *, refresh=True, use_discovery=False):
         self._validate_app(app)
         client, pk, gio, glib = self._client("update")
         self.cancel = gio.Cancellable()
         if self.cancel_requested:
             self.cancel.cancel()
         try:
-            return self._prepare_update(app, inventory, progress, client, pk, refresh=refresh)
+            candidates = None
+            if use_discovery:
+                if refresh or self._discovered_updates is None:
+                    raise ManagementError(_("Check for updates before preparing this preview."))
+                candidates = self._discovered_updates
+            return self._prepare_update(
+                app, inventory, progress, client, pk, refresh=refresh, available_updates=candidates
+            )
         except glib.Error as error:
             if self.cancel.is_cancelled():
                 raise OperationCancelled(_("The update check was cancelled.")) from error
@@ -497,7 +538,9 @@ class RpmProvider:
                 _("PackageKit could not check this update: ") + error.message
             ) from error
 
-    def _prepare_update(self, app, inventory, progress, client, pk, refresh):
+    def _prepare_update(
+        self, app, inventory, progress, client, pk, refresh, available_updates=None
+    ):
         if app.metadata.get("name") == "housekeeper":
             raise ManagementError(_("Update Housekeeper using your system package manager."))
 
@@ -515,11 +558,13 @@ class RpmProvider:
             raise ManagementError(
                 _("The installed package changed. Refresh and check updates again.")
             )
-        result = client.get_updates(0, self.cancel, report, None)
-        self._check_update(result, pk)
+        if available_updates is None:
+            result = client.get_updates(0, self.cancel, report, None)
+            self._check_update(result, pk)
+            available_updates = result.get_package_array()
         candidates = {
             p.get_id(): p
-            for p in result.get_package_array()
+            for p in available_updates
             if p.get_name() == name and p.get_arch() == arch
         }
         if not candidates:

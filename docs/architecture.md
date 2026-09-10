@@ -69,6 +69,8 @@ distinguishes an available plan from a successful check with no changes; failure
 and acknowledged cancellation are separate exceptions. `UpdatePlan` contains exact
 `UpdateChange` targets, current versions or commits, sources, and a fingerprint.
 Providers implement `prepare_update` and `execute_update` without depending on GTK.
+For inventory-wide checks, `discover_updates` returns candidate application keys
+for one provider context. Candidate discovery is not an executable plan.
 
 The provider contract is private. New integrations implement capability detection,
 inventory attribution, a preparation step, and execution. They must not call GTK.
@@ -192,7 +194,9 @@ Execution repeats the preview and fingerprints dependency versions and repositor
 configuration. PackageKit's trusted-package flag and Polkit remain in effect.
 Preview and execution are separate transactions, not an atomic lock or rollback.
 
-Flatpak updates retain the installation path, full ref, and origin. Dependencies
+Flatpak updates retain the installation path, full ref, and origin. Only a changed
+commit for the selected application produces an available update; runtime-only,
+extension-only, and same-commit repair operations are not application updates. Dependencies
 and related extensions participate in the preview, while unused-runtime removal
 and pruning are disabled. `ready-pre-auth` captures the resolved transaction and
 aborts before deployment. Only the deliberate Flatpak abort is swallowed; network
@@ -213,6 +217,15 @@ installed versions or commits; partial changes are reported without claiming rol
 Every execution outcome refreshes inventory. No automatic restart is performed.
 
 ## Updates page and batches
+
+Individual and batch update confirmations share one compact presentation. Single
+updates show the primary application name and version change; batches show a short,
+scrollable application list. RPM epoch/release details are omitted from the summary
+only when the upstream versions differ; revision-only updates retain full versions.
+A collapsed Details expander contains the full operation list and version strings,
+dependency/source information, installation context, launcher aliases, download
+estimate and authorization guidance. Both dialogs still pass the original plans
+to execution, with Cancel as the default response.
 
 The Updates navigation row stays below the scrollable source list. In the default
 on-entry mode, activation requests a check after inventory scanning finishes when no
@@ -255,9 +268,24 @@ keep unfinished rows, and removals still invalidate stored previews.
 Cached plans still undergo normal provider validation
 before execution; a saved preview never authorizes an update on its own.
 
-`UpdateBatch` runs as one task on the existing executor. It groups RPM name/architecture
-and Flatpak installation/full-ref identities, retaining all application names. RPM
-metadata refresh is shared within a check. Provider failures are collected separately
+`UpdateBatch` runs as one task on the existing executor. Hidden inventory records,
+including NoDisplay auxiliary launchers such as LibreOffice XSLT filters, do not
+become top-level update rows or count as unsupported apps. Visible components such
+as Writer, Calc and Impress remain separate desktop applications. Hidden components
+remain in the full inventory and can still participate in required dependency plans.
+The Updates-page scope is independent of the inventory's Show Hidden preference.
+
+Checks group RPM name/architecture and Flatpak installation/full-ref identities,
+retaining the visible application names. Flatpak calls
+`list_installed_refs_for_update` once per configured installation represented in
+the check, then intersects app-kind refs with the inventory. That API may also
+return an app needing only a related-ref repair, so the full preview must still
+prove its own commit changes. PackageKit refreshes metadata and calls `get_updates`
+once, matching package name and architecture to desktop records. Its candidate
+snapshot is used only for that check's previews; individual checks and execution
+query again. Only candidates undergo per-application ownership revalidation and
+full dependency simulation. A failed discovery is not retried for every app in
+that context; other contexts continue independently. Provider failures are collected separately
 from successful no-update results. Cancellation returns any partial check results to
 the caller, but the page preserves its previous list, selection, status, and check time
 instead of presenting that incomplete snapshot. A brief toast acknowledges cancellation.
@@ -274,6 +302,12 @@ is acknowledged. Update execution and removal still follow backend cancellation
 capabilities. Later progress callbacks cannot re-enable a requested cancellation.
 A locked
 cancellation controller follows provider changes without opening gaps between tasks.
+
+Cached rows must satisfy the same visibility and application-change rules, including
+older caches containing runtime-only plans. Filtering does not renew the timestamp.
+The page describes desktop application updates, not overall system update status.
+See [the GNOME Software comparison](update-design-review.md) for source references
+and the performance tradeoff of retaining full previews for actual candidates.
 
 Execution re-previews each selected installation and stops at the first error. A preceding
 successful transaction may have already completed a shared dependency. Only those exact

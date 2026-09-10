@@ -12,6 +12,7 @@ from pathlib import Path
 from housekeeper import VERSION
 from housekeeper.batch_updates import UPDATE_PROVIDERS, UpdateItem, UpdateReport
 from housekeeper.models import UpdateChange, UpdatePlan
+from housekeeper.updates import has_application_update
 
 LOG = logging.getLogger(__name__)
 MAX_BYTES = 4 * 1024 * 1024
@@ -108,7 +109,8 @@ class UpdateCache:
                 ):
                     raise ValueError("Invalid cached update item")
                 seen.add(key)
-                items.append(UpdateItem(app, plan, tuple(names)))
+                if app.visible and has_application_update(app, plan):
+                    items.append(UpdateItem(app, plan, tuple(names)))
             unsupported = data["unsupported"]
             if type(unsupported) is not int or unsupported < 0:
                 raise ValueError("Invalid unsupported count")
