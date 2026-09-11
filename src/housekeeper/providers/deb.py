@@ -1,5 +1,6 @@
 """Read-only DEB attribution and installed sizes from the local dpkg database."""
 
+import logging
 import os
 import re
 import shutil
@@ -9,6 +10,7 @@ from pathlib import Path
 from housekeeper.i18n import _
 from housekeeper.models import Source
 
+LOG = logging.getLogger(__name__)
 _FORMAT = "${Package}\t${Version}\t${Architecture}\t${db:Status-Status}\t${Installed-Size}\n"
 _PACKAGE = re.compile(r"[a-z0-9][a-z0-9+.-]+(?::[a-z0-9][a-z0-9-]*)?")
 
@@ -77,28 +79,39 @@ class DebIndex:
     def __init__(self):
         self._owners = None
         self._packages = []
+        self.attribution_errors = []
 
     def _load(self):
         # Two queries per inventory, rather than starting dpkg-query for every app.
+        # One attempt per index: a failure is reported for every launcher of this
+        # scan and retried by the fresh index the next scan builds, never per entry.
+        self._packages, self._owners = [], {}
         if Path("/var/lib/dpkg/status").exists() and not shutil.which("dpkg-query"):
-            raise RuntimeError("The dpkg database exists but dpkg-query is unavailable.")
-        self._owners = {}
-        self._packages = packages()
-        if not self._packages:
+            self.attribution_errors.append(
+                "The dpkg database exists but dpkg-query is unavailable."
+            )
             return
-        diverted = set()
-        for line in query("--search", "*.desktop").splitlines():
-            owners, separator, path = line.partition(": ")
-            if not separator or not path.startswith("/"):
-                continue
-            if owners.startswith("diversion ") or owners.startswith("local diversion "):
-                diverted.add(path)
-                continue
-            names = owners.split(", ")
-            if all(_PACKAGE.fullmatch(name) for name in names):
-                self._owners.setdefault(path, set()).update(names)
-        for path in diverted:
-            self._owners.pop(path, None)
+        paths: dict[str, set[str]] = {}
+        try:
+            package_rows = packages()
+            diverted = set()
+            for line in query("--search", "*.desktop").splitlines() if package_rows else ():
+                owners, separator, path = line.partition(": ")
+                if not separator or not path.startswith("/"):
+                    continue
+                if owners.startswith("diversion ") or owners.startswith("local diversion "):
+                    diverted.add(path)
+                    continue
+                names = owners.split(", ")
+                if all(_PACKAGE.fullmatch(name) for name in names):
+                    paths.setdefault(path, set()).update(names)
+            for path in diverted:
+                paths.pop(path, None)
+        except Exception as error:
+            LOG.debug("The dpkg database could not be read", exc_info=True)
+            self.attribution_errors.append(f"Could not read dpkg packages: {error}")
+            return
+        self._packages, self._owners = package_rows, paths
 
     def candidates(self, entry):
         from housekeeper.appearance import verified_icon_source

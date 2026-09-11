@@ -23,6 +23,8 @@ ignore = ["E501"]
 python_version = "3.10"
 files = ["src/housekeeper/models.py", "src/housekeeper/identity.py", "src/housekeeper/launch.py", "src/housekeeper/appimage_format.py", "src/housekeeper/attribution.py", "src/housekeeper/dbus_services.py", "src/housekeeper/providers/flatpak_attribution.py"]
 strict = true
+# Keep imported types available, but report errors only in explicitly checked modules.
+follow_imports = "silent"
 
 [[tool.mypy.overrides]]
 module = ["gi", "gi.*", "rpm"]

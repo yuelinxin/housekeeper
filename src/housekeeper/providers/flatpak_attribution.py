@@ -110,12 +110,8 @@ def select_installation(launch: FlatpakLaunch, apps: list[AppRecord]) -> AppReco
         ]
     elif any(a.scope == "User" for a in matches):
         matches = [a for a in matches if a.scope == "User"]
-    if launch.branch:
-        matches = [a for a in matches if a.identity.split("/")[-1] == launch.branch]
-    elif any("current" in a.metadata for a in matches):
+    if not launch.branch and any("current" in a.metadata for a in matches):
         matches = [a for a in matches if a.metadata.get("current") == "true"]
-    if launch.arch:
-        matches = [a for a in matches if a.identity.split("/")[-2] == launch.arch]
     if len(matches) != 1:
         return None
     return matches[0]

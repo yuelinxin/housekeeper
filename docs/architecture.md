@@ -24,6 +24,9 @@ an interpreter also requires an application-owned script argument. D-Bus activat
 requires a verified service with a matching name, owned by the app or a direct
 dependency, whose entry point belongs to the application itself. Higher-priority
 session service files, including user overrides, participate in this check. Services
+are selected with the same bounded parser and precedence rules used for Flatpak
+activation, then resolved again after RPM file verification to detect changes.
+Unreadable higher-priority directories cannot be skipped. Services
 delegating to systemd are currently display-only because unit overrides are not verified.
 Unknown digests, modified files, unresolved targets, and unowned launchers can retain
 their RPM source but receive management instructions rather than direct actions.
@@ -43,8 +46,10 @@ icon override's original path) is used. Unowned launchers, diverted files, and b
 or Steam guest apps are not attributed to host packages. Name and architecture form
 stable package identity; updates and removal remain in the external system manager.
 
-The service publishes an immutable initial desktop snapshot without direct actions,
-then resolved application records. The
+The service publishes an independent initial desktop snapshot without direct actions,
+then resolved application records. Merging copies each retained entry, including
+entries appended to an existing group, so the initial callback needs no second full
+copy. Hidden installation overlays are matched using a desktop-ID lookup. The
 UI shares a Gio.ListStore, filter, sorter, and selection between both virtualized
 views. Name sorting uses the current locale and is the default; a remembered setting
 also selects largest software size or Last Updated, newest first. Numeric ties use
@@ -91,7 +96,9 @@ installed commit, and operation list at the same signal. Related refs and unused
 runtime cleanup are disabled for version 0.1. Personal data is preserved.
 
 AppImage removal requires exact regular files inside the user's home, unambiguous
-direct launchers, and negative package-ownership evidence. Symlinks and shared
+direct launchers, and negative package-ownership evidence (or explicit absence of
+all supported package databases). Missing or failed applicable backends still block
+management. Symlinks and shared
 targets remain manual. Device, inode, size, modification time, ownership, and mode
 are rechecked. Only GIO Trash is used; there is no permanent-delete fallback.
 If the program cannot be moved, its launchers are retained. Partial launcher failure
@@ -222,8 +229,9 @@ Individual and batch update confirmations share one compact presentation. Single
 updates show the primary application name and version change; batches show a short,
 scrollable application list. RPM epoch/release details are omitted from the summary
 only when the upstream versions differ; revision-only updates retain full versions.
-A collapsed Details expander contains the full operation list and version strings,
-dependency/source information, installation context, launcher aliases, download
+Other eligible launchers of the same installation appear once in the visible summary.
+A centered disclosure button toggles full-width Details containing the operation
+list and version strings, dependency/source information, installation/target context, download
 estimate and authorization guidance. Both dialogs still pass the original plans
 to execution, with Cancel as the default response.
 

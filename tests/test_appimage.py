@@ -105,6 +105,27 @@ def test_missing_ownership_backend_fails_closed(image_app, tmp_path, monkeypatch
         AppImageProvider(home=tmp_path).prepare(image_app, [image_app])
 
 
+def test_no_applicable_package_databases_allow_appimage_management(
+    image_app, tmp_path, monkeypatch
+):
+    from housekeeper.models import FileOwnershipResult, FileOwnershipState
+    from housekeeper.ownership import FileOwnershipIndex
+
+    ownership = FileOwnershipIndex(
+        {
+            name: lambda _path: FileOwnershipResult(FileOwnershipState.NOT_APPLICABLE)
+            for name in ("rpm", "deb", "pacman", "apk", "flatpak", "snap")
+        }
+    )
+    monkeypatch.setattr("housekeeper.ownership.FileOwnershipIndex", lambda: ownership)
+    trashed = []
+    manager = AppImageProvider(home=tmp_path, trash=lambda path: trashed.append(path))
+    plan = manager.prepare(image_app, [image_app])
+    result = manager.execute(image_app, plan, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS
+    assert set(trashed) == {Path(image_app.location), image_app.entries[0].path}
+
+
 def test_target_outside_home_rejected(image_app, tmp_path):
     with pytest.raises(ManagementError, match="home directory"):
         provider(tmp_path / "another-home").prepare(image_app, [image_app])

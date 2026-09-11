@@ -45,8 +45,6 @@ class DiscoverySnapshot:
                 results.append(
                     FileOwnershipResult(FileOwnershipState.ERROR, reason=f"{name}: {error}")
                 )
-        if results and all(result.state == FileOwnershipState.NOT_APPLICABLE for result in results):
-            return FileOwnershipResult(FileOwnershipState.NOT_APPLICABLE)
         return combine(results)
 
 
@@ -137,5 +135,3 @@ def assign_actions(app, capabilities):
                 app.action = Action.NONE
                 app.metadata["management_reason"] = reason or "Use your system package manager."
     assign_update_action(app, capabilities)
-    if app.attribution and not verified and app.source not in {Source.WEB, Source.STEAM}:
-        app.action = Action.NONE

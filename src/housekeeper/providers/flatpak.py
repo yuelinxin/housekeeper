@@ -295,11 +295,19 @@ class FlatpakProvider:
         )
 
     def execute(self, app, plan, progress):
+        from gi.repository import Gio
+
         check_binding(app, plan)
+        self.cancel = Gio.Cancellable()
+        if self.cancel_requested:
+            self.cancel.cancel()
+            return OperationResult(Outcome.CANCELLED, "The Flatpak removal was cancelled.")
         _fp, transaction, commit = self._transaction(app)
         mismatch = []
 
         def ready(tx):
+            if self.cancel.is_cancelled():
+                return False
             fingerprint = digest(
                 app.metadata["installation"],
                 commit,
@@ -322,12 +330,14 @@ class FlatpakProvider:
         transaction.connect("ready", ready)
         transaction.connect("new-operation", started)
         try:
-            transaction.run(None)
+            transaction.run(self.cancel)
         except Exception:
             if mismatch:
                 raise ManagementError(
                     "The Flatpak removal plan changed. Review a new preview."
                 ) from None
+            if self.cancel.is_cancelled():
+                return OperationResult(Outcome.CANCELLED, "The Flatpak removal was cancelled.")
             raise
         return OperationResult(
             Outcome.SUCCESS, "The Flatpak application was uninstalled.", (plan.target,)

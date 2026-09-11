@@ -30,6 +30,18 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.12" date="2026-09-11" type="development">
+      <description>
+        <p>Improve application management reliability and clarify update confirmation.</p>
+        <ul>
+          <li>Keep unrelated inventory changes marked for a fresh update check after completed updates.</li>
+          <li>Show consistent versions and affected application names, with complete targets in centered transaction Details.</li>
+          <li>Honor removal cancellation during setup and verify RPM D-Bus service overrides before management.</li>
+          <li>Report failed dpkg scans accurately and support AppImages on systems without a supported package database.</li>
+          <li>Reduce repeated inventory work, improve plural forms, and repair type-checking and GTK test gates.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.11" date="2026-09-09" type="development">
       <description>
         <p>Check desktop application updates with fewer repeated queries and simpler confirmation dialogs.</p>

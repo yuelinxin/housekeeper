@@ -22,6 +22,17 @@ def test_negative_answers_must_be_complete_and_are_cached():
     assert FileOwnershipIndex({}).query(Path("/example")).state == State.ERROR
 
 
+def test_all_inapplicable_databases_remain_distinct_from_query_failures():
+    queries = {
+        name: lambda _path: Result(State.NOT_APPLICABLE)
+        for name in ("rpm", "deb", "pacman", "apk", "flatpak", "snap")
+    }
+    assert FileOwnershipIndex(queries).query(Path("/example")).state == State.NOT_APPLICABLE
+    queries["rpm"] = lambda _path: Result(State.ERROR, reason="Unreadable RPM database")
+    result = FileOwnershipIndex(queries).query(Path("/example"))
+    assert result.state == State.ERROR and "Unreadable" in result.reason
+
+
 def test_one_manager_cannot_hide_another_managers_owner_or_error():
     index = FileOwnershipIndex(
         {

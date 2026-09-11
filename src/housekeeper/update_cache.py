@@ -89,11 +89,12 @@ class UpdateCache:
             saved = data["inventory"]
             if not isinstance(saved, dict):
                 raise ValueError("Invalid cached inventory")
+            current_snapshot = {key: snapshot(app) for key, app in current.items()}
             items, seen = [], set()
             for entry in data["items"]:
                 key = entry["key"]
                 app = current.get(key)
-                if app is None or saved.get(key) != snapshot(app):
+                if app is None or saved.get(key) != current_snapshot[key]:
                     continue
                 plan = decode_plan(entry["plan"])
                 if plan.provider not in providers:
@@ -114,7 +115,7 @@ class UpdateCache:
             unsupported = data["unsupported"]
             if type(unsupported) is not int or unsupported < 0:
                 raise ValueError("Invalid unsupported count")
-            stale = saved != {app.key: snapshot(app) for app in inventory}
+            stale = saved != current_snapshot
             return CachedUpdates(
                 UpdateReport(tuple(items), unsupported=unsupported), checked_at, stale, saved
             )

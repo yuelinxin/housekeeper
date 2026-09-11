@@ -6,10 +6,10 @@ from dataclasses import replace
 from gi.repository import Adw, GLib, GObject, Gtk
 
 from housekeeper.batch_updates import UPDATE_PROVIDERS, installation_key
-from housekeeper.i18n import _
+from housekeeper.i18n import _, ngettext
 from housekeeper.models import Outcome
 from housekeeper.ui.icons import icon_image
-from housekeeper.ui.update_confirmation import configure_update_confirmation
+from housekeeper.ui.update_confirmation import configure_update_confirmation, version_change
 from housekeeper.update_cache import UpdateCache, cache_expired
 
 
@@ -343,14 +343,19 @@ class UpdatesPage(Adw.NavigationPage):
             text = _("Update check incomplete")
             empty_title = _("Could Not Check All Apps")
         elif report.items:
-            text = _("%d updates available") % len(report.items)
+            count = len(report.items)
+            text = ngettext("%d update available", "%d updates available", count) % count
             empty_title = _("Updates Available")
         else:
             text = _("No updates available")
             empty_title = _("You're Up to Date")
         if report.unsupported:
             details.append(
-                _("%d apps require their own updater. Open their details for update instructions.")
+                ngettext(
+                    "%d app requires its own updater. Open its details for update instructions.",
+                    "%d apps require their own updater. Open their details for update instructions.",
+                    report.unsupported,
+                )
                 % report.unsupported
             )
         self.details = "\n\n".join(details)
@@ -375,7 +380,7 @@ class UpdatesPage(Adw.NavigationPage):
         while child := self.list.get_first_child():
             self.list.remove(child)
         for item in items:
-            app, plan = item.app, item.plan
+            app = item.app
             row = Gtk.ListBoxRow(activatable=False)
             check = Gtk.CheckButton(margin_start=12, margin_end=12, margin_top=12, margin_bottom=12)
             box = Gtk.Box(spacing=12)
@@ -384,18 +389,10 @@ class UpdatesPage(Adw.NavigationPage):
             name = Gtk.Label(label=", ".join(item.names), xalign=0, wrap=True)
             name.add_css_class("heading")
             text.append(name)
-            primary = next((c for c in plan.changes if c.identity == app.identity), None)
-            if app.provider == "rpm":
-                primary = next((c for c in plan.changes if c.target == plan.target), None)
-            if primary:
-                old, new = primary.current_version, primary.target_version
-                if app.provider == "flatpak":
-                    old, new = old[:12], new[:12]
-                version = f"{old} → {new}"
-            else:
-                version = _("Runtime or extension updates only")
             subtitle = Gtk.Label(
-                label=f"{app.source.value.upper()} · {app.scope}\n{version}", xalign=0, wrap=True
+                label=f"{app.source.value.upper()} · {app.scope}\n{version_change(item)}",
+                xalign=0,
+                wrap=True,
             )
             subtitle.add_css_class("dim-label")
             text.append(subtitle)

@@ -9,6 +9,9 @@ from housekeeper.models import FileOwnershipState as State
 
 
 def combine(results):
+    results = tuple(results)
+    if results and all(result.state == State.NOT_APPLICABLE for result in results):
+        return Result(State.NOT_APPLICABLE)
     owners = tuple(sorted({owner for result in results for owner in result.owners}))
     if owners:
         return Result(State.OWNED, owners)

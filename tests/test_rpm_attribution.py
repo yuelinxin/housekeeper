@@ -1,14 +1,21 @@
 """Package-owned launchers identify sources; verified targets authorize management."""
 
 import hashlib
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
 
-from housekeeper.attribution import attribute
+from housekeeper.attribution import attribute, plan_binding
 from housekeeper.discovery import read_entry
 from housekeeper.identity import classify
-from housekeeper.models import Action, ManagementError, ProviderCapabilities, UpdateAction
+from housekeeper.models import (
+    Action,
+    ManagementError,
+    ProviderCapabilities,
+    RemovalPlan,
+    UpdateAction,
+)
 from housekeeper.providers.rpm import RpmIndex, RpmProvider
 from housekeeper.providers.rpm_attribution import RpmAttribution
 from housekeeper.updates import update_instructions
@@ -20,7 +27,7 @@ def installation(tmp_path, monkeypatch):
     monkeypatch.setattr("os.geteuid", lambda: 1000)
     monkeypatch.setattr("housekeeper.providers.rpm.host_support", lambda: (True, ""))
     monkeypatch.setattr(
-        "housekeeper.providers.rpm_attribution.service_roots", lambda: [tmp_path / "services"]
+        "housekeeper.dbus_services.service_roots", lambda: [(tmp_path / "services", False)]
     )
 
     def package(name):
@@ -206,13 +213,89 @@ def test_dbus_service_must_resolve_to_unchanged_app_owned_entry_point(
         shadow.mkdir()
         (shadow / "different-filename.service").write_text(body)
         monkeypatch.setattr(
-            "housekeeper.providers.rpm_attribution.service_roots", lambda: [shadow, service.parent]
+            "housekeeper.dbus_services.service_roots",
+            lambda: [(shadow, False), (service.parent, False)],
         )
     app = f.record(desktop)
     if mutation is None:
         assert app.metadata["name"] == "maps" and app.metadata["rpm_verified"] == "true"
     else:
         assert_blocked(app)
+
+
+@pytest.mark.parametrize("override", ["inaccessible", "oversized", "malformed", "duplicate"])
+def test_dbus_override_cannot_be_skipped_in_favor_of_packaged_service(
+    installation, monkeypatch, override
+):
+    from housekeeper.dbus_services import MAX_SERVICE_SIZE
+
+    f = installation
+    package = f.package("example")
+    executable = f.file(package, "bin/example")
+    body = f"[D-BUS Service]\nName=org.example.App\nExec={executable}\n"
+    f.file(package, "services/org.example.App.service", body)
+    desktop = f.desktop(package, executable, extra="DBusActivatable=true\n")
+    high = f.root / "overrides"
+    high.mkdir()
+    monkeypatch.setattr(
+        "housekeeper.dbus_services.service_roots",
+        lambda: [(high, False), (f.root / "services", False)],
+    )
+    if override == "inaccessible":
+        iterdir = Path.iterdir
+
+        def paths(path):
+            if path == high:
+                raise PermissionError("Cannot read higher-priority services")
+            return iterdir(path)
+
+        monkeypatch.setattr(Path, "iterdir", paths)
+    elif override == "oversized":
+        (high / "alternate.service").write_text(body + "#" * MAX_SERVICE_SIZE)
+    elif override == "malformed":
+        (high / "alternate.service").write_text("Not a valid service file")
+    else:
+        f.file(package, "overrides/first.service", body)
+        f.file(package, "overrides/second.service", body)
+    assert_blocked(f.record(desktop))
+
+
+def test_dbus_runtime_directory_requires_exact_filenames(installation, monkeypatch):
+    f = installation
+    package = f.package("example")
+    executable = f.file(package, "bin/example")
+    body = f"[D-BUS Service]\nName=org.example.App\nExec={executable}\n"
+    f.file(package, "services/org.example.App.service", body)
+    runtime = f.root / "runtime-services"
+    runtime.mkdir()
+    (runtime / "alternate.service").write_text(body)
+    monkeypatch.setattr(
+        "housekeeper.dbus_services.service_roots",
+        lambda: [(runtime, True), (f.root / "services", False)],
+    )
+    desktop = f.desktop(package, executable, extra="DBusActivatable=true\n")
+    assert f.record(desktop).metadata["rpm_verified"] == "true"
+    (runtime / "alternate.service").rename(runtime / "org.example.App.service")
+    assert_blocked(f.record(desktop))
+
+
+def test_dbus_service_is_resolved_again_after_owned_file_verification(installation, monkeypatch):
+    f = installation
+    package = f.package("example")
+    executable = f.file(package, "bin/example")
+    body = f"[D-BUS Service]\nName=org.example.App\nExec={executable}\n"
+    service = f.file(package, "services/org.example.App.service", body)
+    desktop = f.desktop(package, executable, extra="DBusActivatable=true\n")
+    verify = RpmAttribution.verified_file
+
+    def swap(self, path, header, seen=()):
+        result = verify(self, path, header, seen)
+        if path == service and result:
+            service.write_text(body.replace(str(executable), "/unverified/command"))
+        return result
+
+    monkeypatch.setattr(RpmAttribution, "verified_file", swap)
+    assert_blocked(f.record(desktop))
 
 
 def test_provider_revalidates_evidence_after_scan_before_any_packagekit_call(
@@ -225,6 +308,9 @@ def test_provider_revalidates_evidence_after_scan_before_any_packagekit_call(
     app = f.record(desktop)
     monkeypatch.setattr("housekeeper.providers.rpm.RpmIndex", f.index)
     RpmProvider._validate_app(app)
+    plan = RemovalPlan(
+        app.key, app.provider, "example", (), "Preview", "fixture", **plan_binding(app)
+    )
     desktop.write_text(desktop.read_text().replace("Name=Example", "Name=Changed"))
     provider = RpmProvider()
     monkeypatch.setattr(
@@ -232,7 +318,7 @@ def test_provider_revalidates_evidence_after_scan_before_any_packagekit_call(
     )
     for operation in (
         lambda: provider.prepare(app, [app]),
-        lambda: provider.execute(app, None, lambda *_: None),
+        lambda: provider.execute(app, plan, lambda *_: None),
         lambda: provider.prepare_update(app, [app], lambda *_: None),
         lambda: provider.execute_update(app, None, lambda *_: None),
     ):
@@ -247,13 +333,16 @@ def test_custom_rpm_database_cannot_target_the_host_packagekit(installation, mon
     package = f.package("example")
     app = f.record(f.desktop(package, f.file(package, "bin/example")))
     app.installation = replace(app.installation, context="/:/custom/rpm-database")
+    plan = RemovalPlan(
+        app.key, app.provider, "example", (), "Preview", "fixture", **plan_binding(app)
+    )
     provider = RpmProvider()
     monkeypatch.setattr(
         provider, "_client", lambda *_: pytest.fail("Unexpected host PackageKit request")
     )
     for operation in (
         lambda: provider.prepare(app, [app]),
-        lambda: provider.execute(app, None, lambda *_: None),
+        lambda: provider.execute(app, plan, lambda *_: None),
         lambda: provider.prepare_update(app, [app], lambda *_: None),
         lambda: provider.execute_update(app, None, lambda *_: None),
     ):

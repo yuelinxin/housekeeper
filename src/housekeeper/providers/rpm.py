@@ -380,7 +380,6 @@ class RpmProvider:
         )
 
     def execute(self, app, plan, progress):
-        self._validate_app(app)
         check_binding(app, plan)
         from housekeeper.models import ManagementError, OperationResult, Outcome
 
@@ -389,18 +388,28 @@ class RpmProvider:
             raise ManagementError(
                 "The removal plan changed. Review a new preview before continuing."
             )
-        client, pk, gio, _glib = self._client()
+        client, pk, gio, glib = self._client()
         self.cancel = gio.Cancellable()
+        if self.cancel_requested:
+            self.cancel.cancel()
+            return OperationResult(Outcome.CANCELLED, "The package operation was cancelled.")
 
         def report(p, _kind, _data):
             value = p.get_percentage()
             fraction = value / 100 if 0 <= value <= 100 else None
             progress("Removing the system package", fraction, p.get_allow_cancel())
 
-        result = client.remove_packages(0, [plan.target], False, False, self.cancel, report, None)
-        self._check(result)
+        try:
+            result = client.remove_packages(
+                0, [plan.target], False, False, self.cancel, report, None
+            )
+        except glib.Error:
+            if self.cancel.is_cancelled():
+                return OperationResult(Outcome.CANCELLED, "The package operation was cancelled.")
+            raise
         if result.get_exit_code() == pk.ExitEnum.CANCELLED:
             return OperationResult(Outcome.CANCELLED, "The package operation was cancelled.")
+        self._check(result)
         if result.get_exit_code() != pk.ExitEnum.SUCCESS:
             return OperationResult(Outcome.FAILED, "The package manager did not report success.")
         return OperationResult(

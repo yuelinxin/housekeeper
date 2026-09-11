@@ -1,9 +1,55 @@
-# v0.1.11 development validation
+# v0.1.12 development validation
 
-Updated on September 9, 2026. These are local development checks, not a claim that
+Updated on September 11, 2026. These are local development checks, not a claim that
 the complete Fedora Workstation release acceptance matrix has been signed off.
 No personal application was used as an update or removal target. Earlier dated
 sections below preserve the results and limitations known at each stage.
+
+## v0.1.12 final review — September 11, 2026
+
+- Python, Meson, the RPM spec and changelog, the newest AppStream release,
+  changelog heading and README installation example agree on 0.1.12. The source
+  archive uses `housekeeper-0.1.12/`; release workflows derive the Python version.
+- Meson compilation, offline AppStream validation and desktop-file validation pass.
+  The development launcher reports `Housekeeper 0.1.12`.
+- Ruff lint and formatting, the configured seven-module strict mypy check with a
+  fresh analysis, and whitespace checks pass.
+- The offline Fedora 44 unit suite passes 483 tests, skipping one real dpkg fixture
+  because dpkg-query is absent. Ubuntu passes 478 tests, including that isolated
+  dpkg fixture, and skips six tests requiring unavailable RPM Python bindings.
+- Ubuntu GTK smoke passes in 32.37 seconds; its 1,000-record filtering measurement
+  is 76.62 ms. It covers completed-update cache boundaries and restoration,
+  shared-launcher disclosure, version text, plural forms and centered Details.
+- Fedora 44 GTK smoke passes in 32.35 seconds with filtering at 62.91 ms.
+  The final collapsed and expanded dialog screenshots were visually checked;
+  the disclosure arrow and label remain centered in both states.
+- These are local checks of the release working tree. Real RPM/Flatpak transaction
+  integration and RPM package builds were not rerun for this final review, and no
+  hosted CI run or release was triggered.
+
+## CI gate repair — September 9, 2026
+
+Read the last five Validate runs from GitHub Actions. Every failed job in these
+runs stopped at the default mypy check or the 100 ms filtering assertion:
+
+| Run | Static check | Ubuntu filtering | Fedora 43 filtering | Fedora 44 filtering |
+|---|---|---|---|---|
+| [v0.1.7](https://github.com/yuelinxin/housekeeper/actions/runs/34215612224) | Pass | 95.31 ms | 127.66 ms | 143.56 ms |
+| [v0.1.8](https://github.com/yuelinxin/housekeeper/actions/runs/34291686467) | Pass | 69.34 ms | 121.59 ms | 151.48 ms |
+| [v0.1.9](https://github.com/yuelinxin/housekeeper/actions/runs/34312941979) | Pass | 105.60 ms | 109.13 ms | 151.97 ms |
+| [v0.1.10](https://github.com/yuelinxin/housekeeper/actions/runs/34407967156) | 348 errors | 109.89 ms | 127.80 ms | 126.74 ms |
+| [v0.1.11](https://github.com/yuelinxin/housekeeper/actions/runs/34420095532) | 325 errors | 110.50 ms | 129.70 ms | 90.19 ms |
+
+Times at or above 100 ms failed the old assertion. The configured seven-module
+strict check now uses `follow_imports = "silent"`, retaining imported type
+information while scoping diagnostics to those modules. Plain `mypy` passes;
+a temporary shadow-file probe returning a string from an `int` function still
+fails with `return-value`, confirming the checked modules remain enforced.
+
+Filtering still asserts the expected result count and reports elapsed time and
+RSS, but has no machine-dependent latency gate. Local offline Fedora 43 and Ubuntu
+GTK runs pass (47.91 ms and 43.79 ms respectively), along with Ruff and whitespace
+checks. These validate the working-tree repair; no new hosted CI run was triggered.
 
 ## v0.1.11 metadata validation — September 9, 2026
 

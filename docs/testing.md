@@ -2,6 +2,31 @@
 
 ## Local tests
 
+Removal tests request cancellation before client setup, during the RPM handshake,
+and inside RPM/Flatpak backend calls; synthetic backends must receive cancellation
+without reporting completed removals. DEB tests report both metadata and ownership
+query failures as UNAVAILABLE attribution for every launcher of a scan while running
+dpkg-query once per index; only the fresh index of a later scan retries. Ownership
+tests distinguish all-inapplicable databases from missing or failed queries, including
+the default AppImage preview/execution path with a simulated Trash callback.
+
+RPM activation tests use the canonical D-Bus resolver to reject inaccessible,
+oversized, malformed, duplicate, or swapped service overrides and enforce exact
+filenames in the runtime directory. GTK smoke excludes hidden and uncheckable
+launchers from update summaries and checks singular update/unsupported-app text;
+plural messages use gettext plural selection.
+
+Inventory regressions require merged records to own copies of entries from every
+input, including entries appended to an existing group. A partial callback may
+change its snapshot without affecting reused scanner entries or final records.
+Hidden-overlay lookup uses exact desktop IDs and leaves provider records unchanged.
+RPM removal revalidates ownership once during its fresh execution preview; stale
+launcher and non-host-database tests supply valid plans and still stop before any
+PackageKit call. GTK smoke checks centered disclosure geometry in both states,
+full-width expanded contents, and alias deduplication in the visible summary. The
+disclosure reports its expanded state as a tristate integer, never a bool. Batch
+checks name every launcher of an installation once, the checked application first.
+
 Scan audit regressions live in `test_scan_regressions.py`, `test_attribution.py`,
 `test_flatpak_attribution.py`, `test_launch.py`, and `test_file_ownership.py`.
 They cover provider permutations, conflicting owners, changed installation selectors,
@@ -27,8 +52,13 @@ both sources disabled, late results after a source change, and Preferences contr
 
 GTK smoke checks that single and batch update confirmations start with Details
 collapsed, show short summaries, retain complete transaction and authorization
-information in the expander, and omit launcher aliases from the heading. The
-expanded preview is captured separately from the default compact dialog.
+information (including installation and target) in the expander, and omit launcher
+aliases from the heading while showing them in the visible summary. Both batch and
+details-page confirmations disclose shared installations. The list and dialog use
+the same version text for RPM versions, packaging-only revisions, Flatpak commits,
+and missing primary changes. The expanded preview is captured separately from the
+default compact dialog. Cache tests bound snapshot serialization to once per app
+per load, including inventories with many apps and only one pending update.
 
 `test_sorting.py` checks numeric order, unknown and zero values, deterministic ties,
 timestamp validation, RPM metadata reuse and Flatpak installation separation. Package
@@ -74,6 +104,11 @@ ruff format --check src tests build-aux
 mypy
 ```
 
+Mypy keeps strict checking for the seven modules listed in `pyproject.toml`.
+`follow_imports = "silent"` retains type information from imported modules while
+limiting diagnostics to the explicit check targets; plain `mypy` uses this policy
+both locally and in CI.
+
 `tests/smoke_ui.py` uses synthetic records and does not invoke real uninstall
 or update providers. It exercises list/grid switching, search, details, narrow layout, themes,
 preferences, and About. The output is captured from Housekeeper's own rendered widget,
@@ -85,7 +120,9 @@ desktop services during tests.
 with in-memory preferences, reports startup time and peak RSS, and closes it. It
 does not remove applications. Run it using the same D-Bus wrapper as the smoke test.
 Timing starts before GTK imports and excludes process creation. The synthetic smoke
-test separately measures filtering with 1,000 records; its peak RSS includes rendering
+test separately measures filtering with 1,000 records and asserts the matching result
+count. It reports elapsed time without a pass/fail latency threshold, since shared
+CI runners have variable CPU and rendering costs. Its peak RSS includes rendering
 screenshots and is not an idle-memory measurement.
 
 `tests/stress_icons.py --runs 20` starts fresh GTK processes with generated SVG icons
@@ -184,7 +221,12 @@ the remaining list after both batch and details-page updates, including unchange
 inventory records. They check preserved selection, count, original
 check time, cache restoration, partial completion, cancellation/failure, duplicate
 launcher identities, incomplete check details, and the final up-to-date empty state.
-Unrelated inventory changes must continue to mark the saved report stale.
+After the last listed update completes, the up-to-date state survives inventory
+changes limited to the completed installations and cache restoration. Unrelated
+changes still mark the report stale, including pending rows pruned before completion,
+new installations during an update, and details-page updates after an empty report.
+The live page and restored cache must agree even when an unrelated change is observed
+before the completion callback.
 
 `test_batch_updates.py` covers duplicate installation grouping, separate installations,
 incomplete checks, cancellation, shared dependencies, changed sources or targets, and

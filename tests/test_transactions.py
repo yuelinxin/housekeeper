@@ -53,6 +53,8 @@ class Results:
 
 @pytest.fixture
 def rpm_backend(monkeypatch):
+    from gi.repository import Gio, GLib
+
     package = Package()
     calls = []
     client = NS(resolve=lambda *_: Results([package]))
@@ -68,11 +70,10 @@ def rpm_backend(monkeypatch):
         ExitEnum=NS(SUCCESS=1, CANCELLED=2),
         InfoEnum=NS(REMOVING="removing"),
     )
-    gio = NS(Cancellable=lambda: NS(cancel=lambda: None))
     manager = RpmProvider()
     # Launcher evidence is exercised separately; this fixture isolates PackageKit transactions.
     monkeypatch.setattr(manager, "_validate_app", lambda _app: None)
-    monkeypatch.setattr(manager, "_client", lambda: (client, pk, gio, None))
+    monkeypatch.setattr(manager, "_client", lambda: (client, pk, Gio, GLib))
     app = AppRecord(
         "test",
         "Example",
@@ -93,6 +94,58 @@ def test_rpm_no_cascade_or_autoremove(rpm_backend):
     assert result.outcome == Outcome.SUCCESS
     assert all(not deps and not auto for _, _, deps, auto in calls)
     assert calls[-1][0] == 0
+
+
+def test_rpm_removal_revalidates_once_per_execution(rpm_backend, monkeypatch):
+    manager, _client, app, _calls = rpm_backend
+    plan = manager.prepare(app, [app])
+    validations = []
+    monkeypatch.setattr(manager, "_validate_app", lambda value: validations.append(value))
+    result = manager.execute(app, plan, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS and validations == [app]
+
+
+@pytest.mark.parametrize("timing", ["before", "handshake"])
+def test_rpm_removal_preserves_cancel_before_client_is_ready(rpm_backend, monkeypatch, timing):
+    manager, client, app, _calls = rpm_backend
+    plan = manager.prepare(app, [app])
+    backend = manager._client()
+    monkeypatch.setattr(manager, "prepare", lambda *_: plan)
+
+    def client_ready():
+        if timing == "handshake":
+            manager.request_cancel()
+        return backend
+
+    monkeypatch.setattr(manager, "_client", client_ready)
+    monkeypatch.setattr(client, "remove_packages", lambda *_: pytest.fail("Removal after cancel"))
+    if timing == "before":
+        manager.request_cancel()
+    result = manager.execute(app, plan, lambda *_: None)
+    assert result.outcome == Outcome.CANCELLED and not result.completed
+    assert manager.cancel.is_cancelled()
+
+
+@pytest.mark.parametrize("response", ["result", "exception"])
+def test_rpm_removal_cancellation_reaches_backend(rpm_backend, monkeypatch, response):
+    from gi.repository import Gio, GLib
+
+    manager, client, app, _calls = rpm_backend
+    plan = manager.prepare(app, [app])
+    monkeypatch.setattr(manager, "prepare", lambda *_: plan)
+
+    def remove(_flags, _packages, _deps, _auto, cancel, *_args):
+        manager.request_cancel()
+        assert cancel.is_cancelled()
+        if response == "exception":
+            raise GLib.Error.new_literal(
+                Gio.io_error_quark(), "Cancelled", Gio.IOErrorEnum.CANCELLED
+            )
+        return Results([], NS(get_details=lambda: "Cancelled"), exit_code=2)
+
+    monkeypatch.setattr(client, "remove_packages", remove)
+    result = manager.execute(app, plan, lambda *_: None)
+    assert result.outcome == Outcome.CANCELLED and not result.completed
 
 
 def test_rpm_cascade_preview_rejected(rpm_backend):
@@ -156,7 +209,9 @@ class Transaction:
             )
         ]
 
-    def run(self, _cancel):
+    def run(self, cancel):
+        if cancel is not None and cancel.is_cancelled():
+            raise RuntimeError("Cancelled")
         if not self.handlers["ready"](self):
             raise RuntimeError("Aborted at ready")
         self.executed = True
@@ -250,3 +305,39 @@ def test_flatpak_matching_plan_executes(monkeypatch):
     result = manager.execute(app, plan, lambda *_: None)
     assert result.outcome == Outcome.SUCCESS
     assert transactions[-1].executed
+
+
+@pytest.mark.parametrize("timing", ["before", "setup", "run"])
+def test_flatpak_removal_cancellation_reaches_transaction(monkeypatch, timing):
+    manager = FlatpakProvider()
+    app = AppRecord(
+        "f",
+        "Example",
+        provider="flatpak",
+        identity="app/org.example.App/x86_64/stable",
+        metadata={"installation": "/example/user-flatpak"},
+    )
+    tx = Transaction(app.identity)
+    backend = (NS(TransactionOperationType=NS(UNINSTALL=2)), tx, "commit")
+    monkeypatch.setattr(manager, "_transaction", lambda _app: backend)
+    plan = manager.prepare(app, [app])
+    if timing == "before":
+        manager.request_cancel()
+
+    def transaction(_app):
+        if timing == "setup":
+            manager.request_cancel()
+        return backend
+
+    def run(cancel):
+        assert cancel is not None
+        if timing == "run":
+            assert tx.handlers["ready"](tx)
+            manager.request_cancel()
+        assert cancel.is_cancelled()
+        raise RuntimeError("Cancelled")
+
+    monkeypatch.setattr(manager, "_transaction", transaction)
+    monkeypatch.setattr(tx, "run", run)
+    result = manager.execute(app, plan, lambda *_: None)
+    assert result.outcome == Outcome.CANCELLED and not result.completed and not tx.executed

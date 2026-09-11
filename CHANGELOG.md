@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.12 — 2026-09-11
+
+- Keep completed application updates out of the cached list while preserving stale
+  status for unrelated inventory changes, including newly installed applications.
+- Use consistent version text in update rows and dialogs. Disclose other visible,
+  checkable launchers sharing an installation, restore the transaction target in
+  Details, and center the disclosure control using public GTK widgets.
+- Honor cancellation during RPM and Flatpak removal setup and backend execution.
+- Verify RPM D-Bus activation through the canonical service resolver, including
+  override precedence, bounded reads, runtime filenames and service changes.
+- Report failed dpkg scans as unavailable for every affected launcher and retry on
+  the next scan. Keep AppImage management available without a supported package database.
+- Reduce repeated inventory snapshots, ownership validation and launcher lookups
+  while keeping partial inventory results independent. Add plural-aware UI text.
+- Keep strict type checking scoped to its configured modules and replace the
+  machine-dependent GTK filtering latency assertion with a diagnostic measurement.
+
 ## 0.1.11 — 2026-09-09
 
 - Simplify update confirmation to the application name and version change, with

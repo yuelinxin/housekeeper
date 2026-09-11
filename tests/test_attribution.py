@@ -132,6 +132,24 @@ def test_partial_scan_has_no_actions_and_is_not_mutated(desktop):
     assert output[0].source == Source.RPM
 
 
+def test_partial_callback_cannot_change_reused_scanner_entries(entry, monkeypatch):
+    command = ("/usr/bin/chromium", "--app-id=" + "a" * 32)
+    entries = [entry(command, desktop_id=f"app{i}.desktop") for i in range(2)]
+    monkeypatch.setattr("housekeeper.services.scan_entries", lambda *_: (entries, []))
+
+    def partial(apps):
+        assert len(apps) == 1 and len(apps[0].entries) == 2
+        for original, copied in zip(entries, apps[0].entries, strict=True):
+            assert original == copied and original is not copied
+        apps[0].entries[1] = replace(apps[0].entries[1], reason="Callback edit")
+        apps[0].metadata["callback"] = "changed"
+
+    output, *_ = collect(partial=partial, roots=[], indexes=())
+    assert len(output) == 1 and len(output[0].entries) == 2
+    assert all(not item.reason for item in output[0].entries)
+    assert "callback" not in output[0].metadata
+
+
 def test_synthetic_flatpak_hidden_overlay_does_not_authorize_entry(desktop):
     from housekeeper.models import AppRecord
 
@@ -150,6 +168,33 @@ def test_synthetic_flatpak_hidden_overlay_does_not_authorize_entry(desktop):
     official = next(a for a in records if a.source == Source.FLATPAK)
     assert not official.visible and not official.entries
     assert app.visible
+
+
+def test_hidden_overlay_lookup_matches_exact_desktop_ids(desktop):
+    from housekeeper.models import AppRecord
+
+    hidden = desktop(filename="org.example.App.desktop", Hidden="true")
+    desktop(filename="org.example.App.Other.desktop", Hidden="true", root=hidden.parent)
+    db = backend()
+    db.apps = [
+        AppRecord(
+            app_id,
+            app_id,
+            source=Source.FLATPAK,
+            provider="flatpak",
+            identity=f"app/{app_id}/x86_64/stable",
+            metadata={"app_id": app_id, "installation": "/user"},
+        )
+        for app_id in ("org.example.App", "org.example.App.Other", "org.example.Visible")
+    ]
+    records, *_ = collect(roots=[hidden.parent], indexes=(db,))
+    visibility = {app.key: app.visible for app in records if app.source == Source.FLATPAK}
+    assert visibility == {
+        "org.example.App": False,
+        "org.example.App.Other": False,
+        "org.example.Visible": True,
+    }
+    assert all(app.visible for app in db.apps)
 
 
 def test_dbus_components_with_identical_fallback_commands_remain_distinct(entry):

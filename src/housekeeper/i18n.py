@@ -7,3 +7,4 @@ _translation = gettext.translation(
     "housekeeper", localedir=os.environ.get("HOUSEKEEPER_LOCALEDIR"), fallback=True
 )
 _ = _translation.gettext
+ngettext = _translation.ngettext

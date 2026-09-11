@@ -8,6 +8,7 @@ import pytest
 from housekeeper.batch_updates import UpdateItem, UpdateReport
 from housekeeper.models import AppRecord, DesktopEntry, UpdateChange, UpdatePlan
 from housekeeper.update_cache import UpdateCache, cache_expired, cache_path
+from housekeeper.update_cache import snapshot as app_snapshot
 
 
 @pytest.mark.parametrize("age,expired", [(86399, False), (86400, True), (86401, True)])
@@ -44,6 +45,22 @@ def test_round_trip_with_paths_and_exact_plan(cached):
     assert result.checked_at == 1_700_000_000
     assert not result.stale
     assert cache.path.stat().st_mode & 0o777 == 0o600
+
+
+def test_load_snapshots_each_app_once(cached, monkeypatch):
+    cache, app, report = cached
+    inventory = [app, *(replace(app, key=f"other-{index}") for index in range(100))]
+    cache.save(report, inventory, 1_700_000_000)
+    calls = []
+
+    def counted_snapshot(record):
+        calls.append(record.key)
+        return app_snapshot(record)
+
+    monkeypatch.setattr("housekeeper.update_cache.snapshot", counted_snapshot)
+    result = cache.load(inventory)
+    assert result.report == report and not result.stale
+    assert len(calls) == len(inventory) and set(calls) == {record.key for record in inventory}
 
 
 def test_previous_schema_cannot_restore_unbound_previews(cached):

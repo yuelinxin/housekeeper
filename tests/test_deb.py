@@ -8,7 +8,7 @@ import pytest
 
 from housekeeper.attribution import attribute
 from housekeeper.identity import classify
-from housekeeper.models import Action, AppRecord, Source, UpdateAction
+from housekeeper.models import Action, AppRecord, AttributionState, Source, UpdateAction
 from housekeeper.providers import deb
 from housekeeper.storage import StorageUsage, measure_storage
 from housekeeper.updates import assign_update_action, update_instructions
@@ -139,6 +139,34 @@ def test_index_batches_queries_across_launchers(database):
     for _ in range(10):
         attribute(classify(desktop), (index,))
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("phase", ["--show", "--search"])
+def test_failed_index_load_stays_unavailable_and_can_recover(database, monkeypatch, phase):
+    desktop, _rows, _calls = database
+    query = deb.query
+    failing = True
+    attempts = []
+
+    def interrupted(*args):
+        attempts.append(args)
+        if failing and args[0] == phase:
+            raise subprocess.TimeoutExpired("dpkg-query", 10)
+        return query(*args)
+
+    monkeypatch.setattr(deb, "query", interrupted)
+    index = deb.DebIndex()
+    for _ in range(3):
+        app = attribute(classify(desktop), (index,))
+        assert app.attribution.state == AttributionState.UNAVAILABLE
+        assert any("dpkg-query" in error for error in app.attribution.errors)
+    # Every launcher of the scan reports the failure, but one index queries dpkg once.
+    assert len([call for call in attempts if call[0] == phase]) == 1
+    failing = False
+    # A failed database is retried by the fresh index the next scan builds.
+    app = attribute(classify(desktop), (deb.DebIndex(),))
+    assert app.source == Source.DEB and app.identity == "example:amd64"
+    assert not app.attribution.errors
 
 
 def test_query_is_offline_bounded_and_handles_missing_tool(monkeypatch):

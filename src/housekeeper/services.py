@@ -37,7 +37,7 @@ def collect(partial=None, roots=None, *, indexes=None):
         for app in provisional:
             app.action = Action.NONE
             app.update_action = UpdateAction.INSTRUCTIONS
-        partial(deepcopy(merge_records(provisional)))
+        partial(merge_records(provisional))
     indexes = discovery_indexes() if indexes is None else tuple(indexes)
     snapshots = [discover(index) for index in indexes]
     scan_roots = (
@@ -50,19 +50,16 @@ def collect(partial=None, roots=None, *, indexes=None):
         )
     )
     entries, warnings = scan_entries(scan_roots)
+    hidden_entries = {
+        entry.desktop_id: entry
+        for entry in entries
+        if "Hidden by a desktop entry override" in entry.reason
+    }
     records = [attribute(classify(entry), tuple(snapshots)) for entry in entries]
     for index in indexes:
         # Apply XDG visibility separately from association and authorization.
         for app in getattr(index, "apps", ()):
-            hidden = next(
-                (
-                    entry
-                    for entry in entries
-                    if "Hidden by a desktop entry override" in entry.reason
-                    and entry.desktop_id == app.metadata.get("app_id", "") + ".desktop"
-                ),
-                None,
-            )
+            hidden = hidden_entries.get(app.metadata.get("app_id", "") + ".desktop")
             copy = deepcopy(app)
             if hidden:
                 copy.visible, copy.status = False, hidden.reason

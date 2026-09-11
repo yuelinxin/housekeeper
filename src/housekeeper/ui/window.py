@@ -11,8 +11,8 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from housekeeper import APP_ID, VERSION
-from housekeeper.batch_updates import UpdateItem
-from housekeeper.i18n import _
+from housekeeper.batch_updates import UpdateItem, grouped_names
+from housekeeper.i18n import _, ngettext
 from housekeeper.models import (
     Action,
     OperationCancelled,
@@ -515,7 +515,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _update_count(self):
         count = self.filtered.get_n_items()
         if not self.service.scanning:
-            self.summary.set_label(_("%d applications") % count)
+            self.summary.set_label(ngettext("%d application", "%d applications", count) % count)
         if count:
             self.views.set_visible_child_name(self.settings.get_string("view-mode"))
         else:
@@ -586,7 +586,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self._replace(records)
         self.spinner.stop()
         self.spinner.set_visible(False)
-        self.summary.set_label(_("%d applications") % self.filtered.get_n_items())
+        count = self.filtered.get_n_items()
+        self.summary.set_label(ngettext("%d application", "%d applications", count) % count)
         self.warnings = warnings
         self.banner.set_revealed(bool(warnings))
         self._monitor(roots, installations)
@@ -1137,7 +1138,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         )
         self.confirm_dialog = dialog
         if update:
-            configure_update_confirmation(dialog, (UpdateItem(app, plan, (app.name,)),))
+            names = grouped_names(self.records, app)
+            configure_update_confirmation(dialog, (UpdateItem(app, plan, names),))
         else:
             details = "\n".join(plan.affected)
             if app.installation:

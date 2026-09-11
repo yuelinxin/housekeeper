@@ -88,3 +88,19 @@ def test_identical_installation_collects_entry_paths(entry):
     apps = [classify(entry(command, desktop_id=f"app{i}.desktop")) for i in range(2)]
     merged = merge_records(apps)
     assert len(merged) == 1 and len(merged[0].entries) == 2
+
+
+def test_merged_snapshot_owns_entries_from_every_input(entry):
+    from dataclasses import replace
+
+    command = ("/usr/bin/chromium", "--app-id=" + APP_ID)
+    apps = [classify(entry(command, desktop_id=f"app{i}.desktop")) for i in range(2)]
+    merged = merge_records(apps)[0]
+    for copied, original in zip(merged.entries, (app.entries[0] for app in apps), strict=True):
+        assert copied == original and copied is not original
+    merged.entries[1] = replace(merged.entries[1], name="Callback edit")
+    merged.metadata["callback"] = "changed"
+    assert apps[1].entries[0].name == "Example"
+    assert all("callback" not in app.metadata for app in apps)
+    apps[0].entries.clear()
+    assert len(merged.entries) == 2

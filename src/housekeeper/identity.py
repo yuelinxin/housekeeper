@@ -147,6 +147,7 @@ def classify(entry: DesktopEntry) -> AppRecord:
 
 
 def merge_records(records: list[AppRecord]) -> list[AppRecord]:
+    """Merge matching records into a snapshot independent of all input records."""
     grouped: dict[str, AppRecord] = {}
     for app in records:
         existing = grouped.get(app.key)
@@ -154,7 +155,7 @@ def merge_records(records: list[AppRecord]) -> list[AppRecord]:
             grouped[app.key] = deepcopy(app)
             continue
         known = {e.path for e in existing.entries}
-        existing.entries.extend(e for e in app.entries if e.path not in known)
+        existing.entries.extend(deepcopy(e) for e in app.entries if e.path not in known)
         if app.visible and not existing.visible:
             existing.name, existing.icon, existing.status = app.name, app.icon, app.status
         existing.visible = existing.visible or app.visible

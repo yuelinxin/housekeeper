@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from threading import Lock
 
-from housekeeper.i18n import _
+from housekeeper.i18n import _, ngettext
 from housekeeper.models import (
     AppRecord,
     ManagementError,
@@ -42,6 +42,23 @@ def installation_key(app):
     if app.provider == "rpm":
         return ("rpm", app.metadata.get("name", app.identity), app.metadata.get("arch", ""))
     return (app.provider, app.metadata.get("installation", ""), app.identity)
+
+
+def grouped_names(records, app):
+    """Name every checkable launcher an update covers, the subject first, without repeats."""
+    installation = installation_key(app)
+    return tuple(
+        dict.fromkeys(
+            [app.name]
+            + [
+                record.name
+                for record in records
+                if record.visible
+                and record.update_action == UpdateAction.CHECK
+                and installation_key(record) == installation
+            ]
+        )
+    )
 
 
 def change_key(plan, change):
@@ -150,7 +167,7 @@ class UpdateBatch:
                                 _("The manager did not provide an update preview.")
                             )
                         if has_application_update(app, check.plan):
-                            items.append(UpdateItem(app, check.plan, tuple(a.name for a in apps)))
+                            items.append(UpdateItem(app, check.plan, grouped_names(apps, app)))
             except OperationCancelled:
                 return UpdateReport(tuple(items), tuple(errors), True, unsupported)
             except Exception as error:
@@ -166,7 +183,11 @@ class UpdateBatch:
             if self.cancelled:
                 return UpdateReport(tuple(items), tuple(errors), True, unsupported)
             progress(
-                _("Checked %(done)d of %(total)d applications")
+                ngettext(
+                    "Checked %(done)d of %(total)d application",
+                    "Checked %(done)d of %(total)d applications",
+                    total,
+                )
                 % {"done": index + 1, "total": total},
                 (index + 1) / total,
                 index + 1 < total,

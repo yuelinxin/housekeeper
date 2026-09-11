@@ -98,6 +98,26 @@ def test_check_deduplicates_installations_but_keeps_all_names():
     assert result.unsupported == 1 and len(result.items) == 2
 
 
+def test_check_names_every_launcher_once_with_the_subject_first():
+    a = app()
+    records = [
+        a,
+        replace(a, key="repeat", name="A"),
+        replace(a, key="alias", name="Alias"),
+        replace(a, key="twin", name="Alias"),
+    ]
+    worker = UpdateBatch(
+        lambda _app: NS(
+            prepare_update=lambda record, *_args: UpdateCheckResult(
+                UpdateState.AVAILABLE, plan(record)
+            )
+        ),
+        records,
+    )
+    result = worker.check(lambda *_: None)
+    assert result.items[0].names == ("A", "Alias")
+
+
 def test_check_errors_and_current_are_distinct():
     def factory(record):
         if record.key == "a":

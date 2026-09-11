@@ -45,7 +45,11 @@ class AppImageProvider:
             if self._ownership_index is None:
                 self._ownership_index = FileOwnershipIndex()
             result = self._ownership_index.query(path)
-        if result.state not in {FileOwnershipState.OWNED, FileOwnershipState.UNOWNED}:
+        if result.state not in {
+            FileOwnershipState.OWNED,
+            FileOwnershipState.UNOWNED,
+            FileOwnershipState.NOT_APPLICABLE,
+        }:
             raise ManagementError("Package ownership cannot be verified. " + result.reason)
         return result.owners
 

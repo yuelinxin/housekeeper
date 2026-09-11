@@ -1,14 +1,13 @@
 """Verify installed launcher contents and RPM relationships without launching commands."""
 
-import configparser
 import hashlib
 import logging
 import os
-import re
 import stat
 from pathlib import Path
 
 from housekeeper.appearance import verified_icon_source
+from housekeeper.dbus_services import effective_service
 from housekeeper.discovery import read_entry
 from housekeeper.identity import unwrap_env
 
@@ -20,23 +19,6 @@ HASHES = {1: "md5", 2: "sha1", 8: "sha256", 9: "sha384", 10: "sha512", 11: "sha2
 
 def package_key(header):
     return header["name"], header["arch"]
-
-
-def service_roots():
-    roots = []
-    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
-    if runtime and Path(runtime).is_absolute():
-        roots.append(Path(runtime) / "dbus-1/services")
-    data_home = os.environ.get("XDG_DATA_HOME", "")
-    home = Path(data_home) if Path(data_home).is_absolute() else Path.home() / ".local/share"
-    roots.append(home / "dbus-1/services")
-    roots.extend(
-        Path(path) / "dbus-1/services"
-        for path in (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
-        if path and Path(path).is_absolute()
-    )
-    roots.append(Path("/usr/share/dbus-1/services"))
-    return tuple(dict.fromkeys(roots))
 
 
 class RpmAttribution:
@@ -149,8 +131,6 @@ class RpmAttribution:
         from gi.repository import GLib
 
         bus_name = entry.desktop_id.removesuffix(".desktop")
-        if not re.fullmatch(r"[A-Za-z_-][A-Za-z0-9_-]*(?:\.[A-Za-z_-][A-Za-z0-9_-]*)+", bus_name):
-            return False
         helper = Path(entry.executable).name == "gapplication"
         if helper:
             if (
@@ -168,45 +148,32 @@ class RpmAttribution:
             for owner in self.index.headers(entry.executable)
         ):
             return False
-        for root in service_roots():
-            matches = []
-            for path in sorted(root.glob("*.service")):
-                parser = configparser.ConfigParser(interpolation=None)
-                parser.optionxform = str
-                try:
-                    parser.read_string(path.read_text())
-                    service = parser["D-BUS Service"]
-                    if service.get("Name") == bus_name or path.name == bus_name + ".service":
-                        matches.append((path, service))
-                except (configparser.Error, KeyError, UnicodeError):
-                    if path.name == bus_name + ".service":
-                        return False
-            if not matches:
-                continue
-            if len(matches) != 1:
-                return False
-            path, service = matches[0]
-            if (
-                service.get("Name") != bus_name
-                or service.get("SystemdService")
-                or not any(
-                    self.verified_file(path, owner)
-                    and (
-                        package_key(owner) == package_key(application)
-                        or self.depends_on(application, owner)
-                    )
-                    for owner in self.index.headers(path)
+        effective = effective_service(bus_name)
+        if effective is None:
+            return False
+        path, service = effective.path, dict(effective.values)
+        if (
+            "SystemdService" in service
+            or "User" in service
+            or not any(
+                self.verified_file(path, owner)
+                and (
+                    package_key(owner) == package_key(application)
+                    or self.depends_on(application, owner)
                 )
-            ):
-                return False
-            command = tuple(GLib.shell_parse_argv(service.get("Exec", ""))[1])
-            return bool(
-                command
-                and Path(command[0]).is_absolute()
-                and os.access(command[0], os.X_OK)
-                and self.verified_file(command[0], application)
+                for owner in self.index.headers(path)
             )
-        return False
+        ):
+            return False
+        command = tuple(GLib.shell_parse_argv(service.get("Exec", ""))[1])
+        return bool(
+            command
+            and Path(command[0]).is_absolute()
+            and os.access(command[0], os.X_OK)
+            and self.verified_file(command[0], application)
+            # Re-resolve precedence and contents after verifying the owned files.
+            and effective_service(bus_name) == effective
+        )
 
     def verify(self, entry, package):
         try:
