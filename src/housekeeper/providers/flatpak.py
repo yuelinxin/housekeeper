@@ -37,6 +37,39 @@ def load_flatpak() -> Any:
     return Flatpak
 
 
+SANDBOX_KEYS = ("shared", "sockets", "devices", "features", "filesystems", "persistent")
+BUS_POLICIES = (("Session Bus Policy", "session bus"), ("System Bus Policy", "system bus"))
+
+
+def sandbox_permissions(metadata: Any) -> set[str]:
+    """Sandbox access a Flatpak metadata key file grants, as comparable display entries."""
+    from gi.repository import GLib
+
+    entries: set[str] = set()
+    if metadata is None:
+        return entries
+    for key in SANDBOX_KEYS:
+        try:
+            values = metadata.get_string_list("Context", key)
+        except GLib.Error:
+            continue
+        # A negated entry withdraws access and can never widen the sandbox.
+        entries.update(f"{key}: {v}" for v in values if v and not v.startswith("!"))
+    for group, label in BUS_POLICIES:
+        try:
+            names = metadata.get_keys(group)[0]
+        except GLib.Error:
+            continue
+        for name in names:
+            try:
+                policy = metadata.get_string(group, name)
+            except GLib.Error:
+                continue
+            if policy and policy != "none":
+                entries.add(f"{label}: {name} ({policy})")
+    return entries
+
+
 def configured_installations(fp: Any) -> tuple[list[Any], list[str]]:
     from gi.repository import Gio, GLib
 
@@ -414,6 +447,40 @@ class FlatpakProvider:
         return {ref.format_ref(): ref for ref in installation.list_installed_refs(None)}
 
     @staticmethod
+    def _new_permissions(op):
+        """Report the sandbox access an update adds, as `flatpak` does before applying one."""
+        new, old = op.get_metadata(), op.get_old_metadata()
+        if new is None or old is None:
+            raise ManagementError(
+                _("This update's sandbox permissions could not be read. Use your software manager.")
+            )
+        return tuple(sorted(sandbox_permissions(new) - sandbox_permissions(old)))
+
+    @staticmethod
+    def _running_instances(app):
+        """Name live instances of this ref. Their deployment survives until they exit."""
+        fp = load_flatpak()
+        identity = app.identity.split("/")
+        if len(identity) != 4:
+            return ()
+        _kind, app_id, arch, branch = identity
+        try:
+            instances = fp.Instance.get_all()
+        except Exception:
+            return ()  # Instance reporting is advisory; it never blocks a Flatpak update.
+        return tuple(
+            sorted(
+                {
+                    instance.get_app()
+                    for instance in instances
+                    if instance.is_running()
+                    and (instance.get_app(), instance.get_arch(), instance.get_branch())
+                    == (app_id, arch, branch)
+                }
+            )
+        )
+
+    @staticmethod
     def _remote_state(installation):
         return tuple(
             sorted(
@@ -428,7 +495,7 @@ class FlatpakProvider:
         if current is None or current.get_origin() != app.origin:
             raise ManagementError(_("The Flatpak installation changed. Check updates again."))
         changes, total = [], 0
-        target = current.get_commit()
+        target, permissions = current.get_commit(), ()
         for op in tx.get_operations():
             if op.get_is_skipped():
                 continue
@@ -449,6 +516,7 @@ class FlatpakProvider:
                 raise ManagementError(_("This transaction would change another application."))
             if identity == app.identity:
                 target = commit
+                permissions = self._new_permissions(op)
             changes.append(
                 UpdateChange(
                     identity,
@@ -486,10 +554,15 @@ class FlatpakProvider:
                 evidence_digest(app),
                 remotes,
                 changes,
+                permissions,
             ),
             message,
             total,
             environment=digest(remotes),
+            permissions=permissions,
+            # A live instance keeps its own deployment until it exits, so this is a
+            # disclosure that the running window stays on the old commit, not a hazard.
+            running=self._running_instances(app),
             **plan_binding(app),
         )
 
@@ -674,21 +747,28 @@ class FlatpakProvider:
         except Exception as error:
             refs = {}
             issues.append(_("Could not verify installed Flatpak commits: ") + str(error))
-        verified = tuple(
+        # Deployment is "every planned component now sits at its planned commit and remote".
+        # A repair operation resolves to the commit it already has, so requiring a version
+        # change here would report a complete transaction as partial and stop the batch.
+        deployed = tuple(
             c.identity
             for c in plan.changes
-            if c.identity in refs
+            if accepted
+            and c.identity in refs
             and refs[c.identity].get_commit() == c.target
             and refs[c.identity].get_origin() == c.source
-            and c.current_version != c.target
-            and accepted
         )
-        if accepted and success and not issues and len(verified) == len(plan.changes):
+        changed = tuple(
+            c.identity
+            for c in plan.changes
+            if c.identity in deployed and c.current_version != c.target
+        )
+        if accepted and success and not issues and len(deployed) == len(plan.changes):
             outcome, message = (
                 Outcome.SUCCESS,
                 _("The Flatpak application components were updated."),
             )
-        elif accepted and (verified or completed):
+        elif accepted and (changed or completed):
             outcome, message = (
                 Outcome.PARTIAL,
                 _("Some Flatpak components changed. Review the remaining updates."),
@@ -700,6 +780,6 @@ class FlatpakProvider:
         return OperationResult(
             outcome,
             message,
-            tuple(dict.fromkeys((*verified, *completed))),
+            tuple(dict.fromkeys((*changed, *completed))),
             tuple(dict.fromkeys(issues)),
         )

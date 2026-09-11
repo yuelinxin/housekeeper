@@ -30,6 +30,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.13" date="2026-09-11" type="development">
+      <description>
+        <p>Disclose what an update changes before it is applied.</p>
+        <ul>
+          <li>Name the sandbox permissions a Flatpak update adds before granting them.</li>
+          <li>Report which running programs a package update would replace, and stop if one started after the preview.</li>
+          <li>Complete Flatpak updates that include a repair operation instead of reporting them as partial.</li>
+          <li>Label an application's update action for what it will do once a check has found one.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.12" date="2026-09-11" type="development">
       <description>
         <p>Improve application management reliability and clarify update confirmation.</p>

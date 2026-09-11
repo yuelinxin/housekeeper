@@ -201,6 +201,19 @@ Execution repeats the preview and fingerprints dependency versions and repositor
 configuration. PackageKit's trusted-package flag and Polkit remain in effect.
 Preview and execution are separate transactions, not an atomic lock or rollback.
 
+Package updates are applied to the running system, so the preview also reports which
+of the transaction's installed paths a process currently executes or maps. Only paths
+are compared, through procfs; process memory, command lines and environments are never
+read, and a denied or exited process is skipped rather than reported as idle. These
+lists stay out of the plan fingerprint because they change with ordinary desktop
+activity. Execution instead compares them asymmetrically: quitting a program before
+updating is the advised response to the warning and must not invalidate consent, while
+a program started after the preview stops the update, because the user approved a
+transaction that did not name it. Housekeeper does not stage offline updates; a single
+`/system-update` slot cannot be shared with the system's own updater, and a transaction
+applied at the next boot cannot be verified against the RPM database while the user
+is present. See [the GNOME Software comparison](update-design-review.md).
+
 Flatpak updates retain the installation path, full ref, and origin. Only a changed
 commit for the selected application produces an available update; runtime-only,
 extension-only, and same-commit repair operations are not application updates. Dependencies
@@ -212,9 +225,20 @@ the normal system-helper update path because explicit commits require a root pro
 Both compare the full plan and exact target commits at `ready` before deployment, including
 dependency commits and remote configuration. New remotes, ambiguous source choices,
 account login, and application migration require external management. Cancellation is
-requested cooperatively through the transaction's `GCancellable`,
+requested cooperatively through the transaction's `GCancellable`, and a running instance
+is reported from `FlatpakInstance` without ever blocking the update,
 including extra-data downloads. The UI stays open until the backend returns and
-installed commits are verified; completed components are reported as partial results.
+installed commits are verified. Completion requires every planned component to sit at
+its planned commit and remote, which a repair operation already satisfies; only
+components whose commit actually changed are reported as changed. A transaction that
+stops early reports partial results.
+
+The preview also compares the selected application's sandbox context — `shared`,
+`sockets`, `devices`, `features`, `filesystems`, `persistent` and bus policies — between
+the installed and resolved metadata, matching what `flatpak` reports before applying an
+update. Only widened access is listed; a withdrawn or negated entry is not a new
+permission. The difference is part of the plan fingerprint, and unreadable metadata
+refuses the update rather than implying that nothing changed.
 
 The window keeps both actions disabled through preparation, confirmation, and
 execution. Callback tokens prevent completed operations from updating a later task.
@@ -230,7 +254,17 @@ updates show the primary application name and version change; batches show a sho
 scrollable application list. RPM epoch/release details are omitted from the summary
 only when the upstream versions differ; revision-only updates retain full versions.
 Other eligible launchers of the same installation appear once in the visible summary.
-A centered disclosure button toggles full-width Details containing the operation
+An update that widens a Flatpak sandbox names the added access in the visible summary
+and in a card above Details, never only inside the collapsed disclosure. A second card
+carries one line per application about programs the update would replace while they run:
+what to do, not which files. The paths themselves stay in Details, bounded so that a
+transaction touching a core library cannot fill the dialog. A running Flatpak keeps its
+own deployment until it exits, so it is disclosed as a version the user must reopen to
+see, not as a hazard: that card keeps the neutral accent, while widened sandbox access
+and any file replaced under a running process take a warning accent. Both tint the
+libadwaita semantic colors rather than fixed hues, so light, dark and a custom accent
+preference stay legible. A centered
+disclosure button toggles full-width Details containing the operation
 list and version strings, dependency/source information, installation/target context, download
 estimate and authorization guidance. Both dialogs still pass the original plans
 to execution, with Cancel as the default response.

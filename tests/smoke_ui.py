@@ -1014,6 +1014,79 @@ def activate(app):
         assert "Also includes:" not in details.preview.get_label()
         window.confirm_dialog.response("cancel")
 
+        # New sandbox access is named before it is granted, not hidden behind Details.
+        granting = replace(
+            page.items[0], plan=replace(page.items[0].plan, permissions=("sockets: x11",))
+        )
+        page.confirm((granting,))
+        assert "Requests 1 new sandbox permission" in window.confirm_dialog.get_body()
+        card = window.confirm_dialog.get_extra_child().get_first_child()
+        # Widened sandbox access is always a caution, whatever else the update does.
+        assert {"card", "notice", "notice-warning"} <= set(card.get_css_classes())
+        warning = card.get_first_child()
+        assert warning.get_first_child().get_label() == "New Permissions"
+        assert "• sockets: x11" in warning.get_last_child().get_label()
+        window.confirm_dialog.response("cancel")
+
+        # A package update names the running programs whose files it would replace.
+        in_use = replace(
+            page.items[0],
+            plan=replace(
+                page.items[0].plan,
+                provider="rpm",
+                running=("/usr/bin/boxes",),
+                # A core library is in use nearly everywhere, so Details stays bounded.
+                in_use=("/usr/lib64/libboxes.so.1",)
+                + tuple(f"/usr/share/boxes/data{i}" for i in range(11)),
+            ),
+        )
+        page.confirm((in_use,))
+        # The card states one action. The paths it applies to stay in Details.
+        assert "Running now" not in window.confirm_dialog.get_body()
+        content = window.confirm_dialog.get_extra_child()
+        assert "notice-warning" in content.get_first_child().get_css_classes()
+        notice = content.get_first_child().get_first_child()
+        assert notice.get_first_child().get_label() == "In Use Right Now"
+        assert "notice-heading" in notice.get_first_child().get_css_classes()
+        card = notice.get_last_child().get_label()
+        assert card == "Running now. Quit it before updating, or restart it afterwards."
+        details = content.get_last_child()
+        assert not details.toggle.get_active()
+        preview = details.preview.get_label()
+        assert "Running now:\n/usr/bin/boxes" in preview
+        assert "Replaced files in use:\n/usr/lib64/libboxes.so.1" in preview
+        assert "and 2 more" in preview and "/usr/share/boxes/data9" not in preview
+        window.confirm_dialog.response("cancel")
+
+        # Files in use without a running subject still say what to do afterwards.
+        others = replace(in_use, plan=replace(in_use.plan, running=()))
+        page.confirm((others,))
+        notice = window.confirm_dialog.get_extra_child().get_first_child().get_first_child()
+        assert notice.get_last_child().get_label().startswith("Replaced files are in use.")
+        window.confirm_dialog.response("cancel")
+
+        # A running Flatpak keeps its own deployment, so it is disclosed without alarm.
+        live = replace(
+            page.items[0],
+            plan=replace(page.items[0].plan, provider="flatpak", running=("org.gnome.Boxes",)),
+        )
+        page.confirm((live,))
+        card = window.confirm_dialog.get_extra_child().get_first_child()
+        # Its deployment survives, so this one stays informational rather than a caution.
+        assert "notice" in card.get_css_classes()
+        assert "notice-warning" not in card.get_css_classes()
+        notice = card.get_first_child()
+        assert (
+            notice.get_last_child().get_label() == "Running now. Reopen it to use the new version."
+        )
+        window.confirm_dialog.response("cancel")
+
+        page.confirm((page.items[0],))
+        assert "sandbox permission" not in window.confirm_dialog.get_body()
+        assert "Running now" not in window.confirm_dialog.get_body()
+        assert isinstance(window.confirm_dialog.get_extra_child().get_first_child(), UpdateDetails)
+        window.confirm_dialog.response("cancel")
+
         window.set_size_request(1040, 720)
         window.set_default_size(1040, 720)
 

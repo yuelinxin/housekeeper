@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.13 — 2026-09-11
+
+- Report which running programs an update would replace. Package updates apply to the
+  running system, so the preview records the executables and other files a process is
+  still using. The confirmation states what to do about them in one line and keeps the
+  paths in Details. A program started after the preview stops execution; quitting one
+  beforehand does not.
+- Disclose a running Flatpak as a version that needs reopening rather than a hazard,
+  because its deployment survives until the instance exits.
+- Label an application's update action for what it will do: "Update" once a check has
+  found one for that installation, and "Check for Updates" before then.
+
+- Name the sandbox access a Flatpak update adds before granting it. The confirmation
+  summary counts the new permissions and a card above Details lists them, matching what
+  `flatpak` reports. Only widened access counts; metadata that cannot be read refuses
+  the update instead of implying that nothing changed.
+- Complete a Flatpak update that includes a repair operation. Such an operation resolves
+  to the commit it already has, which previously reported a finished transaction as
+  partial and stopped every remaining update in the batch.
+
 ## 0.1.12 — 2026-09-11
 
 - Keep completed application updates out of the cached list while preserving stale

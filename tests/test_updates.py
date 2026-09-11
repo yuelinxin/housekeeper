@@ -90,6 +90,7 @@ def rpm_update(monkeypatch):
         deployed=(),
         error=None,
         exit_code=1,
+        running=((), ()),
     )
     pk = NS(
         FilterEnum=NS(INSTALLED=1),
@@ -126,6 +127,7 @@ def rpm_update(monkeypatch):
     monkeypatch.setattr(provider, "_client", lambda _kind: (client, pk, Gio, GLib))
     monkeypatch.setattr(provider, "_compare", lambda a, b: (a > b) - (a < b))
     monkeypatch.setattr(provider, "_verified_updates", lambda _plan: backend.deployed)
+    monkeypatch.setattr(provider, "_running_processes", lambda _changes: backend.running)
     monkeypatch.setattr(
         provider,
         "_local_versions",
@@ -274,6 +276,41 @@ def test_rpm_detects_stale_packagekit_installed_cache(rpm_update, monkeypatch):
         provider.prepare_update(app, [app], lambda *_: None)
 
 
+def test_rpm_preview_reports_programs_using_the_replaced_files(rpm_update):
+    provider, app, backend = rpm_update
+    backend.running = (("/usr/bin/example",), ("/usr/lib/example/resources.pak",))
+    plan = provider.prepare_update(app, [app], lambda *_: None).plan
+    assert plan.running == ("/usr/bin/example",)
+    assert plan.in_use == ("/usr/lib/example/resources.pak",)
+    # In-use paths change with ordinary desktop activity and must not bind the preview.
+    assert plan.fingerprint == replace(plan, running=(), in_use=()).fingerprint
+
+
+def test_rpm_execution_stops_for_a_program_started_after_the_preview(rpm_update):
+    provider, app, backend = rpm_update
+    plan = provider.prepare_update(app, [app], lambda *_: None).plan
+    backend.running = (("/usr/bin/example",), ())
+    with pytest.raises(ManagementError, match="started after the preview"):
+        provider.execute_update(app, plan, lambda *_: None)
+    assert not backend.deployed
+
+
+def test_rpm_quitting_the_program_before_updating_is_not_a_changed_plan(rpm_update):
+    provider, app, backend = rpm_update
+    backend.running = (("/usr/bin/example",), ("/usr/lib/example/resources.pak",))
+    plan = provider.prepare_update(app, [app], lambda *_: None).plan
+    # Quitting is the advised response to the warning; it must not invalidate consent.
+    backend.running = ((), ())
+    assert provider.execute_update(app, plan, lambda *_: None).outcome == Outcome.SUCCESS
+
+
+def test_rpm_updating_a_program_the_user_was_warned_about_proceeds(rpm_update):
+    provider, app, backend = rpm_update
+    backend.running = (("/usr/bin/example",), ())
+    plan = provider.prepare_update(app, [app], lambda *_: None).plan
+    assert provider.execute_update(app, plan, lambda *_: None).outcome == Outcome.SUCCESS
+
+
 def test_rpm_real_version_ordering():
     pytest.importorskip("rpm")
     assert RpmProvider._compare("1:1.0-1", "9.0-1") > 0
@@ -410,7 +447,15 @@ class FlatpakTransaction:
         return True
 
 
-def operation(identity, commit="new", kind=1, source="fixture"):
+def sandbox(**context):
+    keyfile = GLib.KeyFile()
+    for key, values in context.items():
+        if values:
+            keyfile.set_string_list("Context", key, list(values))
+    return keyfile
+
+
+def operation(identity, commit="new", kind=1, source="fixture", old=(), new=(), metadata=True):
     return NS(
         get_ref=lambda: identity,
         get_commit=lambda: commit,
@@ -418,6 +463,8 @@ def operation(identity, commit="new", kind=1, source="fixture"):
         get_operation_type=lambda: kind,
         get_is_skipped=lambda: False,
         get_download_size=lambda: 123,
+        get_old_metadata=lambda: sandbox(sockets=old) if metadata else None,
+        get_metadata=lambda: sandbox(sockets=new) if metadata else None,
     )
 
 
@@ -513,6 +560,93 @@ def test_flatpak_same_commit_operation_with_new_runtime_is_not_an_app_update(fla
         operation("runtime/platform/x86_64/stable"),
     ]
     assert provider.prepare_update(app, [app], lambda *_: None).state == UpdateState.CURRENT
+
+
+def test_flatpak_same_commit_repair_still_completes_the_update(flatpak_update):
+    # A repair operation resolves to the commit it already has. It must not make a
+    # finished transaction look partial, which would stop every remaining batch item.
+    provider, app, backend = flatpak_update
+    repair = "runtime/org.example.Runtime/x86_64/stable"
+    backend.refs[repair] = Ref(repair)
+    backend.operations.append(operation(repair, "old"))
+    plan = provider.prepare_update(app, [app], lambda *_: None).plan
+    assert len(plan.changes) == 2
+    result = provider.execute_update(app, plan, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS, result
+    # The unchanged component is still not reported as something that changed.
+    assert result.completed[0] == app.identity
+
+
+def test_flatpak_new_sandbox_permissions_are_listed_and_bound_to_the_plan(flatpak_update):
+    provider, app, backend = flatpak_update
+    backend.operations = [operation(app.identity, old=("wayland",), new=("wayland", "x11"))]
+    plan = provider.prepare_update(app, [app], lambda *_: None).plan
+    assert plan.permissions == ("sockets: x11",)
+    backend.operations = [operation(app.identity, old=("wayland", "x11"), new=("wayland", "x11"))]
+    unchanged = provider.prepare_update(app, [app], lambda *_: None).plan
+    assert unchanged.permissions == ()
+    assert unchanged.fingerprint != plan.fingerprint
+
+
+def test_flatpak_running_instance_is_disclosed_but_never_blocks(flatpak_update, monkeypatch):
+    provider, app, backend = flatpak_update
+    instances = []
+    monkeypatch.setattr(
+        "housekeeper.providers.flatpak.load_flatpak",
+        lambda: NS(Instance=NS(get_all=lambda: instances)),
+    )
+    assert provider.prepare_update(app, [app], lambda *_: None).plan.running == ()
+    instances.append(
+        NS(
+            get_app=lambda: "org.example.App",
+            get_arch=lambda: "x86_64",
+            get_branch=lambda: "stable",
+            is_running=lambda: True,
+        )
+    )
+    plan = provider.prepare_update(app, [app], lambda *_: None).plan
+    assert plan.running == ("org.example.App",)
+    # The live instance keeps its own deployment, so the update still proceeds.
+    assert provider.execute_update(app, plan, lambda *_: None).outcome == Outcome.SUCCESS
+
+
+def test_flatpak_other_running_refs_are_not_this_application(flatpak_update, monkeypatch):
+    provider, app, _backend = flatpak_update
+    monkeypatch.setattr(
+        "housekeeper.providers.flatpak.load_flatpak",
+        lambda: NS(
+            Instance=NS(
+                get_all=lambda: [
+                    NS(
+                        get_app=lambda: "org.example.App",
+                        get_arch=lambda: "aarch64",
+                        get_branch=lambda: "stable",
+                        is_running=lambda: True,
+                    ),
+                    NS(
+                        get_app=lambda: "org.example.Other",
+                        get_arch=lambda: "x86_64",
+                        get_branch=lambda: "stable",
+                        is_running=lambda: True,
+                    ),
+                ]
+            )
+        ),
+    )
+    assert provider.prepare_update(app, [app], lambda *_: None).plan.running == ()
+
+
+def test_flatpak_withdrawn_permission_is_not_a_new_permission(flatpak_update):
+    provider, app, backend = flatpak_update
+    backend.operations = [operation(app.identity, old=("wayland", "x11"), new=("wayland",))]
+    assert provider.prepare_update(app, [app], lambda *_: None).plan.permissions == ()
+
+
+def test_flatpak_unreadable_permissions_refuse_the_update(flatpak_update):
+    provider, app, backend = flatpak_update
+    backend.operations = [operation(app.identity, metadata=False)]
+    with pytest.raises(ManagementError, match="sandbox permissions could not be read"):
+        provider.prepare_update(app, [app], lambda *_: None)
 
 
 def test_flatpak_partial_completion(flatpak_update):

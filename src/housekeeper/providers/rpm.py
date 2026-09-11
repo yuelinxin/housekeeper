@@ -663,6 +663,7 @@ class RpmProvider:
         if len(names) > 1:
             message += _("\n\nApplications provided by this package: ") + ", ".join(names)
         repositories = self._repository_state()
+        running, in_use = self._running_processes(changes)
         plan = UpdatePlan(
             app.key,
             "rpm",
@@ -674,6 +675,8 @@ class RpmProvider:
             message,
             **plan_binding(app),
             environment=digest(repositories),
+            running=running,
+            in_use=in_use,
         )
         return UpdateCheckResult(UpdateState.AVAILABLE, plan)
 
@@ -690,6 +693,15 @@ class RpmProvider:
         if check.plan is None or check.plan.fingerprint != plan.fingerprint:
             raise ManagementError(
                 _("The update plan changed. Check updates and review a new preview.")
+            )
+        # Quitting an application between the preview and the update is the recommended
+        # response to the warning, so only newly started programs invalidate the consent.
+        started = sorted(set(check.plan.running) - set(plan.running))
+        if started:
+            raise ManagementError(
+                _("These programs started after the preview and this update would replace them: ")
+                + ", ".join(started)
+                + _(" Quit them, or check again to review a new preview.")
             )
 
         def report(p, _kind, _data):
@@ -732,6 +744,33 @@ class RpmProvider:
                     hints.add(value)
         hint = _("Restart required: ") + ", ".join(sorted(hints)) if hints else ""
         return OperationResult(outcome, message, completed, (error,) if error else (), hint)
+
+    @staticmethod
+    def _transaction_files(changes):
+        """Installed paths the transaction replaces, read from the local RPM database."""
+        import rpm
+
+        ts = rpm.TransactionSet()
+        ts.openDB()
+        paths = set()
+        for change in changes:
+            name, _version, arch, _repository = change.target.split(";", 3)
+            for header in ts.dbMatch("name", name):
+                if header["arch"] != arch:
+                    continue
+                paths.update(str(path) for path in header["filenames"] or ())
+        return paths
+
+    def _running_processes(self, changes):
+        """Report what an update would replace underneath a process that is still using it."""
+        from housekeeper.processes import affected
+
+        try:
+            return affected(self._transaction_files(changes))
+        except Exception as error:
+            raise ManagementError(
+                _("The processes using this package could not be determined: ") + str(error)
+            ) from error
 
     def _verified_updates(self, plan):
         import rpm

@@ -47,6 +47,20 @@ def test_round_trip_with_paths_and_exact_plan(cached):
     assert cache.path.stat().st_mode & 0o777 == 0o600
 
 
+@pytest.mark.parametrize("field", ["permissions", "running", "in_use"])
+def test_cached_plan_keeps_its_permission_and_process_disclosures(cached, field):
+    cache, app, report = cached
+    item = report.items[0]
+    disclosed = replace(report, items=(replace(item, plan=replace(item.plan, **{field: ("a",)})),))
+    cache.save(disclosed, [app], 1_700_000_000)
+    assert UpdateCache(cache.path).load([app]).report == disclosed
+    # A preview that cannot state a disclosure is not silently restored as harmless.
+    payload = json.loads(cache.path.read_text())
+    del payload["items"][0]["plan"][field]
+    cache.path.write_text(json.dumps(payload))
+    assert UpdateCache(cache.path).load([app]) is None
+
+
 def test_load_snapshots_each_app_once(cached, monkeypatch):
     cache, app, report = cached
     inventory = [app, *(replace(app, key=f"other-{index}") for index in range(100))]

@@ -213,6 +213,7 @@ class UpdateBatch:
                 fresh.instance_id,
                 fresh.target_id,
                 fresh.evidence_digest,
+                fresh.permissions,
             )
             == (
                 original.app_key,
@@ -223,6 +224,7 @@ class UpdateBatch:
                 original.instance_id,
                 original.target_id,
                 original.evidence_digest,
+                original.permissions,
             )
             and fresh.changes == remaining
         ):

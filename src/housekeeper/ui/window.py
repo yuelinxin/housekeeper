@@ -11,7 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from housekeeper import APP_ID, VERSION
-from housekeeper.batch_updates import UpdateItem, grouped_names
+from housekeeper.batch_updates import UpdateItem, grouped_names, installation_key
 from housekeeper.i18n import _, ngettext
 from housekeeper.models import (
     Action,
@@ -765,12 +765,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             activate_on_single_click=False,
         )
         actions.add_css_class("detail-actions")
-        self.update_button = Gtk.Button(
-            label=_("Check for Updates")
-            if app.update_action == UpdateAction.CHECK
-            else _("Update Instructions"),
-            valign=Gtk.Align.CENTER,
-        )
+        self.update_button = Gtk.Button(valign=Gtk.Align.CENTER)
+        self._refresh_update_button()
         self.update_button.add_css_class("pill")
         self.update_button.add_css_class("suggested-action")
         self.update_button.connect("clicked", lambda _b: self.check_update(app))
@@ -1067,6 +1063,20 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.appearance_group.set_actions_sensitive(available)
         if self.refresh_pending:
             self._schedule_refresh()
+
+    def _refresh_update_button(self):
+        app = self.detail_app
+        if app is None:
+            return
+        if app.update_action != UpdateAction.CHECK:
+            title = _("Update Instructions")
+        elif any(
+            installation_key(item.app) == installation_key(app) for item in self.updates_page.items
+        ):
+            title = _("Update")
+        else:
+            title = _("Check for Updates")
+        self.update_button.set_label(title)
 
     def check_update(self, app):
         if self.operation_active:

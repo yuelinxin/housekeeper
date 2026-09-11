@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from housekeeper.batch_updates import UpdateBatch
@@ -67,6 +68,22 @@ def user_check(mode):
     assert check.state == UpdateState.AVAILABLE
     assert installed_version() == "1-1", "Preview changed the installed version"
     assert len(check.plan.changes) == 2, check.plan
+    # The real RPM database must resolve this transaction's installed paths.
+    files = RpmProvider._transaction_files(check.plan.changes)
+    assert f"/usr/bin/{name}" in files and f"/usr/share/{dependency}/version" in files
+    assert check.plan.running == (), check.plan.running
+    # A real running process from a real package must be reported as executing.
+    arch = run("rpm", "-q", "--qf", "%{ARCH}", "coreutils", capture_output=True, text=True).stdout
+    sleeping = subprocess.Popen(["/usr/bin/sleep", "600"])
+    try:
+        executing, _in_use = RpmProvider()._running_processes(
+            (replace(check.plan.changes[0], target=f"coreutils;1;{arch};repo"),)
+        )
+        assert "/usr/bin/sleep" in executing, executing
+    finally:
+        sleeping.terminate()
+        sleeping.wait()
+    assert RpmProvider()._running_processes(())[0] == ()
     result = RpmProvider().execute_update(app, check.plan, lambda *_: None)
     if mode == "denied":
         assert result.outcome == Outcome.FAILED, result

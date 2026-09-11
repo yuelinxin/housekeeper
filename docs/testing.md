@@ -33,7 +33,22 @@ They cover provider permutations, conflicting owners, changed installation selec
 current deployment exports, spoofed command names, XDG defaults, environment lookup,
 format-identifiable AppImage fixtures, and unavailable versus negative file queries.
 Batch/cache tests verify component completion, evidence-bound previews and rejection
-of schema 1. GTK smoke checks that conflict records cannot invoke direct operations.
+of schema 1; cached plans round-trip their sandbox permission and in-use process
+disclosures, and a plan missing one is ignored rather than restored as harmless. GTK smoke
+checks that conflict records cannot invoke direct operations.
+
+`test_processes.py` builds a synthetic procfs to check that executables and mapped files
+are separated, that a replaced binary still running is matched by path, and that a denied
+or exited process is skipped instead of counted as idle. It uses absent entries rather
+than permission modes, which root would bypass. RPM update tests cover the preview's
+in-use lists, that they stay out of the fingerprint, that quitting a program before
+updating still executes, and that a program started after the preview stops execution.
+Flatpak tests cover instance disclosure without blocking, and ignore other refs. GTK
+smoke checks that the card carries only the action, that the paths appear in Details
+with a bounded remainder, that a running Flatpak is disclosed without a quit
+instruction, and that it keeps the neutral accent while permissions and replaced files
+take the warning accent. The disposable RPM container additionally resolves real package file
+lists and detects a real running process.
 The AppImage transaction fixture remains confined to the disposable container.
 
 

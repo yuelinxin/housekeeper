@@ -250,6 +250,9 @@ class UpdatePlan:
     instance_id: str = ""
     target_id: str = ""
     evidence_digest: str = ""
+    permissions: tuple[str, ...] = ()
+    running: tuple[str, ...] = ()
+    in_use: tuple[str, ...] = ()
 
 
 class UpdateState(str, Enum):

@@ -1,3 +1,24 @@
+# v0.1.13 development validation
+
+## v0.1.13 update disclosure — September 11, 2026
+
+- Python, Meson, the RPM spec and changelog, the newest AppStream release, changelog
+  heading and README installation example agree on 0.1.13.
+- The offline Fedora 44 unit suite passes 503 tests, skipping one real dpkg fixture
+  because dpkg-query is absent. Ruff lint and formatting and the configured strict
+  mypy check pass.
+- Fedora 44 GTK smoke passes. `check_size_sorting` and the screenshot helper are flaky
+  on a live compositor rather than under Xvfb; five consecutive runs passed after the
+  competing capture processes stopped. This flake predates these changes and reproduces
+  on an unmodified tree.
+- The Flatpak sandbox comparison was checked against a real pending update: Housekeeper
+  reported `sockets: x11`, matching what `flatpak update` prints for the same commit.
+  Process detection was checked against real running applications and cost 117 ms across
+  a 27,777-path transaction.
+- Real RPM update execution was not run on a personal system. Its integration coverage
+  lives in the disposable container and was not rerun for this release. No RPM package
+  build, hosted CI run, or release was triggered.
+
 # v0.1.12 development validation
 
 Updated on September 11, 2026. These are local development checks, not a claim that

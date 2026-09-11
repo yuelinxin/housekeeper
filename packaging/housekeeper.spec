@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.12
+Version:        0.1.13
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -64,6 +64,12 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Fri Sep 11 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.13-1
+- Name the sandbox permissions a Flatpak update adds before granting them.
+- Report running programs a package update would replace and stop for one started after the preview.
+- Complete Flatpak updates containing a repair operation instead of reporting them as partial.
+- Label an application's update action for what it will do once a check has found one.
+
 * Fri Sep 11 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.12-1
 - Honor cancellation during RPM and Flatpak removal setup.
 - Harden D-Bus attribution, report dpkg failures, and retain AppImage management without package databases.

@@ -52,14 +52,20 @@ def decode_plan(data):
     size = data.get("download_size")
     if size is not None and (type(size) is not int or size < 0):
         raise ValueError("Invalid cached download size")
+    texts = {}
+    for name in ("permissions", "running", "in_use"):
+        value = data.pop(name)
+        if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
+            raise ValueError(f"Invalid cached update {name}")
+        texts[name] = tuple(value)
     for field in fields(UpdatePlan):
-        if field.name not in {"changes", "download_size"} and not isinstance(
+        if field.name not in {"changes", "download_size", *texts} and not isinstance(
             data.get(field.name), str
         ):
             raise ValueError("Invalid cached update plan")
     if not changes:
         raise ValueError("Empty cached update plan")
-    return UpdatePlan(changes=tuple(changes), **data)
+    return UpdatePlan(changes=tuple(changes), **texts, **data)
 
 
 class UpdateCache:
@@ -73,7 +79,7 @@ class UpdateCache:
             if len(payload) > MAX_BYTES:
                 raise ValueError("Update cache is too large")
             data = json.loads(payload)
-            if data["schema"] != 2 or data["version"] != VERSION:
+            if data["schema"] != 3 or data["version"] != VERSION:
                 return None
             if data.get("providers", sorted(UPDATE_PROVIDERS)) != sorted(providers):
                 return None
@@ -157,7 +163,7 @@ class UpdateCache:
         try:
             payload = json.dumps(
                 {
-                    "schema": 2,
+                    "schema": 3,
                     "version": VERSION,
                     "checked_at": checked_at,
                     "providers": sorted(providers),
