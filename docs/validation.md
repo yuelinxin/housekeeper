@@ -1,5 +1,21 @@
 # v0.1.13 development validation
 
+## v0.1.13-2 COPR packaging — September 12, 2026
+
+- COPR build 10978836 failed during the Meson GTK import check. Its dependency
+  list omitted `gobject-introspection`; removing that package in a disposable
+  Fedora 44 container reproduced the missing `cairo-1.0` typelib error.
+- The spec now requires `gobject-introspection` for building and running the app,
+  plus `flatpak-libs` and `python3-rpm` for the package tests. The first minimal
+  build exposed 20 Flatpak test failures without these test dependencies.
+- Complete RPM builds, the unit suite, desktop-file validation, and AppStream
+  validation pass on Fedora 43 and 44 containers with only declared build
+  dependencies and RPM build tooling installed, with weak dependencies disabled.
+  Builds ran as an unprivileged user with networking disabled. The unchanged
+  0.1.13 source archive was packaged using the revised external spec.
+- RPM and SRPM artifacts are in `dist/copr/` with release `2`. These are local
+  verification results; the corrected package still needs a new COPR submission.
+
 ## v0.1.13 update disclosure — September 11, 2026
 
 - Python, Meson, the RPM spec and changelog, the newest AppStream release, changelog

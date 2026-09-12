@@ -156,6 +156,24 @@ are `details-narrow.png` and `update-preview.png`.
 
 ## Disposable Fedora environments
 
+Local build outputs use the following directories:
+
+- `build/`: the active Meson development build, including `housekeeper-dev`.
+- `dist/sources/`: source archives produced by `build-aux/source_archive.py`.
+- `dist/copr/`: current RPM and SRPM packages. Upload the `.src.rpm` file to COPR;
+  install the `.noarch.rpm` matching your Fedora release. The validated packaging
+  revision is currently `0.1.13-2` for Fedora 43 and 44.
+- `dist/archive/`: older packages and source archives, retained for reference.
+- `work/logs/` and `work/screenshots/`: local diagnostics and current UI captures.
+- `work/archive/`: historical UI captures and investigations. `work/containers/`
+  and `work/python-tools/` are local tooling stores, not release artifacts.
+
+Before building a new release, move the previous contents of `dist/copr/` into a
+versioned directory under `dist/archive/`. If present, regenerate `SHA256SUMS`
+after replacing packages: `(cd dist/copr && sha256sum *.rpm > SHA256SUMS)`.
+CI uses `artifacts/`, `release-files/`, and `release-assets/` as temporary staging
+directories; local package builds should use `dist/copr/` instead.
+
 The container image contains build and test dependencies, not personal applications.
 The source tree is mounted read-only; RPM installation modifies only the disposable
 container. Integration scripts require a container marker and an explicit test flag.
@@ -163,9 +181,9 @@ container. Integration scripts require a container marker and an explicit test f
 ```sh
 podman build --build-arg FEDORA_VERSION=44 -t housekeeper-test:44 -f tests/Containerfile .
 python3 build-aux/source_archive.py
-mkdir -p dist/packages
+mkdir -p dist/copr
 podman run --rm --network none \
-  -v "$PWD:/source:ro" -v "$PWD/dist/packages:/artifacts" \
+  -v "$PWD:/source:ro" -v "$PWD/dist/copr:/artifacts" \
   housekeeper-test:44 bash /source/build-aux/container_check.sh
 podman run --rm --network none -v "$PWD:/source:ro" -w /source \
   -e HOUSEKEEPER_DISPOSABLE_TEST=1 \
@@ -226,8 +244,48 @@ automatically. Tags and repository changes must be pushed deliberately; merely
 building the app locally does not create a release.
 
 Review installation instructions, platform claims, known limitations, and attached
-files before publishing. GitHub releases are the initial distribution channel;
-there is no application self-updater or configured COPR repository.
+files before publishing. Publishing a stable GitHub Release triggers
+`.github/workflows/copr.yml`, which downloads and verifies one release SRPM and
+uploads it to `yuelinxin/housekeeper` in COPR. COPR builds all chroots enabled in
+that project. The Actions job waits for the result and fails if COPR reports a
+failed build. Pre-releases are excluded. Housekeeper has no application self-updater;
+users who enable the COPR repository receive packages through normal DNF updates.
+
+### One-time GitHub and COPR setup
+
+1. Sign in as a COPR project owner or builder and open
+   <https://copr.fedorainfracloud.org/api/>. Copy the entire generated configuration
+   block, including `[copr-cli]`, `login`, `username`, `token`, and `copr_url`.
+2. In the GitHub repository, open **Settings → Secrets and variables → Actions →
+   New repository secret**. Name it `COPR_CONFIG` and paste that configuration.
+   Keep it out of source files and release attachments. Refresh the secret when
+   the COPR API credentials expire or are rotated.
+3. Commit and push the workflow and helper with the other packaging fixes to the
+   default branch before creating the next release tag. GitHub Actions must be
+   enabled for the repository.
+
+The normal sequence is: push a version tag, wait for **Draft release** to finish,
+review the draft and its RPM/SRPM/checksum attachments, then click **Publish release**.
+**Publish to COPR** starts automatically. It uses GitHub's token to download release
+assets before uploading the SRPM, so it also works with a private GitHub repository.
+The uploaded source and resulting packages are distributed through the COPR project.
+
+For an existing release or a missed event, open **Actions → Publish to COPR → Run
+workflow** on the default branch and enter its tag (for example `v0.1.13`). The
+release must already be published and contain the validated SRPMs and `SHA256SUMS`.
+A release containing only GitHub's automatic source ZIP/tarball will fail with an
+explanation. Keep just one RPM revision per release; replace superseded RPM assets
+and regenerate checksums before submitting a packaging revision.
+
+Manual dispatch submits a new COPR build, so check for an existing successful or
+running build before retrying. The job waits up to 90 minutes; if it times out,
+check COPR before resubmitting because the remote build can continue. If publishing
+is later automated using `GITHUB_TOKEN`, explicitly dispatch the COPR workflow:
+GitHub does not start a second workflow for a release event generated by that token.
+
+References: [COPR user documentation](https://docs.copr.fedorainfracloud.org/user_documentation.html),
+[GitHub release events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release),
+[triggering workflows](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
 ## Updates page and batch regression checks
 

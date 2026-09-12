@@ -28,7 +28,7 @@ jobs:
           podman run --rm --network none -v "$PWD:/source:ro" -w /source \
             -e HOUSEKEEPER_DISPOSABLE_TEST=1 housekeeper-test python3 tests/integration_host.py
           mkdir -p release-files
-          cp artifacts/*.rpm dist/*.tar.gz release-files/
+          cp artifacts/*.rpm dist/sources/*.tar.gz release-files/
       - uses: actions/upload-artifact@v4
         with:
           name: release-fedora-${{ matrix.fedora }}

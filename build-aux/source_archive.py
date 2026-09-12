@@ -11,7 +11,7 @@ root = Path(__file__).resolve().parents[1]
 version = runpy.run_path(str(root / "src/housekeeper/__init__.py"))["VERSION"]
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "output", type=Path, nargs="?", default=Path(f"dist/housekeeper-{version}.tar.gz")
+    "output", type=Path, nargs="?", default=Path(f"dist/sources/housekeeper-{version}.tar.gz")
 )
 args = parser.parse_args()
 paths = (

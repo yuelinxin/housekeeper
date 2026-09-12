@@ -1,6 +1,6 @@
 Name:           housekeeper
 Version:        0.1.13
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
 URL:            https://github.com/yuelinxin/housekeeper
@@ -10,7 +10,10 @@ BuildArch:      noarch
 BuildRequires:  meson >= 0.63
 BuildRequires:  python3
 BuildRequires:  python3-gobject
+BuildRequires:  gobject-introspection
 BuildRequires:  python3-pytest
+BuildRequires:  python3-rpm
+BuildRequires:  flatpak-libs
 BuildRequires:  gtk4 >= 4.12
 BuildRequires:  libadwaita >= 1.4
 BuildRequires:  glib2-devel
@@ -19,6 +22,7 @@ BuildRequires:  desktop-file-utils
 BuildRequires:  appstream
 Requires:       python3 >= 3.10
 Requires:       python3-gobject
+Requires:       gobject-introspection
 Requires:       gtk4 >= 4.12
 Requires:       libadwaita >= 1.4
 Recommends:     python3-rpm
@@ -64,6 +68,10 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Sat Sep 12 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.13-2
+- Require the Cairo and other base typelibs needed to import GTK in clean buildroots.
+- Include Flatpak and RPM bindings for the package test suite.
+
 * Fri Sep 11 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.13-1
 - Name the sandbox permissions a Flatpak update adds before granting them.
 - Report running programs a package update would replace and stop for one started after the preview.

@@ -1,0 +1,63 @@
+name: Publish to COPR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to submit (for example v0.1.13)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copr-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      COPR_PROJECT: yuelinxin/housekeeper
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install COPR client
+        run: python -m pip install copr-cli
+      - name: Download and verify the release SRPM
+        id: srpm
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          srpm_path=$(python3 build-aux/release_srpm.py "$RELEASE_TAG" \
+            --repo "$GH_REPO" --output-dir "$RUNNER_TEMP/copr-assets")
+          printf 'path=%s\n' "$srpm_path" >> "$GITHUB_OUTPUT"
+      - name: Submit to COPR and wait for the build result
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+          SRPM_PATH: ${{ steps.srpm.outputs.path }}
+        run: |
+          if [ -z "$COPR_CONFIG" ]; then
+            echo '::error::Add the COPR_CONFIG repository secret using https://copr.fedorainfracloud.org/api/'
+            exit 1
+          fi
+          umask 077
+          copr_config_file=$(mktemp "$RUNNER_TEMP/copr-config.XXXXXX")
+          trap 'rm -f "$copr_config_file"' EXIT
+          printf '%s\n' "$COPR_CONFIG" > "$copr_config_file"
+          printf 'Submitting `%s` to [COPR](https://copr.fedorainfracloud.org/coprs/%s/).\n' \
+            "$RELEASE_TAG" "$COPR_PROJECT" >> "$GITHUB_STEP_SUMMARY"
+          copr-cli --config "$copr_config_file" build --enable-net off "$COPR_PROJECT" "$SRPM_PATH"
+          echo 'COPR build completed successfully.' >> "$GITHUB_STEP_SUMMARY"
