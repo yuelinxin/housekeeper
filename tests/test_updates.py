@@ -486,7 +486,10 @@ def flatpak_update(monkeypatch):
         TransactionOperationType=NS(INSTALL=0, UPDATE=1, UNINSTALL=2),
         Error=NS(ABORTED=1),
         error_quark=lambda: GLib.quark_from_string("hk-test-flatpak"),
+        Instance=NS(get_all=lambda: []),
     )
+    # Instance discovery must use the same fake backend as update transactions.
+    monkeypatch.setattr("housekeeper.providers.flatpak.load_flatpak", lambda: fp)
     remote = NS(
         get_name=lambda: "fixture",
         get_url=lambda: "file:///fixture",

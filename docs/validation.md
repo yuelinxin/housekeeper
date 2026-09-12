@@ -1,5 +1,16 @@
 # v0.1.13 development validation
 
+## Runtime floor test isolation — September 12, 2026
+
+- GitHub Actions run 34676319325 passed the Fedora 43/44 and static jobs but
+  failed 20 Flatpak update unit tests on Ubuntu 24.04. The transaction fixture
+  still used the real Flatpak loader for running-instance discovery.
+- The fixture now provides an empty instance list through its fake Flatpak
+  backend. The dedicated running-instance tests continue to override that list.
+- The complete Ubuntu 24.04 baseline check passes without Flatpak: 507 unit tests
+  pass and six RPM-binding tests skip as expected. GTK smoke and five fresh SVG
+  icon startups also pass. Production code and runtime-floor dependencies are unchanged.
+
 ## v0.1.13-2 COPR packaging — September 12, 2026
 
 - COPR build 10978836 failed during the Meson GTK import check. Its dependency
