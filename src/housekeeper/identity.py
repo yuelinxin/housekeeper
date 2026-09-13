@@ -96,7 +96,7 @@ def classify(entry: DesktopEntry) -> AppRecord:
             args.append("--profile-directory=" + profile)
         if data_dir:
             args.append("--user-data-dir=" + data_dir)
-        app.management = (*args, "chrome://apps")
+        app.management = (*args, "--app-id=" + app_id)
     elif binary == "firefoxpwa" and len(argv) >= 4 and argv[1:3] == ("site", "launch"):
         app.source, app.provider, app.action = Source.WEB, "firefoxpwa", Action.INSTRUCTIONS
         app.identity = argv[3]

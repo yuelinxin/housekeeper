@@ -159,6 +159,7 @@ def activate(app):
     window.present()
     steps = []
     icon_fixture = {}
+    badge_fixture = {}
 
     def inventory_names():
         return [
@@ -380,7 +381,7 @@ def activate(app):
             assert window.filtered.get_n_items() == 1
             window.show_details(package_app)
             assert window.manage_button.get_label() == "Show Management Instructions"
-            assert window.update_button.get_label() == "Update Instructions"
+            assert window.open_button.get_label() == "Open"
             window.navigation.pop_to_tag("overview")
         window._replace(examples())
         rows = []
@@ -473,11 +474,11 @@ def activate(app):
     def check_details():
         assert window.detail_app.name == "Boxes"
         assert window.software_size_row.get_subtitle() == GLib.format_size(123456789)
-        assert window.update_button.get_label() == "Check for Updates"
+        assert window.open_button.get_label() == "Open"
         assert window.manage_button.get_label() == "Uninstall"
         assert window.manage_button.has_css_class("destructive-action")
-        assert not window.update_button.has_css_class("destructive-action")
-        assert window.update_button.get_allocation().height > 0
+        assert not window.open_button.has_css_class("destructive-action")
+        assert window.open_button.get_allocation().height > 0
         assert window.appearance_group.buttons[0][0].get_sensitive()
         assert not window.appearance_group.buttons[1][0].get_sensitive()
         capture(window, "details-light.png")
@@ -502,14 +503,14 @@ def activate(app):
         window.show_details(unverified, replace=True)
         assert window.manage_button.get_label() == "Show Management Instructions"
         assert not window.manage_button.has_css_class("destructive-action")
-        assert window.update_button.get_label() == "Update Instructions"
+        assert window.open_button.get_label() == "Open"
         with (
             patch.object(window.service, "prepare") as prepare,
             patch.object(window.service, "prepare_update") as prepare_update,
             patch.object(window, "message") as message,
         ):
             window.manage_button.emit("clicked")
-            window.update_button.emit("clicked")
+            window.check_update(window.detail_app)
             prepare.assert_not_called()
             prepare_update.assert_not_called()
             assert message.call_count == 2
@@ -527,14 +528,14 @@ def activate(app):
         )
         window.show_details(conflict, replace=True)
         assert window.manage_button.get_label() == "Show Management Instructions"
-        assert window.update_button.get_label() == "Update Instructions"
+        assert window.open_button.get_label() == "Open"
         with (
             patch.object(window.service, "prepare") as prepare,
             patch.object(window.service, "prepare_update") as prepare_update,
             patch.object(window, "message"),
         ):
             window.manage_button.emit("clicked")
-            window.update_button.emit("clicked")
+            window.check_update(window.detail_app)
             prepare.assert_not_called()
             prepare_update.assert_not_called()
         window.show_details(original, replace=True)
@@ -557,7 +558,7 @@ def activate(app):
         window._complete(changed[1:], [], [], {})
         assert window.detail_notice.get_revealed()
         assert not window.manage_button.get_sensitive()
-        assert not window.update_button.get_sensitive()
+        assert not window.open_button.get_sensitive()
         assert not window.appearance_group.buttons[0][0].get_sensitive()
         window._complete(examples(), [], [], {})
         window.navigation.pop_to_tag("overview")
@@ -565,7 +566,7 @@ def activate(app):
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
 
     def hover_details_light():
-        for button in (window.update_button, window.manage_button):
+        for button in (window.open_button, window.manage_button):
             button.get_parent().set_state_flags(Gtk.StateFlags.PRELIGHT, False)
             button.set_state_flags(Gtk.StateFlags.PRELIGHT, False)
 
@@ -597,12 +598,123 @@ def activate(app):
 
     def finish_details_hover():
         capture(window, "details-hover-dark.png")
-        for button in (window.update_button, window.manage_button):
+        for button in (window.open_button, window.manage_button):
             button.unset_state_flags(Gtk.StateFlags.PRELIGHT)
             button.get_parent().unset_state_flags(Gtk.StateFlags.PRELIGHT)
             button.grab_focus()
             assert window.get_focus() is button
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+
+    def check_open_actions():
+        records = window.records
+        original = records[0]
+        for source in Source:
+            current = replace(original, source=source)
+            window.records = [current]
+            window.show_details(current, replace=True)
+            assert window.open_button.get_label() == "Open"
+            assert window.open_button.get_parent().get_visible()
+            with (
+                patch("housekeeper.ui.window.Gio.DesktopAppInfo.new_from_filename") as load,
+                patch.object(window.service, "prepare_update") as prepare_update,
+            ):
+                window.open_button.emit("clicked")
+                load.assert_called_once_with(str(current.entries[0].path))
+                args = load.return_value.launch.call_args.args
+                assert args[0] == [] and isinstance(args[1], Gdk.AppLaunchContext)
+                prepare_update.assert_not_called()
+        with (
+            patch("housekeeper.ui.window.Gio.DesktopAppInfo.new_from_filename", return_value=None),
+            patch.object(window, "message") as message,
+        ):
+            window.open_button.emit("clicked")
+            assert message.call_args.args[0] == "Could Not Open App"
+        with (
+            patch("housekeeper.ui.window.Gio.DesktopAppInfo.new_from_filename") as load,
+            patch.object(window, "message") as message,
+        ):
+            load.return_value.launch.side_effect = GLib.Error("Synthetic launch failure")
+            window.open_button.emit("clicked")
+            assert "Synthetic launch failure" in message.call_args.args[1]
+
+        other_entry = replace(
+            original.entries[0], name="Second Launcher", path=Path("/second.desktop")
+        )
+        multiple = replace(original, entries=[original.entries[0], other_entry])
+        window.records = [multiple]
+        window.show_details(multiple, replace=True)
+        with patch("housekeeper.ui.window.Gio.DesktopAppInfo.new_from_filename") as load:
+            window.open_button.emit("clicked")
+            dialog = next(
+                w
+                for w in Gtk.Window.get_toplevels()
+                if isinstance(w, Adw.MessageDialog) and w.get_heading() == "Choose a Launcher"
+            )
+            load.assert_not_called()
+            dialog.get_extra_child().set_selected(1)
+            dialog.response("open")
+            load.assert_called_once_with(str(other_entry.path))
+            load.reset_mock()
+            window.open_button.emit("clicked")
+            dialog = next(
+                w
+                for w in Gtk.Window.get_toplevels()
+                if isinstance(w, Adw.MessageDialog) and w.get_heading() == "Choose a Launcher"
+            )
+            dialog.response("cancel")
+            load.assert_not_called()
+
+        empty = replace(original, entries=[])
+        window.records = [empty]
+        window.show_details(empty, replace=True)
+        assert not window.open_button.get_sensitive()
+        window._end_operation()
+        assert not window.open_button.get_sensitive()
+        window.records = records
+        window.show_details(original, replace=True)
+        close_messages()
+
+        page = window.updates_page
+        saved_items = page.items
+        assert not window.update_badge.get_visible()
+        plan = UpdatePlan(
+            original.key, original.provider, "target", "System", "1", (), "fixture", ""
+        )
+        alias = replace(original, key="another-launcher")
+        page.render((UpdateItem(alias, plan, (alias.name,)),))
+        assert window.update_badge.get_visible()
+        assert window.open_button.get_label() == "Open"
+        assert window.update_badge.get_halign() == Gtk.Align.CENTER
+        assert window.update_badge.get_valign() == Gtk.Align.CENTER
+        unrelated = replace(original, identity="unrelated", metadata={"name": "unrelated"})
+        page.render((UpdateItem(unrelated, plan, (unrelated.name,)),))
+        assert not window.update_badge.get_visible()
+        page.render((UpdateItem(original, plan, (original.name,)),))
+        window.show_details(original, replace=True)
+        assert window.update_badge.get_visible()
+        page.render(())
+        assert not window.update_badge.get_visible()
+        badge_fixture["items"] = saved_items
+        page.render((UpdateItem(original, plan, (original.name,)),))
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+
+    def capture_update_badge():
+        badge = window.update_badge
+        row = badge.get_parent()
+        title = row.get_first_child()
+        assert title.get_next_sibling() is badge
+        bounds = badge.compute_bounds(row)[1]
+        title_bounds = title.compute_bounds(row)[1]
+        assert bounds.get_x() >= title_bounds.get_x() + title_bounds.get_width()
+        assert abs(bounds.get_y() + bounds.get_height() / 2 - row.get_height() / 2) <= 1
+        capture(window, "details-update-badge-light.png")
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+
+    def finish_update_badge():
+        capture(window, "details-update-badge-dark.png")
+        window.updates_page.render(badge_fixture["items"])
+        assert not window.update_badge.get_visible()
+        window.navigation.pop_to_tag("overview")
 
     def check_dark():
         capture(window, "list-dark.png")
@@ -614,13 +726,16 @@ def activate(app):
         window.show_details(window.records[0])
 
     def check_narrow_details():
-        update = window.update_button.compute_bounds(window)[1]
+        update = window.open_button.compute_bounds(window)[1]
         remove = window.manage_button.compute_bounds(window)[1]
         assert update.get_x() >= 0 and update.get_x() + update.get_width() <= window.get_width()
         assert remove.get_x() >= 0 and remove.get_x() + remove.get_width() <= window.get_width()
-        assert remove.get_y() > update.get_y(), "Narrow action buttons should stack"
-        window.update_button.grab_focus()
-        assert window.update_button.has_focus()
+        assert (
+            remove.get_y() >= update.get_y() + update.get_height()
+            or remove.get_x() >= update.get_x() + update.get_width()
+        ), "Action buttons must not overlap"
+        window.open_button.grab_focus()
+        assert window.get_focus() is window.open_button
         capture(window, "details-narrow.png")
         window.navigation.pop_to_tag("overview")
         # Exercise preferences and About against the actual installed API.
@@ -646,13 +761,13 @@ def activate(app):
             completed(UpdateCheckResult(UpdateState.CURRENT))
 
         window.service.prepare_update = check
-        window.update_button.emit("clicked")
+        window.check_update(window.detail_app)
         assert not window.operation_active and window.manage_button.get_sensitive()
         close_messages()
         window.service.prepare_update = lambda _a, _p, _c, failed: failed(
             OperationCancelled("Cancelled")
         )
-        window.update_button.emit("clicked")
+        window.check_update(window.detail_app)
         assert not window.operation_active
         close_messages()
         plan = UpdatePlan(
@@ -677,7 +792,7 @@ def activate(app):
         window.service.prepare_update = lambda _a, _p, completed, _f: completed(
             UpdateCheckResult(UpdateState.AVAILABLE, plan)
         )
-        window.update_button.emit("clicked")
+        window.check_update(window.detail_app)
         assert window.operation_active and not window.manage_button.get_sensitive()
         assert window.confirm_dialog.get_default_response() == "cancel"
         assert window.confirm_dialog.get_body() == "1.0 → 2.0\nPersonal data is kept."
@@ -692,7 +807,7 @@ def activate(app):
         assert window.refresh_pending
         window.confirm_dialog.response("cancel")
         assert not window.operation_active
-        window.update_button.emit("clicked")
+        window.check_update(window.detail_app)
         saved[0]("Stale progress must be ignored", 1, False)
         assert window.confirm_dialog is not None
 
@@ -1534,6 +1649,9 @@ def activate(app):
             scroll_appearance,
             capture_appearance,
             check_details,
+            check_open_actions,
+            capture_update_badge,
+            finish_update_badge,
             check_dark,
             check_narrow,
             check_narrow_details,

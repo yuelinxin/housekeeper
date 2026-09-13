@@ -1,4 +1,21 @@
-# v0.1.13 development validation
+# v0.1.14 development validation
+
+## v0.1.14 application details — September 13, 2026
+
+- Python, Meson, RPM version/release, AppStream, changelog, and installation examples
+  target v0.1.14 / RPM release 1.
+- The Fedora host unit suite passes 512 tests in an isolated D-Bus session; the real
+  dpkg fixture skips because dpkg-query is unavailable. Restricted-sandbox SVG decode
+  failures disappear when the same tests run in the isolated session.
+- GTK smoke passes with synthetic inventory data under Xvfb. It covers Open for all
+  source categories, exact desktop-entry routing, launch failures, multiple-launcher
+  selection and cancellation, and applications without a launcher. No real apps are
+  launched or removed by these UI checks.
+- Available-update badges follow installation identity and update-list changes.
+  Light/dark screenshots verify the badge beside the application name; narrow
+  layouts retain non-overlapping, keyboard-focusable action buttons.
+- Ruff lint and formatting pass. Source icon lookup was checked against installed
+  copies at multiple sizes and scale factors in Adwaita and hicolor.
 
 ## Runtime floor test isolation — September 12, 2026
 

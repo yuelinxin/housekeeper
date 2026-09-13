@@ -104,10 +104,17 @@ are rechecked. Only GIO Trash is used; there is no permanent-delete fallback.
 If the program cannot be moved, its launchers are retained. Partial launcher failure
 is reported individually. This is not a transactional filesystem rollback system.
 
-External management opens a known browser management page with only recognized
-profile arguments, or the Steam library URI. It never edits browser databases or
+External management opens the selected Chrome/Chromium web app with its validated
+app ID and recognized profile arguments, or the Steam library URI. The web app's
+own menu provides the uninstall action. It never edits browser databases or
 reports an external handoff as an uninstall. PWAsForFirefox has explicit instructions
 because its extension manager has no stable cross-profile deep link used by v0.1.
+
+The details page's Open action launches the selected desktop entry through GIO,
+preserving browser profiles, environment settings, terminal requirements, and D-Bus
+activation. Applications with multiple launchers present a choice. Available updates
+appear as an update-symbol badge after the application name, matched by installation identity
+and refreshed with the Updates page's results. Update actions remain on the Updates page.
 
 ## Lifetimes and observation
 

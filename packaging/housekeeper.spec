@@ -1,6 +1,6 @@
 Name:           housekeeper
-Version:        0.1.13
-Release:        2%{?dist}
+Version:        0.1.14
+Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
 URL:            https://github.com/yuelinxin/housekeeper
@@ -68,6 +68,12 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Sun Sep 13 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.14-1
+- Open applications from their desktop entries, with a choice for multiple launchers.
+- Show available updates beside application names and keep update actions on the Updates page.
+- Open the selected Chrome or Chromium web app for management in its own menu.
+- Refresh the application icon and prefer source-tree icons in development builds.
+
 * Sat Sep 12 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.13-2
 - Require the Cairo and other base typelibs needed to import GTK in clean buildroots.
 - Include Flatpak and RPM bindings for the package test suite.

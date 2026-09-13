@@ -406,7 +406,7 @@ class UpdatesPage(Adw.NavigationPage):
             self.checks.append((item, check))
         self.stack.set_visible_child_name("list" if items else "empty")
         self.window.updates_count.set_label(str(len(items)) if items else "")
-        self.window._refresh_update_button()
+        self.window._refresh_update_badge()
         self._selection_changed()
 
     def confirm(self, items):

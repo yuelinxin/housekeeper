@@ -17,8 +17,11 @@ def test_pwa_is_not_browser_package(entry):
     assert app.provider == "chrome"
     assert app.action == Action.CHROME
     assert app.identity == APP_ID
-    assert app.management[-1] == "chrome://apps"
-    assert not any("--app-id" in arg for arg in app.management)
+    assert app.management == (
+        "/opt/google/chrome/google-chrome",
+        "--profile-directory=Default",
+        "--app-id=" + APP_ID,
+    )
 
 
 def test_pwa_profiles_and_user_data_directories_are_distinct(entry):
@@ -36,6 +39,15 @@ def test_pwa_profiles_and_user_data_directories_are_distinct(entry):
         for profile, root in [("Default", "/a"), ("Profile 1", "/a"), ("Default", "/b")]
     ]
     assert len(merge_records(records)) == 3
+    for app, (profile, root) in zip(
+        records, [("Default", "/a"), ("Profile 1", "/a"), ("Default", "/b")], strict=True
+    ):
+        assert app.management == (
+            "/usr/bin/chromium",
+            "--profile-directory=" + profile,
+            "--user-data-dir=" + root,
+            "--app-id=" + APP_ID,
+        )
 
 
 def test_unrecognized_browser_flags_are_not_forwarded(entry):
@@ -49,7 +61,7 @@ def test_unrecognized_browser_flags_are_not_forwarded(entry):
             )
         )
     )
-    assert app.management == ("/usr/bin/chromium", "chrome://apps")
+    assert app.management == ("/usr/bin/chromium", "--app-id=" + APP_ID)
 
 
 def test_browser_itself_remains_native_candidate(entry):

@@ -12,6 +12,7 @@
       <li>Browse applications in a list or an icon grid.</li>
       <li>Sort applications by name, software size, or Last Updated.</li>
       <li>Inspect installation sources, package identities, file locations, and software sizes.</li>
+      <li>Open applications from their details page and see available updates beside their names.</li>
       <li>Identify installed DEB, Pacman, APK, and Snap packages with external management guidance.</li>
       <li>View app icon themes and customize or restore launcher icons.</li>
       <li>See native package source labels matched to the distribution, with guidance for unsupported providers.</li>
@@ -30,6 +31,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.14" date="2026-09-13" type="stable">
+      <description>
+        <p>Open applications directly and simplify application details.</p>
+        <ul>
+          <li>Open applications through their desktop launchers, preserving browser profiles and offering a choice when multiple launchers exist.</li>
+          <li>Show an update symbol beside the application name when an update is available, with update actions on the Updates page.</li>
+          <li>Open the selected Chrome or Chromium web app for management through its own menu.</li>
+          <li>Refresh the Housekeeper icon and show source-tree icons correctly in development builds.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.13" date="2026-09-11" type="development">
       <description>
         <p>Disclose what an update changes before it is applied.</p>

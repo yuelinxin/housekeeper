@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.14 — 2026-09-13
+
+- Open applications directly from their details page, including browser web apps.
+  Desktop launchers retain their profile, environment, terminal, and D-Bus settings;
+  applications with multiple launchers offer a choice.
+- Show available updates beside the application name using the same symbol as the
+  Updates page. Keep update actions on the Updates page and remove update-instruction
+  buttons from application details.
+- Replace the Chrome management-page handoff with Manage in App, opening the selected
+  web app in its original profile so its own menu can handle removal.
+- Refresh the Housekeeper icon with a tightly fitted canvas, smooth roof corners,
+  and a curved smile. Development builds prefer the current source-tree icons over
+  an installed release's icons.
+
 ## 0.1.13 — 2026-09-11
 
 - Report which running programs an update would replace. Package updates apply to the

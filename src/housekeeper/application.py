@@ -58,7 +58,9 @@ def main(argv=None):
                 )
                 icon_dir = os.environ.get("HOUSEKEEPER_ICON_DIR")
                 if icon_dir and Path(icon_dir).is_dir():
-                    Gtk.IconTheme.get_for_display(display).add_search_path(icon_dir)
+                    theme = Gtk.IconTheme.get_for_display(display)
+                    # Prefer build-tree icons over an installed release's copies.
+                    theme.set_search_path([icon_dir, *theme.get_search_path()])
                 window = HousekeeperWindow(self, settings)
             window.present()
 

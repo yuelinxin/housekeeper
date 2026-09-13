@@ -597,7 +597,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 self.detail_notice.set_title(_("This application is no longer in the inventory."))
                 self.detail_notice.set_revealed(True)
                 self.manage_button.set_sensitive(False)
-                self.update_button.set_sensitive(False)
+                self.open_button.set_sensitive(False)
                 self.appearance_group.set_actions_sensitive(False)
             else:
                 if self.detail_app != match:
@@ -739,18 +739,29 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         page.set_child(toolbar)
         hero = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, halign=Gtk.Align.CENTER)
         hero.append(icon_image(app.icon, 96))
+        title_row = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
         title = Gtk.Label(label=app.name, wrap=True, justify=Gtk.Justification.CENTER)
         title.add_css_class("title-1")
-        hero.append(title)
+        title_row.append(title)
+        self.update_badge = Gtk.Image(
+            icon_name="software-update-available-symbolic",
+            pixel_size=16,
+            halign=Gtk.Align.CENTER,
+            valign=Gtk.Align.CENTER,
+            tooltip_text=_("Update Available"),
+        )
+        self.update_badge.add_css_class("update-badge")
+        self.update_badge.update_property([Gtk.AccessibleProperty.LABEL], [_("Update Available")])
+        title_row.append(self.update_badge)
+        self._refresh_update_badge()
+        hero.append(title_row)
         subtitle = Gtk.Label(label=f"{BADGES[app.source.value]} · {app.scope}")
         subtitle.add_css_class("dim-label")
         hero.append(subtitle)
         action_titles = {
             Action.UNINSTALL: _("Uninstall"),
             Action.TRASH: _("Move to Trash"),
-            Action.CHROME: _("Manage in Chrome")
-            if "chromium" not in app.metadata.get("browser", "")
-            else _("Manage in Chromium"),
+            Action.CHROME: _("Manage in App"),
             Action.STEAM: _("Manage in Steam"),
             Action.INSTRUCTIONS: _("Show Management Instructions"),
             Action.NONE: _("Show Management Instructions"),
@@ -765,22 +776,21 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             activate_on_single_click=False,
         )
         actions.add_css_class("detail-actions")
-        self.update_button = Gtk.Button(valign=Gtk.Align.CENTER)
-        self._refresh_update_button()
-        self.update_button.add_css_class("pill")
-        self.update_button.add_css_class("suggested-action")
-        self.update_button.connect("clicked", lambda _b: self.check_update(app))
-        actions.append(self.update_button)
+        self.open_button = Gtk.Button(label=_("Open"), valign=Gtk.Align.CENTER)
+        self.open_button.add_css_class("pill")
+        self.open_button.add_css_class("suggested-action")
+        self.open_button.connect("clicked", lambda _b: self.open_app(app))
+        actions.append(self.open_button)
         self.manage_button = Gtk.Button(label=action_titles[app.action], valign=Gtk.Align.CENTER)
         self.manage_button.add_css_class("pill")
         if app.action in {Action.UNINSTALL, Action.TRASH}:
             self.manage_button.add_css_class("destructive-action")
         self.manage_button.connect("clicked", lambda _b: self.manage(app))
         actions.append(self.manage_button)
-        for button in (self.update_button, self.manage_button):
+        for button in (self.open_button, self.manage_button):
             button.get_parent().set_focusable(False)
         self.manage_button.set_sensitive(not self.operation_active)
-        self.update_button.set_sensitive(not self.operation_active)
+        self.open_button.set_sensitive(not self.operation_active and bool(app.entries))
         hero.append(actions)
         body.append(hero)
         if app.status:
@@ -980,6 +990,67 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         except GLib.Error as error:
             self.message(_("Could Not Open Location"), str(error))
 
+    def open_app(self, app):
+        if self.closed or self.operation_active:
+            return
+        current = next((item for item in self.records if item.key == app.key), None)
+        if current is None:
+            self.message(
+                _("Could Not Open App"), _("This application is no longer in the inventory.")
+            )
+            return
+        entries = list({entry.path: entry for entry in current.entries}.values())
+        if not entries:
+            self.message(_("Could Not Open App"), _("No desktop launcher is available."))
+        elif len(entries) == 1:
+            self._launch_entry(current, entries[0])
+        else:
+            chooser = Gtk.DropDown.new_from_strings(
+                [f"{entry.name} — {entry.desktop_id}" for entry in entries]
+            )
+            dialog = Adw.MessageDialog(
+                transient_for=self,
+                heading=_("Choose a Launcher"),
+                body=_("This application has multiple desktop launchers."),
+                extra_child=chooser,
+            )
+            dialog.add_response("cancel", _("Cancel"))
+            dialog.add_response("open", _("Open"))
+            dialog.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+            dialog.set_default_response("open")
+            dialog.set_close_response("cancel")
+            dialog.connect(
+                "response",
+                lambda _dialog, response: (
+                    self._launch_entry(current, entries[chooser.get_selected()])
+                    if response == "open"
+                    else None
+                ),
+            )
+            dialog.present()
+
+    def _launch_entry(self, app, entry):
+        if self.closed or self.operation_active:
+            return
+        current = next((item for item in self.records if item.key == app.key), None)
+        if current is None or entry not in current.entries:
+            self.message(
+                _("Could Not Open App"),
+                _("The launcher has changed. Refresh the inventory and try again."),
+            )
+            return
+        try:
+            info = Gio.DesktopAppInfo.new_from_filename(str(entry.path))
+            if info is None:
+                self.message(
+                    _("Could Not Open App"), _("The desktop launcher is missing or invalid.")
+                )
+                return
+            context = self.get_display().get_app_launch_context()
+            info.launch([], context)
+        except GLib.Error as error:
+            self.message(_("Could Not Open App"), str(error))
+
     def manage(self, app):
         if self.operation_active:
             return
@@ -995,9 +1066,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         elif app.action == Action.CHROME:
             try:
                 Gio.Subprocess.new(list(app.management), Gio.SubprocessFlags.NONE)
-                self.toast(_("In the browser, open the app menu and choose Uninstall."))
+                self.toast(_("In the web app, open the top-right menu and choose Uninstall."))
             except GLib.Error as error:
-                self.message(_("Could Not Open Browser"), str(error))
+                self.message(_("Could Not Open Web App"), str(error))
         elif app.action == Action.STEAM:
             Gtk.UriLauncher.new(app.management[0]).launch(self, None, self._uri_opened)
             self.toast(_("In Steam, select the game, then Manage → Uninstall."))
@@ -1030,7 +1101,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.operation_serial += 1
         if self.detail_app:
             self.manage_button.set_sensitive(False)
-            self.update_button.set_sensitive(False)
+            self.open_button.set_sensitive(False)
             self.appearance_group.set_actions_sensitive(False)
         return True
 
@@ -1059,24 +1130,19 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         if self.detail_app:
             available = any(app.key == self.detail_app.key for app in self.records)
             self.manage_button.set_sensitive(available)
-            self.update_button.set_sensitive(available)
+            self.open_button.set_sensitive(available and bool(self.detail_app.entries))
             self.appearance_group.set_actions_sensitive(available)
         if self.refresh_pending:
             self._schedule_refresh()
 
-    def _refresh_update_button(self):
+    def _refresh_update_badge(self):
         app = self.detail_app
         if app is None:
             return
-        if app.update_action != UpdateAction.CHECK:
-            title = _("Update Instructions")
-        elif any(
+        available = app.update_action == UpdateAction.CHECK and any(
             installation_key(item.app) == installation_key(app) for item in self.updates_page.items
-        ):
-            title = _("Update")
-        else:
-            title = _("Check for Updates")
-        self.update_button.set_label(title)
+        )
+        self.update_badge.set_visible(available)
 
     def check_update(self, app):
         if self.operation_active:
