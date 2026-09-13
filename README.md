@@ -1,4 +1,4 @@
-# Housekeeper
+# <img src="data/icons/hicolor/scalable/apps/io.github.yuelinxin.housekeeper.svg" alt="" width="32" height="32" align="center"> Housekeeper
 
 A simple, unified app manager for the GNOME desktop. Bring your installed
 applications together in one clean interface to browse, inspect, and manage them.
@@ -8,14 +8,10 @@ from different sources, with update and removal actions where supported. It
 recognizes RPM, DEB, Pacman and APK packages, Flatpak and Snap applications,
 independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam game shortcuts.
 
-![Housekeeper in list view](docs/screenshots/list-light.png)
-
-<details>
-<summary>Grid view</summary>
-
-![Housekeeper in grid view](docs/screenshots/grid-light.png)
-
-</details>
+<p align="center">
+  <img src="docs/screenshots/list-light.png" alt="Housekeeper in list view, light theme" width="49%">
+  <img src="docs/screenshots/grid-dark.png" alt="Housekeeper in grid view, dark theme" width="49%">
+</p>
 
 ## Features
 

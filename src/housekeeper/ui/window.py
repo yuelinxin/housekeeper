@@ -1088,6 +1088,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 help_url="https://pwasforfirefox.filips.si/user-guide/console/"
                 if app.provider == "firefoxpwa"
                 else None,
+                command=app.metadata.get("management_command", ""),
             )
 
     def _begin_operation(self, app, kind):
@@ -1377,8 +1378,26 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.message(title, body)
         self.refresh()
 
-    def message(self, heading, body, help_url=None):
+    def message(self, heading, body, help_url=None, command=None):
         dialog = Adw.MessageDialog(transient_for=self, heading=heading, body=body)
+        if command:
+            row = Gtk.Box(spacing=8)
+            entry = Gtk.Entry(
+                text=command, editable=False, hexpand=True, width_chars=min(len(command), 36)
+            )
+            entry.add_css_class("monospace")
+            entry.update_property([Gtk.AccessibleProperty.LABEL], [_("Command")])
+            row.append(entry)
+            copy = Gtk.Button(icon_name="edit-copy-symbolic", tooltip_text=_("Copy Command"))
+
+            def copy_command(button):
+                self._copy(command)
+                button.set_icon_name("object-select-symbolic")
+                button.set_tooltip_text(_("Copied"))
+
+            copy.connect("clicked", copy_command)
+            row.append(copy)
+            dialog.set_extra_child(row)
         dialog.add_response("close", _("Close"))
         dialog.set_close_response("close")
         if help_url:

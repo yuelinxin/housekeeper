@@ -6,7 +6,8 @@
   font-size: 0.85em;
 }
 .app-row { padding: 12px; }
-.app-tile { padding: 18px 10px; border-radius: 12px; }
+/* Inset 3px from the theme's 9px grid child corners. */
+.app-tile { padding: 18px 10px; border-radius: 6px; }
 .inventory-grid > child:hover .app-tile,
 .inventory-list > row:hover {
   background: alpha(currentColor, 0.04);

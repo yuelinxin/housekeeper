@@ -53,6 +53,13 @@ def host_support(os_release=None, markers=None):
     return True, ""
 
 
+def self_removal_instructions():
+    return _(
+        "Housekeeper cannot uninstall itself from within the app. "
+        "Close Housekeeper and use your system package manager to remove it."
+    )
+
+
 def manages_context(app):
     """PackageKit operates on the host database, never a user-selected RPM database."""
     if app.installation is None:
@@ -301,7 +308,7 @@ class RpmProvider:
         from housekeeper.models import ManagementError, RemovalPlan
 
         if app.metadata.get("name") == "housekeeper":
-            raise ManagementError("Use your system package manager to remove Housekeeper.")
+            raise ManagementError(self_removal_instructions())
         client, pk, _gio, _glib = self._client()
         result = client.resolve(
             1 << int(pk.FilterEnum.INSTALLED), [app.metadata["name"]], None, lambda *_: None, None

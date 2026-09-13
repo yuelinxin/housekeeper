@@ -114,7 +114,7 @@ def installation_record(app):
 
 
 def assign_actions(app, capabilities):
-    from housekeeper.providers.rpm import host_support, manages_context
+    from housekeeper.providers.rpm import host_support, manages_context, self_removal_instructions
 
     app.action = Action.NONE if app.source not in {Source.WEB, Source.STEAM} else app.action
     verified = app.attribution is not None and app.attribution.state == AttributionState.CONFIRMED
@@ -134,4 +134,9 @@ def assign_actions(app, capabilities):
             ):
                 app.action = Action.NONE
                 app.metadata["management_reason"] = reason or "Use your system package manager."
+            if app.metadata.get("name") == "housekeeper":
+                app.metadata["management_reason"] = self_removal_instructions()
+                app.metadata["management_command"] = (
+                    "sudo dnf remove housekeeper" if supported and manages_context(app) else ""
+                )
     assign_update_action(app, capabilities)
