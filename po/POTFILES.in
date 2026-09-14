@@ -10,6 +10,7 @@ src/housekeeper/providers/rpm.py
 src/housekeeper/providers/deb.py
 src/housekeeper/providers/packages.py
 src/housekeeper/providers/flatpak.py
+src/housekeeper/providers/flatpak_data.py
 data/window.ui
 data/io.github.yuelinxin.housekeeper.desktop
 data/io.github.yuelinxin.housekeeper.metainfo.xml

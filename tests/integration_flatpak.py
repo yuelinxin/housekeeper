@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 from housekeeper.models import Action, ManagementError, Outcome, Source
@@ -58,6 +59,24 @@ run(
 data = home / ".var/app/org.example.HousekeeperFixture/keep-me"
 data.parent.mkdir(parents=True, exist_ok=True)
 data.write_text("Personal data must survive uninstall.")
+run(
+    "flatpak",
+    "permission-set",
+    "housekeeper-test",
+    "fixture",
+    "org.example.HousekeeperFixture",
+    "yes",
+)
+run("flatpak", "permission-set", "housekeeper-test", "fixture", "org.example.Unrelated", "yes")
+
+
+def permissions(app_id):
+    return subprocess.check_output(["flatpak", "permission-show", app_id], text=True)
+
+
+saved_permissions = permissions("org.example.HousekeeperFixture")
+assert saved_permissions.strip()
+unrelated_permissions = permissions("org.example.Unrelated")
 index = FlatpakIndex()
 app = next(a for a in index.apps if a.metadata["app_id"] == "org.example.HousekeeperFixture")
 assert app.scope == "User"
@@ -118,8 +137,39 @@ assert any(
 result = provider.execute(app, plan, lambda *_: None)
 assert result.outcome == Outcome.SUCCESS
 assert data.read_text() == "Personal data must survive uninstall."
+assert permissions("org.example.HousekeeperFixture") == saved_permissions
 assert all(
     a.identity != app.identity or a.metadata["installation"] != app.metadata["installation"]
     for a in FlatpakIndex().apps
 )
 print("PASS: local Flatpak preview, uninstall, and data preservation")
+
+# Reinstall only the fixture and exercise the explicit delete-data choice.
+run(
+    "flatpak",
+    "--user",
+    "install",
+    "-y",
+    "--no-deps",
+    "--no-related",
+    "fixture",
+    "org.example.HousekeeperFixture",
+)
+app = next(
+    a for a in FlatpakIndex().apps if a.metadata["app_id"] == "org.example.HousekeeperFixture"
+)
+unrelated = home / ".var/app/org.example.Unrelated/keep-me"
+unrelated.parent.mkdir(parents=True, exist_ok=True)
+unrelated.write_text("Unrelated data must survive.")
+(data.parent / "external").symlink_to(unrelated.parent, target_is_directory=True)
+provider = FlatpakProvider()
+plan = replace(provider.prepare(app, [app]), delete_user_data=True)
+assert data.exists(), "Preview deleted data"
+result = provider.execute(app, plan, lambda *_: None)
+assert result.outcome == Outcome.SUCCESS, result
+assert not data.parent.exists()
+assert unrelated.read_text() == "Unrelated data must survive."
+assert not permissions("org.example.HousekeeperFixture").strip()
+assert permissions("org.example.Unrelated") == unrelated_permissions
+assert all(a.identity != app.identity for a in FlatpakIndex().apps)
+print("PASS: explicit Flatpak data deletion, permission reset, and unrelated data preservation")

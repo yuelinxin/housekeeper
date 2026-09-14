@@ -1,4 +1,22 @@
-# v0.1.14 development validation
+# v0.1.15 development validation
+
+## v0.1.15 Flatpak data removal — September 13, 2026
+
+- Python, Meson, RPM, AppStream and changelog metadata target v0.1.15 / RPM release 1.
+- The Fedora 44 offline container passes 530 unit tests, with one real dpkg fixture
+  skipped because dpkg-query is unavailable. Ruff lint/format and strict mypy pass.
+- Real Flatpak fixtures on Fedora 43 and 44 verify default data preservation,
+  explicit deletion, and preservation of unrelated data and symlink targets.
+  The Fedora 43 fixture also seeds permissions and verifies that default uninstall
+  preserves them and explicit deletion resets only the selected application's permissions.
+- GTK smoke passes on Fedora 43 and 44, covering the default Keep User Data switch,
+  both choices, cancellation, and omission of that control for other providers.
+  The rendered confirmation was inspected at its compact width.
+- The Ubuntu 24.04 runtime-floor container passes 507 unit tests, with 24 tests
+  skipped for absent optional Flatpak/RPM bindings. GTK smoke and five fresh SVG
+  icon startups also pass without those providers.
+- User-data size scanning is intentionally deferred. Storage still reports only
+  software size. No personal installed applications were removed during validation.
 
 ## v0.1.14 application details — September 13, 2026
 

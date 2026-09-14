@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.14
+Version:        0.1.15
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -68,6 +68,10 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Sun Sep 13 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.15-1
+- Let users keep or delete Flatpak app data and permissions during uninstall.
+- Preserve data by default and report incomplete cleanup separately.
+
 * Sun Sep 13 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.14-1
 - Open applications from their desktop entries, with a choice for multiple launchers.
 - Show available updates beside application names and keep update actions on the Updates page.

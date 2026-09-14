@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.15 — 2026-09-13
+
+- Offer a Keep User Data option when uninstalling a Flatpak, enabled by default.
+  Turning it off deletes this user's app data and resets Flatpak permissions after
+  successful uninstall; incomplete cleanup is reported separately.
+
 ## 0.1.14 — 2026-09-13
 
 - Open applications directly from their details page, including browser web apps.

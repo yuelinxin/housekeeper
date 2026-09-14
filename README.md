@@ -24,14 +24,16 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 - Inspect versions, file locations, installation scope, and hidden entries.
 - Open apps from their details page and see available updates beside their names.
 - Customize launcher icons and restore the originals.
-- Preview RPM and Flatpak updates and removal where supported, preserving personal data.
+- Preview RPM and Flatpak updates and removal where supported, preserving personal data by default.
+- Choose whether to keep or delete user data when uninstalling a Flatpak app.
 - Choose manual or on-entry update checks, daily or weekly, for RPM and Flatpak.
 - Move eligible AppImages to Trash and open external managers for web apps and Steam games.
 
 ## Current support
 
-Housekeeper manages installed desktop applications. It does not install new apps,
-perform system upgrades, or clean application data. Software sizes exclude shared
+Housekeeper manages installed desktop applications. It does not install new apps
+or perform system upgrades. Flatpak removal can delete the current user's app data
+and permissions when explicitly selected. Software sizes exclude shared
 runtimes and dependencies; unavailable sizes and update dates stay unknown.
 
 Management support varies by source. DEB, Pacman, APK, and Snap currently provide

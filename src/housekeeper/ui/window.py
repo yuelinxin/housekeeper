@@ -2,6 +2,7 @@
 
 import logging
 import shlex
+from dataclasses import replace
 from pathlib import Path
 
 import gi
@@ -1214,6 +1215,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             modal=True,
         )
         self.confirm_dialog = dialog
+        keep_data = None
         if update:
             names = grouped_names(self.records, app)
             configure_update_confirmation(dialog, (UpdateItem(app, plan, names),))
@@ -1235,7 +1237,25 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 propagate_natural_height=True,
                 hscrollbar_policy=Gtk.PolicyType.NEVER,
             )
-            dialog.set_extra_child(scroll)
+            if plan.provider == "flatpak":
+                content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+                content.append(scroll)
+                group = Adw.PreferencesGroup()
+                keep_data = Adw.SwitchRow(
+                    title=_("Keep User Data"),
+                    subtitle=_(
+                        "Keep settings, files, and cache for reinstalling. Turning this off "
+                        "permanently deletes this user's Flatpak app data and resets permissions "
+                        "for all installations and branches of this app. Files outside its "
+                        "Flatpak data directory are kept."
+                    ),
+                    active=True,
+                )
+                group.add(keep_data)
+                content.append(group)
+                dialog.set_extra_child(content)
+            else:
+                dialog.set_extra_child(scroll)
         dialog.add_response("cancel", _("Cancel"))
         response_id = "update" if update else "remove"
         dialog.add_response(
@@ -1254,7 +1274,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         def response(_dialog, result):
             self.confirm_dialog = None
             if result == response_id:
-                self._execute(app, plan, update=update)
+                selected_plan = (
+                    replace(plan, delete_user_data=not keep_data.get_active())
+                    if keep_data is not None
+                    else plan
+                )
+                self._execute(app, selected_plan, update=update)
             else:
                 self._end_operation()
 

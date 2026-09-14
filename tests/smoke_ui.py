@@ -39,6 +39,7 @@ from housekeeper.models import (
     OperationResult,
     Outcome,
     ProviderCapabilities,
+    RemovalPlan,
     Source,
     UpdateAction,
     UpdateChange,
@@ -579,6 +580,57 @@ def activate(app):
 
     def capture_storage():
         capture(window, "storage-light.png")
+
+    def check_flatpak_removal_options():
+        record = next(record for record in window.records if record.provider == "flatpak")
+        plan = RemovalPlan(
+            record.key,
+            "flatpak",
+            record.identity,
+            (record.name,),
+            "Shared runtimes are kept.",
+            "fixture",
+        )
+        for keep in (True, False):
+            assert window._begin_operation(record, "remove")
+            window._confirm(record, plan)
+            dialog = window.confirm_dialog
+            assert dialog.get_default_response() == "cancel"
+            switches = []
+
+            def find_switch(widget, switches=switches):
+                if isinstance(widget, Adw.SwitchRow):
+                    switches.append(widget)
+                child = widget.get_first_child()
+                while child:
+                    find_switch(child, switches)
+                    child = child.get_next_sibling()
+
+            find_switch(dialog.get_extra_child())
+            assert len(switches) == 1 and switches[0].get_active()
+            switches[0].set_active(keep)
+            with patch.object(window, "_execute") as execute:
+                dialog.response("remove")
+            selected = execute.call_args.args[1]
+            assert selected.delete_user_data == (not keep)
+            assert not plan.delete_user_data
+            window._end_operation()
+        assert window._begin_operation(record, "remove")
+        window._confirm(record, plan)
+
+    def capture_flatpak_removal():
+        capture(window.confirm_dialog, "flatpak-removal.png")
+        with patch.object(window, "_execute") as execute:
+            window.confirm_dialog.response("cancel")
+        execute.assert_not_called()
+        record = next(record for record in window.records if record.provider == "rpm")
+        plan = RemovalPlan(
+            record.key, "rpm", record.identity, (record.name,), "Remove app.", "fixture"
+        )
+        assert window._begin_operation(record, "remove")
+        window._confirm(record, plan)
+        assert isinstance(window.confirm_dialog.get_extra_child(), Gtk.ScrolledWindow)
+        window.confirm_dialog.response("cancel")
 
     def scroll_appearance():
         group = window.appearance_group
@@ -1649,6 +1701,8 @@ def activate(app):
             scroll_appearance,
             capture_appearance,
             check_details,
+            check_flatpak_removal_options,
+            capture_flatpak_removal,
             check_open_actions,
             capture_update_badge,
             finish_update_badge,

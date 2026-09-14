@@ -162,7 +162,7 @@ Local build outputs use the following directories:
 - `dist/sources/`: source archives produced by `build-aux/source_archive.py`.
 - `dist/copr/`: current RPM and SRPM packages. Upload the `.src.rpm` file to COPR;
   install the `.noarch.rpm` matching your Fedora release. The validated packaging
-  revision is currently `0.1.14-1` for Fedora 43 and 44.
+  revision targets `0.1.15-1` for Fedora 43 and 44.
 - `dist/archive/`: older packages and source archives, retained for reference.
 - `work/logs/` and `work/screenshots/`: local diagnostics and current UI captures.
 - `work/archive/`: historical UI captures and investigations. `work/containers/`
@@ -203,7 +203,12 @@ an allowed removal, and denied authorization. Otherwise it verifies that the fix
 remains installed and prints an explicit limitation; it does not claim successful
 removal or authorization coverage. Its Polkit rule exists only in the disposable container. A local
 Flatpak repository supplies a tiny test app, so removal needs no downloaded runtime.
-The harness verifies that application data survives uninstall. A temporary AppImage
+The harness verifies the default data-preserving uninstall, then reinstalls the
+fixture and verifies explicit data deletion, permission reset, and preservation
+of unrelated data and symlink targets. `test_flatpak_data.py` covers malformed IDs,
+redirected parents, symlink swaps, cancellation, stale plans, failed uninstalls,
+missing CLI support, and partial cleanup results. GTK smoke verifies both choices,
+default preservation, cancellation, and omission for other providers. A temporary AppImage
 and launcher exercise the real GIO Trash implementation and preservation of unrelated
 application data. See [the validation record](validation.md) for observed results.
 
@@ -271,7 +276,7 @@ assets before uploading the SRPM, so it also works with a private GitHub reposit
 The uploaded source and resulting packages are distributed through the COPR project.
 
 For an existing release or a missed event, open **Actions → Publish to COPR → Run
-workflow** on the default branch and enter its tag (for example `v0.1.14`). The
+workflow** on the default branch and enter its tag (for example `v0.1.15`). The
 release must already be published and contain the validated SRPMs and `SHA256SUMS`.
 A release containing only GitHub's automatic source ZIP/tarball will fail with an
 explanation. Keep just one RPM revision per release; replace superseded RPM assets

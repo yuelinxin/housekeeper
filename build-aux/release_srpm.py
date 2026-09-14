@@ -12,7 +12,7 @@ from pathlib import Path
 
 def select_srpm(release, tag):
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
-        raise ValueError("Expected a stable release tag such as v0.1.14")
+        raise ValueError("Expected a stable release tag such as v0.1.15")
     if release.get("tagName") != tag:
         raise ValueError("Release tag does not match the requested tag")
     if release.get("isDraft", True) or release.get("isPrerelease", True):

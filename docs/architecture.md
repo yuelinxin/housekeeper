@@ -93,7 +93,19 @@ Housekeeper cannot remove itself through its own UI.
 Flatpak uses `Flatpak.Transaction`. Preparation resolves the transaction and returns
 false from `ready`, before any uninstall. Execution compares the installation,
 installed commit, and operation list at the same signal. Related refs and unused
-runtime cleanup are disabled for version 0.1. Personal data is preserved.
+runtime cleanup are disabled. The confirmation defaults to keeping personal data.
+An explicit choice to delete data is carried in the immutable removal plan and
+applies only after successful uninstall. Flatpak shares the current user's
+`~/.var/app/<app-id>` across installations and branches; the dialog discloses this.
+libflatpak has no delete-data transaction option, and the CLI cannot delete a
+specified app's data after its ref is uninstalled. Housekeeper therefore removes
+only that app ID's data directory using directory descriptors without following
+symlinks, then calls `flatpak permission-reset` for that ID, matching the CLI's
+`--delete-data` behavior. Cleanup failures report a partial result with the
+application uninstall recorded as complete. Files outside that directory remain.
+
+References: [Flatpak uninstall implementation](https://github.com/flatpak/flatpak/blob/main/app/flatpak-builtins-uninstall.c),
+[Flatpak data directories](https://docs.flatpak.org/en/latest/conventions.html).
 
 AppImage removal requires exact regular files inside the user's home, unambiguous
 direct launchers, and negative package-ownership evidence (or explicit absence of

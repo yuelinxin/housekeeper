@@ -223,6 +223,7 @@ class RemovalPlan:
     instance_id: str = ""
     target_id: str = ""
     evidence_digest: str = ""
+    delete_user_data: bool = False
 
 
 @dataclass(frozen=True)

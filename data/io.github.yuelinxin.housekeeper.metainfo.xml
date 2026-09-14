@@ -22,7 +22,7 @@
       <li>Choose manual or on-entry update checks, daily or weekly intervals, and participating RPM and Flatpak sources.</li>
       <li>Find browser and Steam management instructions.</li>
     </ul>
-    <p>System package removal requires a compatible PackageKit backend and a verified removal preview. Unsupported operations provide manual management guidance. Other sources remain available when their integration is installed. Personal application data is kept.</p>
+    <p>System package removal requires a compatible PackageKit backend and a verified removal preview. Unsupported operations provide manual management guidance. Other sources remain available when their integration is installed. Personal application data is kept by default; Flatpak removal can also delete the current user's app data and permissions.</p>
   </description>
   <launchable type="desktop-id">io.github.yuelinxin.housekeeper.desktop</launchable>
   <url type="homepage">https://github.com/yuelinxin/housekeeper</url>
@@ -31,6 +31,16 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.15" date="2026-09-13" type="stable">
+      <description>
+        <p>Choose whether to keep user data when uninstalling a Flatpak application.</p>
+        <ul>
+          <li>Keep settings, files, cache, and permissions by default, or explicitly delete them after successful uninstall.</li>
+          <li>Explain that user data is shared across the application's Flatpak installations and branches.</li>
+          <li>Report incomplete data or permission cleanup separately from a successful uninstall.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.14" date="2026-09-13" type="stable">
       <description>
         <p>Open applications directly and simplify application details.</p>

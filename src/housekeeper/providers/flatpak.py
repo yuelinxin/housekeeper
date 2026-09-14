@@ -317,7 +317,7 @@ class FlatpakProvider:
                     or {app.name}
                 )
             ),
-            "This removes this installation of the application. User data and shared runtimes are kept.",
+            _("This removes this installation of the application. Shared runtimes are kept."),
             digest(
                 app.metadata["installation"],
                 commit,
@@ -331,14 +331,23 @@ class FlatpakProvider:
         from gi.repository import Gio
 
         check_binding(app, plan)
+        if plan.app_key != app.key or plan.provider != "flatpak" or plan.target != app.identity:
+            raise ManagementError(_("The removal plan belongs to another application."))
         self.cancel = Gio.Cancellable()
         if self.cancel_requested:
             self.cancel.cancel()
             return OperationResult(Outcome.CANCELLED, "The Flatpak removal was cancelled.")
+        cleanup = None
+        if plan.delete_user_data:
+            from housekeeper.providers.flatpak_data import cleanup_command
+
+            cleanup = cleanup_command(app)
         _fp, transaction, commit = self._transaction(app)
         mismatch = []
+        accepted = False
 
         def ready(tx):
+            nonlocal accepted
             if self.cancel.is_cancelled():
                 return False
             fingerprint = digest(
@@ -350,6 +359,7 @@ class FlatpakProvider:
             if fingerprint != plan.fingerprint:
                 mismatch.append(True)
                 return False
+            accepted = True
             return True
 
         def started(_tx, _operation, operation_progress):
@@ -363,7 +373,9 @@ class FlatpakProvider:
         transaction.connect("ready", ready)
         transaction.connect("new-operation", started)
         try:
-            transaction.run(self.cancel)
+            success = transaction.run(self.cancel)
+            if success is False or not accepted:
+                raise ManagementError(_("The Flatpak removal could not be completed."))
         except Exception:
             if mismatch:
                 raise ManagementError(
@@ -372,6 +384,26 @@ class FlatpakProvider:
             if self.cancel.is_cancelled():
                 return OperationResult(Outcome.CANCELLED, "The Flatpak removal was cancelled.")
             raise
+        if cleanup is not None:
+            from housekeeper.providers.flatpak_data import delete_user_data
+
+            progress(_("Deleting Flatpak user data"), None, False)
+            try:
+                delete_user_data(app, cleanup)
+            except Exception as error:
+                return OperationResult(
+                    Outcome.PARTIAL,
+                    _(
+                        "The application was uninstalled, but its user data or permissions could not be fully deleted."
+                    ),
+                    (plan.target,),
+                    (str(error),),
+                )
+            return OperationResult(
+                Outcome.SUCCESS,
+                _("The Flatpak application and its user data were removed."),
+                (plan.target,),
+            )
         return OperationResult(
             Outcome.SUCCESS, "The Flatpak application was uninstalled.", (plan.target,)
         )
