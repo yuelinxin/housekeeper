@@ -1,4 +1,4 @@
-# <img src="data/icons/hicolor/scalable/apps/io.github.yuelinxin.housekeeper.svg" alt="" width="32" height="32" align="center"> Housekeeper
+# <img src="data/icons/hicolor/scalable/apps/io.github.yuelinxin.housekeeper.svg" alt="" width="32" height="32" align="absmiddle"> Housekeeper
 
 [![Latest release](https://img.shields.io/github/v/release/yuelinxin/housekeeper)](https://github.com/yuelinxin/housekeeper/releases/latest)
 [![COPR](https://img.shields.io/badge/COPR-yuelinxin%2Fhousekeeper-blue?logo=fedora)](https://copr.fedorainfracloud.org/coprs/yuelinxin/housekeeper/)
