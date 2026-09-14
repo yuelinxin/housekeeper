@@ -1,5 +1,9 @@
 # <img src="data/icons/hicolor/scalable/apps/io.github.yuelinxin.housekeeper.svg" alt="" width="32" height="32" align="center"> Housekeeper
 
+[![Latest release](https://img.shields.io/github/v/release/yuelinxin/housekeeper)](https://github.com/yuelinxin/housekeeper/releases/latest)
+[![COPR](https://img.shields.io/badge/COPR-yuelinxin%2Fhousekeeper-blue?logo=fedora)](https://copr.fedorainfracloud.org/coprs/yuelinxin/housekeeper/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+
 A simple, unified app manager for the GNOME desktop. Bring your installed
 applications together in one clean interface to browse, inspect, and manage them.
 
@@ -43,13 +47,16 @@ Fedora backends; Housekeeper provides guidance instead. See
 
 ## Install on Fedora
 
-Install a downloaded RPM matching your Fedora release:
+On Fedora 43 or 44, enable the [COPR repository](https://copr.fedorainfracloud.org/coprs/yuelinxin/housekeeper/)
+and install Housekeeper:
 
 ```sh
-sudo dnf install ./housekeeper-0.1.14-1.fc44.noarch.rpm
+sudo dnf copr enable yuelinxin/housekeeper
+sudo dnf install housekeeper
 ```
 
-Release packages do not configure an automatic update repository.
+New releases are available through normal system updates, or run
+`sudo dnf upgrade housekeeper` to update Housekeeper directly.
 To uninstall Housekeeper, run `sudo dnf remove housekeeper`.
 
 ## Build and run
