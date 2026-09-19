@@ -130,10 +130,15 @@ and refreshed with the Updates page's results. Update actions remain on the Upda
 
 ## Lifetimes and observation
 
-Directory and Flatpak monitors are active only while the window is open. Events are
-debounced, and returning to the active window schedules a refresh. A pending refresh
-runs after an operation completes. Closing during an active operation keeps the
-window alive and explains that the task must finish or be safely cancelled.
+Directory and Flatpak monitors are active only while the window is open. Events and
+window activation coalesce into a single automatic request 30 seconds later, which
+waits for a five-second quiet period so a package transaction is never read halfway
+through, and then for a five-minute cooldown after the last successful scan. A failed
+scan takes a one-minute cooldown instead, so a momentarily unavailable backend is
+retried rather than left for five minutes. Manual refresh bypasses both and cancels a
+pending automatic request. A pending refresh runs after an operation completes. Closing
+during an active operation keeps the window alive and explains that the task must
+finish or be safely cancelled.
 
 Settings cover window geometry, view mode, sort order, hidden-entry visibility,
 and update-check mode, interval and participating sources.
@@ -262,9 +267,18 @@ refuses the update rather than implying that nothing changed.
 The window keeps both actions disabled through preparation, confirmation, and
 execution. Callback tokens prevent completed operations from updating a later task.
 The single service worker serializes checks, scans, and mutations and restores state
-even when provider creation or task submission fails. Results are verified against
-installed versions or commits; partial changes are reported without claiming rollback.
-Every execution outcome refreshes inventory. No automatic restart is performed.
+even when provider creation or task submission fails. A background scan blocks nothing
+the user asks for: details, launching, update checks and management requests all remain
+available, and a management request submitted during a scan queues on that worker and
+runs against the inventory the scan published rather than the one it replaced. Only a
+second concurrent management operation is refused. While a request is queued its task
+dialog says it is waiting for the inventory and keeps Cancel enabled, because a
+cancellation asked for before the operation starts withdraws it instead of starting it.
+An inventory that arrives mid-operation does not prune the Updates list or call it
+stale; that reconciliation is replayed against the operation's own result once it
+ends. Results are verified against installed versions or commits; partial changes are
+reported without claiming rollback. Every execution outcome refreshes inventory. No
+automatic restart is performed.
 
 ## Updates page and batches
 
@@ -285,7 +299,12 @@ libadwaita semantic colors rather than fixed hues, so light, dark and a custom a
 preference stay legible. A centered
 disclosure button toggles full-width Details containing the operation
 list and version strings, dependency/source information, installation/target context, download
-estimate and authorization guidance. Both dialogs still pass the original plans
+estimate and authorization guidance, with the operation list counting its entries and
+naming any newly installed package before listing them. The removal confirmation uses
+the same disclosure for the exact targets of `RemovalPlan.affected` — files to be moved
+to Trash, or the application entries a package removal takes with it — and for its
+installation/target context, keeping the visible dialog to the consequence and the
+Flatpak user-data switch. Both dialogs still pass the original plans
 to execution, with Cancel as the default response.
 
 The Updates navigation row stays below the scrollable source list. In the default

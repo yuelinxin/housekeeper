@@ -3,43 +3,8 @@
 from gi.repository import GLib, Gtk, Pango
 
 from housekeeper.i18n import _, ngettext
+from housekeeper.ui.disclosure import DetailsDisclosure, details_label
 from housekeeper.updates import authorization_notice
-
-
-class UpdateDetails(Gtk.Box):
-    """A centered disclosure control with independently expanding transaction text."""
-
-    def __init__(self, preview):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
-        self.preview = preview
-        self.toggle = Gtk.ToggleButton(halign=Gtk.Align.CENTER)
-        self.toggle.add_css_class("flat")
-        title = Gtk.Box(spacing=4)
-        self.arrow = Gtk.Image(icon_name="pan-end-symbolic")
-        title.append(self.arrow)
-        title.append(Gtk.Label(label=_("Details")))
-        self.toggle.set_child(title)
-        self.revealer = Gtk.Revealer(
-            transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
-            transition_duration=150,
-            child=Gtk.ScrolledWindow(
-                child=preview,
-                max_content_height=240,
-                propagate_natural_height=True,
-                hscrollbar_policy=Gtk.PolicyType.NEVER,
-            ),
-        )
-        self.append(self.toggle)
-        self.append(self.revealer)
-        self.toggle.connect("toggled", self._toggled)
-        self._toggled()
-
-    def _toggled(self, *_args):
-        expanded = self.toggle.get_active()
-        self.arrow.set_from_icon_name("pan-down-symbolic" if expanded else "pan-end-symbolic")
-        self.revealer.set_reveal_child(expanded)
-        # EXPANDED is a tristate GTK reads as an int; a Python bool fails its getter.
-        self.toggle.update_state([Gtk.AccessibleState.EXPANDED], [1 if expanded else 0])
 
 
 def version_change(item):
@@ -57,7 +22,7 @@ def version_change(item):
         return _("New version available")
     old, new = primary.current_version, primary.target_version
     if app.provider == "rpm":
-        # Keep packaging revisions in Details unless they are the only version change.
+        # Show packaging revisions only when they are the only version change.
         versions = tuple(value.split(":", 1)[-1].rsplit("-", 1)[0] for value in (old, new))
         if versions[0] != versions[1]:
             old, new = versions
@@ -73,6 +38,29 @@ def listed(paths, limit=10):
     if remaining <= 0:
         return shown
     return shown + "\n" + ngettext("and %d more", "and %d more", remaining) % remaining
+
+
+def changes_text(changes):
+    """Count what the transaction does before naming it; a new install is never implied."""
+    installs = tuple(change for change in changes if change.operation == "install")
+    heading = (
+        ngettext(
+            "%(total)d change, %(new)d newly installed:",
+            "%(total)d changes, %(new)d newly installed:",
+            len(changes),
+        )
+        % {"total": len(changes), "new": len(installs)}
+        if installs
+        else ngettext("%d change:", "%d changes:", len(changes)) % len(changes)
+    )
+    entries = [
+        (_("Install %s") if change.operation == "install" else _("Update %s")) % change.identity
+        + "\n"
+        + f"{change.current_version or _('Not installed')} → {change.target_version}"
+        + f" · {change.source}"
+        for change in changes
+    ]
+    return heading + "\n" + listed(entries, limit=20)
 
 
 def permission_text(items):
@@ -214,33 +202,23 @@ def configure_update_confirmation(dialog, items):
         lines.append(notice)
     for item in items:
         app, plan = item.app, item.plan
-        lines.append(f"{app.name} · {app.scope}\n{plan.message}")
         installation = app.installation.context if app.installation else plan.installation
-        lines.append(_("Installation: %s") % installation)
-        lines.append(_("Target: %s") % (app.target.value if app.target else plan.target))
-        for change in plan.changes:
-            operation = _("Install") if change.operation == "install" else _("Update")
-            lines.append(
-                f"{operation}: {change.identity}\n"
-                f"{change.current_version or _('Not installed')} → {change.target_version}\n"
-                f"{change.source}"
-            )
+        target = app.target.value if app.target else plan.target
+        lines.append(
+            f"{app.name} · {app.scope}\n{plan.message}\n"
+            + _("Installation: %s") % installation
+            + "\n"
+            + _("Target: %s") % target
+        )
         if plan.download_size is not None:
             lines.append(_("Estimated download: %s") % GLib.format_size(plan.download_size))
+        if plan.changes:
+            lines.append(changes_text(plan.changes))
         for heading, paths in (
             (_("Running now:"), plan.running),
             (_("Replaced files in use:"), plan.in_use),
         ):
             if paths:
                 lines.append(heading + "\n" + listed(paths))
-    preview = Gtk.Label(
-        label="\n\n".join(lines),
-        wrap=True,
-        wrap_mode=Pango.WrapMode.WORD_CHAR,
-        max_width_chars=48,
-        selectable=True,
-        xalign=0,
-        margin_top=8,
-    )
-    content.append(UpdateDetails(preview))
+    content.append(DetailsDisclosure(details_label("\n\n".join(lines))))
     dialog.set_extra_child(content)

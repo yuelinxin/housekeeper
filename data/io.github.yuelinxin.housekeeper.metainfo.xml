@@ -31,6 +31,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.16" date="2026-09-18" type="stable">
+      <description>
+        <p>Keep the window responsive while the application inventory refreshes.</p>
+        <ul>
+          <li>Open details, launch applications, check for updates, and start removals or updates during a background scan; the request runs against the inventory that scan publishes.</li>
+          <li>Offer a working Cancel while a request waits for a scan, and withdraw it without holding the window.</li>
+          <li>Coalesce automatic refreshes, let package transactions finish writing first, and refresh at most once every five minutes.</li>
+          <li>Keep the exact removal targets and the full update transaction in each confirmation's Details section.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.15" date="2026-09-13" type="stable">
       <description>
         <p>Choose whether to keep user data when uninstalling a Flatpak application.</p>

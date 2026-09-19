@@ -1,6 +1,7 @@
 """Serialized operation lifecycle, including submission and provider failures."""
 
 from concurrent.futures import Future
+from dataclasses import replace
 from types import SimpleNamespace as NS
 
 import pytest
@@ -9,6 +10,7 @@ from housekeeper.models import (
     AppRecord,
     ManagementError,
     OperationCancelled,
+    OperationResult,
     Outcome,
     UpdateCheckResult,
     UpdateState,
@@ -30,6 +32,8 @@ class Executor:
 
     def finish(self):
         future, fn, args = self.pending.pop(0)
+        if future.cancelled():
+            return
         try:
             value = fn(*args)
         except Exception as error:
@@ -117,16 +121,17 @@ def test_check_cancel_reaches_active_provider(service):
     value, provider = service
     cancelled, errors = [], []
     provider.request_cancel = lambda: cancelled.append(True)
-
-    def prepare(*_a):
-        assert cancelled
-        raise OperationCancelled("Cancelled")
-
-    provider.prepare_update = prepare
+    provider.prepare_update = lambda *_a: pytest.fail(
+        "A withdrawn check must not contact a provider"
+    )
     value.prepare_update(AppRecord("a", "A"), lambda *_: None, None, errors.append)
     value.cancel()
-    value.executor.finish()
+    # The request reaches the provider, and work still queued is withdrawn at once
+    # instead of holding the service until the worker gets to it.
+    assert cancelled == [True]
     assert isinstance(errors[0], OperationCancelled) and not value.busy
+    value.executor.finish()
+    assert value.active_provider is None
 
 
 def test_execution_cancellation_preserves_outcome(service):
@@ -142,6 +147,39 @@ def test_execution_cancellation_preserves_outcome(service):
     assert completed[0].outcome == Outcome.CANCELLED
 
 
+@pytest.mark.parametrize("batch", [False, True])
+def test_confirmed_update_waits_for_scan_without_being_rejected(service, monkeypatch, batch):
+    value, provider = service
+    app = AppRecord("a", "Example")
+    monkeypatch.setattr("housekeeper.services.collect", lambda _partial: ([app], [], [], {}))
+    calls, completed = [], []
+
+    def execute(*_args):
+        assert not value.scanning and value.inventory == [app]
+        calls.append("execute")
+        return OperationResult(Outcome.SUCCESS, "Updated")
+
+    provider.execute_update = execute
+    if batch:
+
+        def execute_batch(worker, *_args):
+            assert worker.inventory == [app]
+            return execute()
+
+        monkeypatch.setattr("housekeeper.batch_updates.UpdateBatch.execute", execute_batch)
+    value.scan(lambda *_: None, lambda *_: None, pytest.fail)
+    if batch:
+        value.execute_updates([], lambda *_: None, completed.append)
+    else:
+        value.execute_update(app, None, lambda *_: None, completed.append)
+    assert value.busy and not completed and not calls
+    value.executor.finish()
+    assert not calls
+    value.executor.finish()
+    assert calls == ["execute"] and completed[0].outcome == Outcome.SUCCESS
+    assert not value.busy
+
+
 def test_scan_submission_failure_releases_scanning(service):
     value, _provider = service
     value.executor.closed = True
@@ -150,17 +188,122 @@ def test_scan_submission_failure_releases_scanning(service):
     assert errors and not value.scanning
 
 
+@pytest.mark.parametrize("method", ["prepare", "prepare_update"])
+def test_preview_queues_behind_scan_and_uses_finished_inventory(service, monkeypatch, method):
+    value, provider = service
+    app = AppRecord("a", "Example")
+    fresh = [app, AppRecord("b", "Another launcher")]
+    events, errors = [], []
+
+    def collect(_partial):
+        events.append("scan")
+        return fresh, [], [], {}
+
+    def preview(_app, inventory, *_args):
+        assert not value.scanning and inventory == fresh
+        events.append("preview")
+        return "ready"
+
+    monkeypatch.setattr("housekeeper.services.collect", collect)
+    setattr(provider, method, preview)
+    assert value.scan(lambda *_: None, lambda *_: events.append("inventory"), errors.append)
+    args = (app, lambda *_: None) if method == "prepare_update" else (app,)
+    getattr(value, method)(*args, events.append, errors.append)
+    assert value.scanning and value.busy and not errors and not events
+    value.prepare(app, events.append, errors.append)
+    assert len(errors) == 1  # A second management operation still conflicts.
+    value.executor.finish()
+    assert events == ["scan", "inventory"] and value.busy
+    value.executor.finish()
+    assert events == ["scan", "inventory", "preview", "ready"]
+    assert not value.busy and not value.scanning
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_batch_queued_during_scan_uses_new_apps_and_accepts_cancel(service, monkeypatch, cancelled):
+    from housekeeper.models import UpdateAction
+
+    value, provider = service
+    app = AppRecord("a", "Example", provider="rpm", update_action=UpdateAction.CHECK)
+    monkeypatch.setattr("housekeeper.services.collect", lambda _partial: ([app], [], [], {}))
+    contacted, results, errors = [], [], []
+
+    def preview(current, inventory, _progress, **_kwargs):
+        contacted.append(current)
+        assert inventory == [app] and not value.scanning
+        return UpdateCheckResult(UpdateState.CURRENT)
+
+    provider.prepare_update = preview
+    value.scan(lambda *_: None, lambda *_: None, pytest.fail)
+    value.check_updates(lambda *_: None, results.append, errors.append)
+    if cancelled:
+        value.cancel()
+        # Withdrawn at once: the service is free again without waiting out the scan.
+        assert not value.busy and value.scanning
+    value.executor.finish()
+    value.executor.finish()
+    if cancelled:
+        assert isinstance(errors[0], OperationCancelled) and not results
+    else:
+        assert not errors and not results[0].cancelled and not results[0].errors
+    assert contacted == ([] if cancelled else [app])
+    assert not value.busy and value.active_provider is None
+
+
+def test_queued_icon_change_revalidates_a_refreshed_launcher(service, monkeypatch):
+    value, _provider = service
+    entry, other = "entry", "moved"
+    app = AppRecord("a", "Example", entries=[entry])
+    saved, errors = [], []
+    monkeypatch.setattr(
+        "housekeeper.services.collect",
+        lambda _partial: ([replace(app, entries=[other])], [], [], {}),
+    )
+    monkeypatch.setattr("housekeeper.appearance.save_icon", lambda *args: saved.append(args))
+    value.scan(lambda *_: None, lambda *_: None, pytest.fail)
+    value.change_icon(app, entry, "image", pytest.fail, errors.append)
+    value.executor.finish()
+    value.executor.finish()
+    # The window validated the launcher against the inventory the scan replaced.
+    assert not saved and "Refresh and try again." in errors[0]
+    assert not value.busy
+
+
+def test_failed_scan_does_not_drop_queued_icon_change(service, monkeypatch):
+    value, _provider = service
+    events, errors = [], []
+
+    def collect(_partial):
+        raise RuntimeError("Scan unavailable")
+
+    def save(*_args):
+        assert not value.scanning
+        events.append("saved")
+
+    monkeypatch.setattr("housekeeper.services.collect", collect)
+    monkeypatch.setattr("housekeeper.appearance.save_icon", save)
+    value.scan(lambda *_: None, pytest.fail, errors.append)
+    value.change_icon(AppRecord("a", "Example"), "entry", "image", events.append, pytest.fail)
+    assert not events
+    value.executor.finish()
+    assert errors == ["Scan unavailable"] and value.busy
+    value.executor.finish()
+    assert events == ["saved", None] and not value.busy
+
+
 def test_batch_check_owns_service_until_complete(service):
     value, _provider = service
     from housekeeper.models import UpdateAction
 
     value.inventory = [AppRecord("a", "A", update_action=UpdateAction.CHECK)]
-    results = []
-    value.check_updates(lambda *_: None, results.append, pytest.fail)
+    results, errors = [], []
+    value.check_updates(lambda *_: None, results.append, errors.append)
     assert value.busy and not value.scan(None, None, None)
     value.cancel()
     value.executor.finish()
-    assert results[0].cancelled and not value.busy and value.active_provider is None
+    # A withdrawn check reports no snapshot, so previous results keep standing.
+    assert isinstance(errors[0], OperationCancelled) and not results
+    assert not value.busy and value.active_provider is None
 
 
 def test_batch_submit_failure_recovers(service):

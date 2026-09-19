@@ -2,6 +2,7 @@
 
 import logging
 import shlex
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from housekeeper.platforms import native_package_source
 from housekeeper.services import InventoryService
 from housekeeper.sorting import sort_key
 from housekeeper.ui.appearance import ICON_REFRESH_NOTICE, AppearanceGroup
+from housekeeper.ui.disclosure import DetailsDisclosure, details_label
 from housekeeper.ui.icons import icon_image, set_icon
 from housekeeper.ui.update_confirmation import configure_update_confirmation
 from housekeeper.ui.updates import UpdatesPage
@@ -44,6 +46,11 @@ SOURCES = {
     "steam": (_("Steam"), "applications-games-symbolic"),
     "other": (_("Other"), "folder-symbolic"),
 }
+AUTO_REFRESH_DELAY = 30
+# A burst of file events is one transaction; read its result only once it stops writing.
+CHANGE_SETTLE_DELAY = 5
+SCAN_COOLDOWN = 300
+FAILED_SCAN_COOLDOWN = 60
 BADGES = {
     "rpm": "RPM",
     "deb": "DEB",
@@ -68,6 +75,28 @@ def dispatch(callback, *args):
 
 def label(text, **kwargs):
     return Gtk.Label(label=text, xalign=0, **kwargs)
+
+
+def removal_details(app, plan):
+    """Name the exact targets of an irreversible removal, folded away until asked for."""
+    lines = []
+    if app.installation:
+        lines.append(
+            _("Installation: %s") % app.installation.context
+            + "\n"
+            + _("Target: %s") % (app.target.value if app.target else plan.target)
+        )
+    if plan.affected:
+        lines.append(
+            (
+                _("Files moved to Trash:")
+                if plan.provider == "appimage"
+                else _("Application entries removed:")
+            )
+            + "\n"
+            + "\n".join(plan.affected)
+        )
+    return "\n\n".join(lines)
 
 
 class AppObject(GObject.Object):
@@ -135,6 +164,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.monitor_paths = set()
         self.refresh_source = 0
         self.auto_refresh_source = 0
+        self.last_scan_finished = None
+        self.scan_cooldown = SCAN_COOLDOWN
+        self.last_change = None
         self.refresh_pending = False
         self.initialized = False
         self.closed = False
@@ -554,6 +586,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.refresh_pending = True
             return
         self.refresh_pending = False
+        if self.auto_refresh_source:
+            GLib.source_remove(self.auto_refresh_source)
+            self.auto_refresh_source = 0
         self.spinner.set_visible(True)
         self.spinner.start()
         self.summary.set_label(_("Reading installed applications"))
@@ -581,6 +616,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _complete(self, records, warnings, roots, installations):
         if self.closed:
             return
+        self.last_scan_finished = time.monotonic()
+        self.scan_cooldown = SCAN_COOLDOWN
         unchanged = self.initialized and self.records == records
         self.initialized = True
         if not unchanged:
@@ -611,6 +648,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _scan_failed(self, error):
         if self.closed:
             return
+        # A failed scan must not spend the cooldown a successful one earns.
+        self.last_scan_finished = time.monotonic()
+        self.scan_cooldown = FAILED_SCAN_COOLDOWN
         self.spinner.stop()
         self.spinner.set_visible(False)
         self.updates_page.check_when_ready = False
@@ -660,18 +700,28 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _schedule_auto_refresh(self):
         if self.closed or not self.settings.get_boolean("auto-refresh"):
             return
+        self.last_change = time.monotonic()
         if self.auto_refresh_source:
-            GLib.source_remove(self.auto_refresh_source)
+            return
 
         def run():
             # Keep automatic requests separate from queued manual refreshes.
             if self.service.scanning or self.service.busy or self.operation_active:
                 return GLib.SOURCE_CONTINUE
+            now = time.monotonic()
+            # Reading a package transaction halfway through would report a broken state.
+            if self.last_change is not None and now - self.last_change < CHANGE_SETTLE_DELAY:
+                return GLib.SOURCE_CONTINUE
+            if (
+                self.last_scan_finished is not None
+                and now - self.last_scan_finished < self.scan_cooldown
+            ):
+                return GLib.SOURCE_CONTINUE
             self.auto_refresh_source = 0
             self.refresh()
             return GLib.SOURCE_REMOVE
 
-        self.auto_refresh_source = GLib.timeout_add(750, run)
+        self.auto_refresh_source = GLib.timeout_add_seconds(AUTO_REFRESH_DELAY, run)
 
     def _auto_refresh_changed(self, *_):
         if self.auto_refresh_source:
@@ -685,7 +735,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self._schedule_auto_refresh()
 
     def _open_position(self, _view, position):
-        if self.service.scanning:
+        if self.service.scanning and not self.initialized:
             self.toast(_("Installation details are still loading."))
             return
         obj = self.filtered.get_item(position)
@@ -950,7 +1000,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             return
         self._show_task(_("Saving Application Icon"))
         self.task_label.set_label(_("Saving Application Icon"))
-        self.cancel_button.set_visible(False)
+        # An icon save reports no progress, so Cancel is offered only while it is queued.
+        self.cancel_button.set_visible(self.cancel_button.get_sensitive())
 
         def completed(_path):
             self._end_operation()
@@ -967,8 +1018,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.refresh()
 
         def failed(error):
+            cancelled = self.cancel_requested
             self._end_operation()
-            self.message(_("Could Not Change Icon"), str(error))
+            if cancelled:
+                self.toast(_("Icon change cancelled."))
+            else:
+                self.message(_("Could Not Change Icon"), str(error))
             self.refresh()
 
         self.service.change_icon(current, entry, image, self._guard(completed), self._guard(failed))
@@ -1093,8 +1148,10 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             )
 
     def _begin_operation(self, app, kind):
-        if self.closed or self.operation_active or self.service.busy or self.service.scanning:
-            self.toast(_("Wait for the current scan or operation to finish."))
+        if self.closed:
+            return False
+        if self.operation_active or self.service.busy:
+            self.toast(_("Wait for the current operation to finish."))
             return False
         self.operation_active = True
         self.cancel_requested = False
@@ -1124,6 +1181,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _end_operation(self):
         self.operation_active = False
         self.operation_serial += 1
+        pending = self.updates_page.inventory_pending
         if self.task_dialog:
             self.task_dialog.destroy()
             self.task_dialog = None
@@ -1134,6 +1192,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.manage_button.set_sensitive(available)
             self.open_button.set_sensitive(available and bool(self.detail_app.entries))
             self.appearance_group.set_actions_sensitive(available)
+        if pending:
+            self.updates_page.inventory_ready()
         if self.refresh_pending:
             self._schedule_refresh()
 
@@ -1193,6 +1253,10 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         if self.closed:
             return
         self._end_operation()
+        if isinstance(error, OperationCancelled):
+            self.message(_("Removal Cancelled"), str(error))
+            return
+        error = str(error)
         if self.detail_app and self.detail_app.provider == "rpm":
             package = self.detail_app.metadata.get("name")
             if package:
@@ -1220,42 +1284,23 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             names = grouped_names(self.records, app)
             configure_update_confirmation(dialog, (UpdateItem(app, plan, names),))
         else:
-            details = "\n".join(plan.affected)
-            if app.installation:
-                target = app.target.value if app.target else plan.target
-                details = (
-                    _("Installation: %s") % app.installation.context
-                    + "\n"
-                    + _("Target: %s") % target
-                    + "\n\n"
-                    + details
-                )
-            affected = Gtk.Label(label=details, wrap=True, selectable=True, xalign=0)
-            scroll = Gtk.ScrolledWindow(
-                child=affected,
-                max_content_height=220,
-                propagate_natural_height=True,
-                hscrollbar_policy=Gtk.PolicyType.NEVER,
-            )
+            content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
             if plan.provider == "flatpak":
-                content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-                content.append(scroll)
                 group = Adw.PreferencesGroup()
                 keep_data = Adw.SwitchRow(
                     title=_("Keep User Data"),
                     subtitle=_(
-                        "Keep settings, files, and cache for reinstalling. Turning this off "
-                        "permanently deletes this user's Flatpak app data and resets permissions "
-                        "for all installations and branches of this app. Files outside its "
-                        "Flatpak data directory are kept."
+                        "Turn off to permanently delete this app's Flatpak data and reset "
+                        "permissions for all installations and branches. Other files are kept."
                     ),
                     active=True,
                 )
                 group.add(keep_data)
                 content.append(group)
+            if details := removal_details(app, plan):
+                content.append(DetailsDisclosure(details_label(details)))
+            if content.get_first_child() is not None:
                 dialog.set_extra_child(content)
-            else:
-                dialog.set_extra_child(scroll)
         dialog.add_response("cancel", _("Cancel"))
         response_id = "update" if update else "remove"
         dialog.add_response(
@@ -1297,6 +1342,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
     def _show_task(self, title, *, deferred_cancel=False):
         self.task_deferred_cancel = deferred_cancel
+        queued = self.service.scanning
         self.task_dialog = Adw.Window(
             transient_for=self,
             modal=True,
@@ -1317,7 +1363,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             margin_bottom=24,
         )
         self.task_label = Gtk.Label(
-            label=_("Waiting for the application manager"),
+            label=_("Waiting for the application inventory")
+            if queued
+            else _("Waiting for the application manager"),
             single_line_mode=True,
             ellipsize=Pango.EllipsizeMode.END,
             width_chars=36,
@@ -1336,7 +1384,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         box.append(status)
         self.task_progress = Gtk.ProgressBar()
         box.append(self.task_progress)
-        self.cancel_button = Gtk.Button(label=_("Cancel"), sensitive=deferred_cancel)
+        self.cancel_button = Gtk.Button(label=_("Cancel"), sensitive=deferred_cancel or queued)
         self.cancel_button.connect("clicked", self._cancel_operation)
         box.append(self.cancel_button)
         toolbar.set_content(box)
@@ -1379,12 +1427,14 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
     def _operation_finished(self, result):
         update = self.operation_kind == "update"
-        self._end_operation()
+        # Record what this operation changed before releasing the page, so a scan that
+        # finished mid-operation is reconciled against it rather than against nothing.
         if update:
             if result.outcome == Outcome.SUCCESS:
                 self.updates_page.updates_completed((self.operation_key,))
         else:
             self.updates_page.invalidate()
+        self._end_operation()
         title = {
             Outcome.SUCCESS: _("Update Complete") if update else _("Removal Complete"),
             Outcome.PARTIAL: _("Partially Completed"),
@@ -1446,7 +1496,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         group = Adw.PreferencesGroup(title=_("Application Inventory"))
         row = Adw.SwitchRow(
             title=_("Automatically Refresh App List"),
-            subtitle=_("Refresh when returning to Housekeeper or installed applications change."),
+            subtitle=_("Refresh after returning or app changes, at most once every 5 minutes."),
         )
         self.settings.bind("auto-refresh", row, "active", Gio.SettingsBindFlags.DEFAULT)
         group.add(row)

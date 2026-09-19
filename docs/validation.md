@@ -1,4 +1,34 @@
-# v0.1.15 development validation
+# v0.1.16 development validation
+
+## v0.1.16 responsive inventory refresh — September 18, 2026
+
+- Python, Meson, RPM, AppStream and changelog metadata target v0.1.16 / RPM release 1.
+  AppStream validation passes with no network access.
+- The Fedora 43 and 44 offline containers each pass 538 unit tests, with one real dpkg
+  fixture skipped because dpkg-query is unavailable, then build, install, replace and
+  remove the RPM. Ruff lint and formatting pass; strict mypy targets are unchanged by
+  this release.
+- Service tests cover the queueing contract directly: a preview or batch queued behind
+  a scan runs against the inventory that scan publishes, a second concurrent management
+  operation is still refused, a cancellation requested while queued withdraws the work
+  before any provider is contacted, and a queued icon change is refused when the
+  completed scan no longer lists the launcher the window validated.
+- GTK smoke on Fedora 43 and 44 confirms details, launching, update checks, list
+  refreshes and update confirmations all remain available during a background scan,
+  that a queued operation shows a usable Cancel, and that an inventory arriving
+  mid-operation defers its Updates reconciliation until that operation ends.
+  Automatic refresh coalescing, the settle delay, and the successful and failed scan
+  cooldowns are exercised against an injected clock rather than real time.
+- Both confirmation dialogs were inspected as rendered: the removal dialog stays
+  compact with its exact targets folded into Details, and the update dialog's Details
+  still carries the transaction list, installation and target.
+- The real transaction suite passes on Fedora 44 in the disposable container,
+  including a cancelled system Flatpak extra-data download and a real GIO Trash
+  removal with application data preserved. Native RPM removal authorization remains
+  unverified because the container backend cannot provide a safe preview.
+- No personal installed applications were launched, removed, or updated during
+  validation. Automatic refresh never reads a package transaction that is still
+  writing, so a scan cannot report a half-applied state as the inventory.
 
 ## v0.1.15 Flatpak data removal — September 13, 2026
 

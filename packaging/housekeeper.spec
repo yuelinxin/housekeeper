@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.15
+Version:        0.1.16
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -68,6 +68,12 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Fri Sep 18 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.16-1
+- Keep details, launching, update checks and management usable during inventory scans.
+- Queue a management request behind a running scan and let Cancel withdraw it.
+- Coalesce and rate-limit automatic refreshes, and retry a failed scan sooner.
+- Keep exact removal targets and full update transactions in each confirmation's Details.
+
 * Sun Sep 13 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.15-1
 - Let users keep or delete Flatpak app data and permissions during uninstall.
 - Preserve data by default and report incomplete cleanup separately.

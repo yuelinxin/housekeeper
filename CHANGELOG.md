@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.16 — 2026-09-18
+
+- Stop background inventory refreshes from blocking what you asked for. Opening
+  details, launching an app, checking for updates, and starting a removal or update
+  now work while a scan is running; the request waits for the scan on the same
+  worker and runs against the inventory it publishes. Only a second concurrent
+  management operation is still refused.
+- Offer a usable Cancel while a request waits for a scan, and withdraw it
+  immediately so the window is never held for the rest of the scan.
+- Coalesce automatic refreshes triggered by file changes or returning to the window
+  into one request, wait for a package transaction to stop writing before reading
+  its result, and refresh at most once every five minutes. Retry a failed scan after
+  one minute instead. Manual refresh still bypasses both.
+- Keep confirmation dialogs compact without dropping what they authorize: the exact
+  removal targets, and an update's transaction list, installation and target, now
+  live in the collapsed Details section of each dialog.
+
 ## 0.1.15 — 2026-09-13
 
 - Offer a Keep User Data option when uninstalling a Flatpak, enabled by default.

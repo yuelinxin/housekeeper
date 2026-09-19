@@ -2,6 +2,22 @@
 
 ## Local tests
 
+Service tests verify that management requests queue behind inventory scans, previews
+and batch checks use the completed inventory, failed scans still release queued work,
+and a cancellation asked for while a request is queued withdraws it without contacting
+a provider. A queued icon change is rejected when the completed scan no longer lists
+the launcher the window validated. GTK smoke checks that existing details and launch
+actions remain available during background scans, conflicting management operations
+remain blocked, a queued operation offers a usable Cancel, and an inventory arriving
+mid-operation defers its Updates reconciliation until the operation ends. Automatic
+refresh requests coalesce for 30 seconds, wait for file changes to settle, observe the
+five-minute cooldown of a successful scan and the shorter one of a failed scan. Manual
+refresh bypasses the cooldown and turning off automatic refresh cancels its pending
+timer.
+Update regressions cover single-app checks, list refreshes and update confirmations
+during scans, plus confirmed updates waiting for a scan before execution. Repeated
+list refreshes (including F5) reuse the active check without displaying a busy toast.
+
 Removal tests request cancellation before client setup, during the RPM handshake,
 and inside RPM/Flatpak backend calls; synthetic backends must receive cancellation
 without reporting completed removals. DEB tests report both metadata and ownership
@@ -68,8 +84,10 @@ both sources disabled, late results after a source change, and Preferences contr
 GTK smoke checks that single and batch update confirmations start with Details
 collapsed, show short summaries, retain complete transaction and authorization
 information (including installation and target) in the expander, and omit launcher
-aliases from the heading while showing them in the visible summary. Both batch and
-details-page confirmations disclose shared installations. The list and dialog use
+aliases from the heading while showing them in the visible summary. The removal
+confirmation also starts collapsed and keeps the plan's exact targets in the same
+expander. Both batch and details-page confirmations disclose shared installations.
+The list and dialog use
 the same version text for RPM versions, packaging-only revisions, Flatpak commits,
 and missing primary changes. The expanded preview is captured separately from the
 default compact dialog. Cache tests bound snapshot serialization to once per app

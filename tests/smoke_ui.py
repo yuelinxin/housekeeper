@@ -8,6 +8,7 @@ import time
 import traceback
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace as NS
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,7 +54,7 @@ from housekeeper.storage import StorageUsage
 from housekeeper.updates import assign_update_action
 
 Gio.resources_register(Gio.Resource.load(str(BUILD / "data/housekeeper.gresource")))
-from housekeeper.ui.update_confirmation import UpdateDetails
+from housekeeper.ui.disclosure import DetailsDisclosure
 from housekeeper.ui.updates import UpdatesPage
 from housekeeper.ui.window import HousekeeperWindow
 
@@ -166,6 +167,95 @@ def activate(app):
         return [
             window.filtered.get_item(i).record.name for i in range(window.filtered.get_n_items())
         ]
+
+    def check_scan_interactions():
+        # Existing details remain usable during a background scan.
+        window.service.scanning = True
+        with patch.object(window, "toast") as toast:
+            window._open_position(None, 0)
+            assert window.detail_app is not None
+            assert window.open_button.get_sensitive() and window.manage_button.get_sensitive()
+            record = window.detail_app
+            with patch.object(window, "_launch_entry") as launch:
+                window.open_button.emit("clicked")
+                launch.assert_called_once()
+            assert window._begin_operation(record, "remove")
+            toast.assert_not_called()
+            assert not window._begin_operation(record, "update")
+            toast.assert_called_once_with("Wait for the current operation to finish.")
+            window._end_operation()
+            window.navigation.pop()
+            window.initialized = False
+            window._open_position(None, 0)
+            assert toast.call_args.args == ("Installation details are still loading.",)
+            window.initialized = True
+        window.service.scanning = False
+
+        saved_auto = window.settings.get_boolean("auto-refresh")
+        window.settings.set_boolean("auto-refresh", True)
+        if window.auto_refresh_source:
+            GLib.source_remove(window.auto_refresh_source)
+            window.auto_refresh_source = 0
+        saved_time, saved_cooldown = window.last_scan_finished, window.scan_cooldown
+        window.last_scan_finished, window.scan_cooldown = 100, 300
+        clock = NS(monotonic=lambda: clock.value, value=399)
+        with (
+            patch("housekeeper.ui.window.GLib.timeout_add_seconds", return_value=123) as timer,
+            patch("housekeeper.ui.window.GLib.source_remove") as remove,
+            patch("housekeeper.ui.window.time", clock),
+            patch.object(window, "refresh") as refresh,
+        ):
+            window._schedule_auto_refresh()
+            window._schedule_auto_refresh()
+            assert timer.call_count == 1 and timer.call_args.args[0] == 30
+            run = timer.call_args.args[1]
+            # The cooldown a successful scan earns still has to expire.
+            window.last_change = 390
+            assert run() == GLib.SOURCE_CONTINUE
+            # A directory still being written is one transaction, not a settled result.
+            clock.value, window.last_change = 401, 399
+            assert run() == GLib.SOURCE_CONTINUE
+            refresh.assert_not_called()
+            clock.value, window.last_change = 405, 390
+            for owner, name in (
+                (window.service, "scanning"),
+                (window.service, "busy"),
+                (window, "operation_active"),
+            ):
+                setattr(owner, name, True)
+                assert run() == GLib.SOURCE_CONTINUE
+                setattr(owner, name, False)
+            refresh.assert_not_called()
+            assert not window.refresh_pending
+            assert run() == GLib.SOURCE_REMOVE
+            refresh.assert_called_once()
+            assert window.auto_refresh_source == 0
+            # A failed scan retries sooner than a successful one instead of spending
+            # the whole five-minute cooldown on an inventory nobody could read.
+            window._scan_failed("Inventory unavailable")
+            assert window.scan_cooldown == 60 and window.last_scan_finished == 405
+            window._schedule_auto_refresh()
+            run = timer.call_args.args[1]
+            clock.value, window.last_change = 470, 460
+            assert run() == GLib.SOURCE_REMOVE
+            window._complete(window.records, [], [], {})
+            assert window.scan_cooldown == 300
+            window._schedule_auto_refresh()
+            window.settings.set_boolean("auto-refresh", False)
+            remove.assert_called_with(123)
+            assert window.auto_refresh_source == 0
+            calls = timer.call_count
+            window._schedule_auto_refresh()
+            assert timer.call_count == calls
+        window.last_scan_finished, window.scan_cooldown = saved_time, saved_cooldown
+        window.settings.set_boolean("auto-refresh", True)
+        # Manual refresh bypasses the cooldown and consumes a pending automatic request.
+        with patch.object(window.service, "scan", return_value=True) as scan:
+            window.refresh()
+            scan.assert_called_once()
+            assert not window.auto_refresh_source
+        window._complete(window.records, [], [], {})
+        window.settings.set_boolean("auto-refresh", saved_auto)
 
     def sort_metric(mode):
         container = window.scrolls[mode].get_child().get_first_child().get_first_child()
@@ -629,7 +719,11 @@ def activate(app):
         )
         assert window._begin_operation(record, "remove")
         window._confirm(record, plan)
-        assert isinstance(window.confirm_dialog.get_extra_child(), Gtk.ScrolledWindow)
+        details = window.confirm_dialog.get_extra_child().get_last_child()
+        assert isinstance(details, DetailsDisclosure) and not details.toggle.get_active()
+        preview = details.preview.get_label()
+        assert preview.startswith("Application entries removed:\n")
+        assert record.name in preview
         window.confirm_dialog.response("cancel")
 
     def scroll_appearance():
@@ -813,7 +907,12 @@ def activate(app):
             completed(UpdateCheckResult(UpdateState.CURRENT))
 
         window.service.prepare_update = check
-        window.check_update(window.detail_app)
+        window.service.scanning = True
+        with patch.object(window, "toast") as toast:
+            window.check_update(window.detail_app)
+            toast.assert_not_called()
+        window.service.scanning = False
+        assert len(saved) == 1
         assert not window.operation_active and window.manage_button.get_sensitive()
         close_messages()
         window.service.prepare_update = lambda _a, _p, _c, failed: failed(
@@ -849,8 +948,10 @@ def activate(app):
         assert window.confirm_dialog.get_default_response() == "cancel"
         assert window.confirm_dialog.get_body() == "1.0 → 2.0\nPersonal data is kept."
         details = window.confirm_dialog.get_extra_child().get_last_child()
-        assert isinstance(details, UpdateDetails) and not details.toggle.get_active()
-        assert "fixture.x86_64" in details.preview.get_label()
+        assert isinstance(details, DetailsDisclosure) and not details.toggle.get_active()
+        # The transaction stays folded away, but Details still names every entry.
+        assert "Update fixture.x86_64\n1.0 → 2.0 · updates" in details.preview.get_label()
+        assert "1 change:" in details.preview.get_label()
         assert (
             window.confirm_dialog.get_response_appearance("update")
             == Adw.ResponseAppearance.SUGGESTED
@@ -916,6 +1017,29 @@ def activate(app):
         )
         assert not window.operation_active
 
+    def check_queued_operation():
+        close_messages()
+        # An operation queued behind a scan can always be withdrawn, so the window is
+        # never held for the whole scan behind a Cancel button that cannot be pressed.
+        window.service.scanning = True
+        assert window._begin_operation(window.records[0], "remove")
+        window._show_task("Preparing a removal preview")
+        assert window.task_label.get_label() == "Waiting for the application inventory"
+        assert window.cancel_button.get_sensitive()
+        with patch.object(window.service, "cancel") as cancel:
+            window.cancel_button.emit("clicked")
+            cancel.assert_called_once()
+        assert window.cancel_requested and not window.cancel_button.get_sensitive()
+        # A scan landing mid-operation must not rewrite the Updates list under it.
+        window.service.scanning = False
+        with patch.object(window.updates_page, "_retain_items") as retain:
+            window._complete(window.records, [], [], {})
+            retain.assert_not_called()
+        assert window.updates_page.inventory_pending
+        window._preview_failed(OperationCancelled("Cancelled before it started."))
+        assert not window.operation_active and not window.updates_page.inventory_pending
+        close_messages()
+
     def check_update_preferences():
         close_messages()
         page = window.updates_page
@@ -924,6 +1048,15 @@ def activate(app):
 
         def check(_progress, done, _failed, *, providers):
             calls.append(providers)
+            if len(calls) == 1:
+                # Repeated clicks/F5 while the check is pending join the same request.
+                section = window.section
+                window.section = "updates"
+                page.check()
+                window.lookup_action("refresh").activate(None)
+                page.enter()
+                assert len(calls) == 1 and not page.check_when_ready
+                window.section = section
             done(UpdateReport(()))
 
         window.service.check_updates = check
@@ -935,7 +1068,11 @@ def activate(app):
         page.inventory_ready()
         page.enter()
         assert not calls
-        page.refresh_button.emit("clicked")
+        window.service.scanning = True
+        with patch.object(window, "toast") as toast:
+            page.refresh_button.emit("clicked")
+            toast.assert_not_called()
+        window.service.scanning = False
         assert calls == [("rpm", "flatpak")]
         checked_at = page.checked_at
         settings.set_string("update-check-interval", "weekly")
@@ -1160,7 +1297,11 @@ def activate(app):
         # Restore real time after the simulated next-day expiry check above.
         page.checked(page.report)
         check_update_confirmation_content(page.items)
-        page.selected_button.emit("clicked")
+        window.service.scanning = True
+        with patch.object(window, "toast") as toast:
+            page.selected_button.emit("clicked")
+            toast.assert_not_called()
+        window.service.scanning = False
         assert window.confirm_dialog.get_default_response() == "cancel"
         assert window.confirm_dialog.get_heading() == "Update Boxes?"
         assert "system authentication dialog" not in window.confirm_dialog.get_body()
@@ -1251,7 +1392,9 @@ def activate(app):
         page.confirm((page.items[0],))
         assert "sandbox permission" not in window.confirm_dialog.get_body()
         assert "Running now" not in window.confirm_dialog.get_body()
-        assert isinstance(window.confirm_dialog.get_extra_child().get_first_child(), UpdateDetails)
+        assert isinstance(
+            window.confirm_dialog.get_extra_child().get_first_child(), DetailsDisclosure
+        )
         window.confirm_dialog.response("cancel")
 
         window.set_size_request(1040, 720)
@@ -1284,7 +1427,8 @@ def activate(app):
             page.confirm((item,))
             assert window.confirm_dialog.get_body().split("\n")[0] == expected
             details = window.confirm_dialog.get_extra_child().get_last_child()
-            assert f"Target: {item.plan.target}" in details.preview.get_label()
+            preview = details.preview.get_label()
+            assert item.plan.message in preview and f"Target: {item.plan.target}" in preview
             window.confirm_dialog.response("cancel")
         page.render(items)
         page.checks[0][1].set_active(True)
@@ -1677,6 +1821,7 @@ def activate(app):
 
     steps.extend(
         [
+            check_scan_interactions,
             start_sorting,
             check_size_sorting,
             check_grid_sorting,
@@ -1713,6 +1858,7 @@ def activate(app):
             check_update_expanded,
             check_update_execute,
             check_operation,
+            check_queued_operation,
             check_update_preferences,
             capture_update_preferences,
             check_updates_page,

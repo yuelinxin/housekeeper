@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Published release tag to submit (for example v0.1.15)
+        description: Published release tag to submit (for example v0.1.16)
         required: true
         type: string
 

@@ -1,7 +1,7 @@
 """Inventory orchestration and serialized management operations."""
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
 
 from housekeeper.discovery import application_roots, scan_entries
@@ -128,6 +128,9 @@ class InventoryService:
         self.inventory = []
         self.busy = False
         self.scanning = False
+        self.cancel_requested = False
+        self.revision = 0
+        self.pending = None
         self.active_provider = None
         self.closed = False
 
@@ -147,6 +150,7 @@ class InventoryService:
             try:
                 apps, warnings, roots, installations = result.result()
                 self.inventory = apps
+                self.revision += 1
                 self.dispatch(completed, apps, warnings, roots, installations)
             except Exception as error:
                 LOG.debug("Inventory scan failed", exc_info=True)
@@ -171,15 +175,19 @@ class InventoryService:
         raise ManagementError("This application is managed by another tool.")
 
     def prepare(self, app, completed, failed):
-        inventory = list(self.inventory)
-        self._submit(app, lambda provider: provider.prepare(app, inventory), completed, failed)
+        self._submit(
+            app,
+            lambda provider: provider.prepare(app, list(self.inventory)),
+            completed,
+            failed,
+            preserve_error=True,
+        )
 
     def prepare_update(self, app, progress, completed, failed):
-        inventory = list(self.inventory)
         self._submit(
             app,
             lambda provider: provider.prepare_update(
-                app, inventory, lambda *args: self.dispatch(progress, *args)
+                app, list(self.inventory), lambda *args: self.dispatch(progress, *args)
             ),
             completed,
             failed,
@@ -201,10 +209,16 @@ class InventoryService:
         from housekeeper.batch_updates import UPDATE_PROVIDERS, UpdateBatch
 
         providers = UPDATE_PROVIDERS if providers is None else tuple(providers)
-        batch = UpdateBatch(self._provider, list(self.inventory))
+        # The batch reads the inventory `run` gives it, which may be a newer one.
+        batch = UpdateBatch(self._provider, ())
+
+        def run(worker):
+            worker.inventory = list(self.inventory)
+            return worker.check(lambda *args: self.dispatch(progress, *args), providers)
+
         self._submit(
             None,
-            lambda worker: worker.check(lambda *args: self.dispatch(progress, *args), providers),
+            run,
             completed,
             failed,
             preserve_error=True,
@@ -214,10 +228,15 @@ class InventoryService:
     def execute_updates(self, items, progress, completed):
         from housekeeper.batch_updates import UpdateBatch
 
-        batch = UpdateBatch(self._provider, list(self.inventory))
+        batch = UpdateBatch(self._provider, ())
+
+        def run(worker):
+            worker.inventory = list(self.inventory)
+            return worker.execute(items, lambda *args: self.dispatch(progress, *args))
+
         self._submit(
             None,
-            lambda worker: worker.execute(items, lambda *args: self.dispatch(progress, *args)),
+            run,
             completed,
             lambda error: completed(self._failure(error)),
             preserve_error=True,
@@ -246,9 +265,21 @@ class InventoryService:
     def change_icon(self, app, entry, image, completed, failed):
         from housekeeper.appearance import save_icon
 
-        self._submit(
-            app, lambda _worker: save_icon(entry, image), completed, failed, worker=object()
-        )
+        revision = self.revision
+
+        def run(_worker):
+            # A scan can publish a new inventory while this request waits its turn, so
+            # the launcher the window validated may no longer be the one on disk.
+            if self.revision != revision:
+                current = next((item for item in self.inventory if item.key == app.key), None)
+                if current is None or entry not in current.entries:
+                    raise ManagementError(
+                        "The launcher changed while the inventory was refreshing. "
+                        "Refresh and try again."
+                    )
+            return save_icon(entry, image)
+
+        self._submit(app, run, completed, failed, worker=object())
 
     def measure_storage(self, app, completed):
         from housekeeper.storage import StorageUsage, measure_storage
@@ -282,22 +313,36 @@ class InventoryService:
         def failure(error):
             self.dispatch(failed, error if preserve_error else str(error))
 
-        if self.closed or self.busy or self.scanning:
-            failure(ManagementError("Wait for the current scan or operation to finish."))
+        if self.closed or self.busy:
+            failure(ManagementError("Wait for the current operation to finish."))
             return
         self.busy = True
+        self.cancel_requested = False
         try:
             self.active_provider = worker if worker is not None else self._provider(app)
-            future = self.executor.submit(run, self.active_provider)
+
+            def queued(provider):
+                # The single worker queues this behind an in-flight inventory scan, and
+                # busy stays set while queued so no other operation can overtake it.
+                # A cancellation asked for while queued must not start the operation.
+                if self.cancel_requested:
+                    raise OperationCancelled("The operation was cancelled before it started.")
+                return run(provider)
+
+            future = self.executor.submit(queued, self.active_provider)
         except Exception as error:
             self.busy, self.active_provider = False, None
             failure(error)
             return
+        self.pending = future
 
         def done(result):
-            self.busy, self.active_provider = False, None
+            self.busy, self.pending, self.active_provider = False, None, None
             try:
                 outcome = result.result()
+            except CancelledError:
+                failure(OperationCancelled("The operation was cancelled before it started."))
+                return
             except Exception as error:
                 LOG.warning(
                     "Management operation failed for %s",
@@ -321,8 +366,13 @@ class InventoryService:
         future.add_done_callback(done)
 
     def cancel(self):
+        self.cancel_requested = True
         if self.active_provider and hasattr(self.active_provider, "request_cancel"):
             self.active_provider.request_cancel()
+        if self.pending is not None:
+            # Still queued behind an inventory scan: withdraw it now rather than hold the
+            # window until the scan releases the worker. A started operation is unaffected.
+            self.pending.cancel()
 
     def close(self):
         self.closed = True

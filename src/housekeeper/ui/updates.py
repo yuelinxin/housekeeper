@@ -7,7 +7,7 @@ from gi.repository import Adw, GLib, GObject, Gtk
 
 from housekeeper.batch_updates import UPDATE_PROVIDERS, installation_key
 from housekeeper.i18n import _, ngettext
-from housekeeper.models import Outcome
+from housekeeper.models import OperationCancelled, Outcome
 from housekeeper.ui.icons import icon_image
 from housekeeper.ui.update_confirmation import configure_update_confirmation, version_change
 from housekeeper.update_cache import UpdateCache, cache_expired
@@ -21,6 +21,7 @@ class UpdatesPage(Adw.NavigationPage):
         self.checks = []
         self.visited = False
         self.check_when_ready = False
+        self.inventory_pending = False
         self.cache = UpdateCache()
         self.cache_loaded = False
         self.checked_at = None
@@ -173,9 +174,11 @@ class UpdatesPage(Adw.NavigationPage):
 
     def enter(self):
         if (
-            self.window.settings.get_string("update-check-mode") == "manual"
+            self.checking
+            or self.window.settings.get_string("update-check-mode") == "manual"
             or not self.enabled_providers()
         ):
+            self.check_when_ready = False
             return
         ttl = (
             7 if self.window.settings.get_string("update-check-interval") == "weekly" else 1
@@ -187,8 +190,12 @@ class UpdatesPage(Adw.NavigationPage):
                 if not self.check_when_ready:
                     self.window.toast(_("Waiting for the application inventory."))
                 self.check_when_ready = True
-            else:
-                self.check()
+                return
+            # check() clears the request once it owns the operation; leaving it set when
+            # another operation holds the service keeps the entry from being dropped.
+            self.check()
+            return
+        self.check_when_ready = False
 
     def inventory_ready(self):
         if not self.cache_loaded:
@@ -200,6 +207,12 @@ class UpdatesPage(Adw.NavigationPage):
                 self._set_checked_at(cached.checked_at)
                 if cached.stale:
                     self._show_stale()
+        if self.window.operation_active:
+            # Pruning rows or calling the list stale while an operation is still running
+            # would contradict it; _end_operation replays this against its result.
+            self.inventory_pending = True
+            return
+        self.inventory_pending = False
         current = {a.key: a for a in self.window.records}
         kept = tuple(item for item in self.items if current.get(item.app.key) == item.app)
         previous = self.inventory_snapshot
@@ -226,11 +239,12 @@ class UpdatesPage(Adw.NavigationPage):
             )
         self.updated_keys.clear()
         if self.check_when_ready:
-            self.check_when_ready = False
             if self.window.section == "updates":
                 # Re-evaluate after loading the cache: a fresh saved result may
                 # satisfy the entry request without contacting a provider.
                 self.enter()
+            else:
+                self.check_when_ready = False
 
     def _show_stale(self):
         self.stale = True
@@ -296,11 +310,16 @@ class UpdatesPage(Adw.NavigationPage):
 
     def check(self):
         window = self.window
+        if self.checking:
+            if window.task_dialog:
+                window.task_dialog.present()
+            return
         providers = self.enabled_providers()
         if not providers:
             return
         if not window._begin_operation(None, "update"):
             return
+        self.check_when_ready = False
         self.checking = True
         self.visited = True
         self._selection_changed()
@@ -369,6 +388,10 @@ class UpdatesPage(Adw.NavigationPage):
         self.window._end_operation()
         self._selection_changed()
         if revision is not None and revision != self.source_revision:
+            return
+        if isinstance(error, OperationCancelled):
+            # Withdrawn before a provider was contacted; previous results still stand.
+            self.window.toast(_("Update check cancelled."))
             return
         self.status.set_label(_("The update check failed. Previous results may be out of date."))
         self.window.message(_("Could Not Check Updates"), str(error))
@@ -441,8 +464,10 @@ class UpdatesPage(Adw.NavigationPage):
         dialog.present()
 
     def finished(self, result):
-        self.window._end_operation()
+        # Record the completed updates before releasing the page, so a scan that finished
+        # mid-batch is reconciled against them instead of marking the list stale.
         self.updates_completed(result.completed_app_keys)
+        self.window._end_operation()
         titles = {
             Outcome.SUCCESS: _("Updates Complete"),
             Outcome.PARTIAL: _("Updates Partially Complete"),
