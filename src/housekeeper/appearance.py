@@ -4,6 +4,7 @@ import hashlib
 import os
 import stat
 import tempfile
+import time
 from pathlib import Path
 
 from gi.repository import GLib
@@ -13,6 +14,8 @@ from housekeeper.models import ManagementError
 
 GROUP = "Desktop Entry"
 PREFIX = "X-Housekeeper-"
+STAGING_PREFIX = ".housekeeper-"
+STAGING_MAX_AGE = 24 * 60 * 60
 ORIGINAL = PREFIX + "OriginalIcon"
 HAD_ICON = PREFIX + "HadIcon"
 SOURCE = PREFIX + "IconSource"
@@ -89,7 +92,7 @@ def verified_icon_source(path: Path) -> Path:
     return path
 
 
-def data_home():
+def data_home() -> Path:
     value = os.environ.get("XDG_DATA_HOME", "")
     return Path(value) if value and Path(value).is_absolute() else Path.home() / ".local/share"
 
@@ -120,19 +123,73 @@ def can_reset_icon(entry):
         return False
 
 
-def _atomic_write(path, data, mode=0o644):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=".housekeeper-", dir=path.parent)
+def _sweep_staged(directory):
+    """Drop staged copies left behind by a run that was killed before publishing."""
+    cutoff = time.time() - STAGING_MAX_AGE
+    try:
+        for path in directory.glob(STAGING_PREFIX + "*"):
+            info = path.lstat()
+            if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
+                path.unlink()
+    except OSError:
+        return
+
+
+def staged_write(directory, write, publish, mode=0o644):
+    """Build a complete file beside its destination, then hand it to `publish`.
+
+    Nothing appears under a final name until the contents are on disk, and the staged
+    copy is always removed. `publish` links or replaces the staged path into place.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    _sweep_staged(directory)
+    fd, temporary = tempfile.mkstemp(prefix=STAGING_PREFIX, dir=directory)
     try:
         with os.fdopen(fd, "wb") as stream:
-            stream.write(data)
+            write(stream)
             stream.flush()
             os.fsync(stream.fileno())
             os.fchmod(stream.fileno(), mode)
-        os.replace(temporary, path)
+        return publish(Path(temporary))
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def _atomic_write(path, data, mode=0o644):
+    staged_write(
+        path.parent, lambda stream: stream.write(data), lambda s: os.replace(s, path), mode
+    )
+
+
+def load_icon_image(image, size=512):
+    """Validate and decode a local image at a bounded display size."""
+    import gi
+
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+
+    image = Path(image)
+    if not image.is_file() or image.stat().st_size > 10 * 1024 * 1024:
+        raise ManagementError(_("Choose an image file smaller than 10 MB."))
+    return GdkPixbuf.Pixbuf.new_from_file_at_scale(str(image), size, size, True)
+
+
+def store_icon_image(image, created=None):
+    """Keep a normalized copy independent of the selected file's lifetime.
+
+    Copies are shared by content, so a new file is appended to `created`, letting a
+    failed caller remove only what it added.
+    """
+    pixbuf = load_icon_image(image)
+    success, contents = pixbuf.save_to_bufferv("png", [], [])
+    if not success:
+        raise ManagementError(_("The selected image could not be read."))
+    icon_path = data_home() / "housekeeper/icons" / (hashlib.sha256(contents).hexdigest() + ".png")
+    if created is not None and not icon_path.exists():
+        created.append(icon_path)
+    _atomic_write(icon_path, contents)
+    return icon_path
 
 
 def save_icon(entry, image=None):
@@ -159,24 +216,9 @@ def save_icon(entry, image=None):
             if _has(keyfile, key):
                 keyfile.remove_key(GROUP, key)
     else:
-        import gi
-
-        gi.require_version("GdkPixbuf", "2.0")
-        from gi.repository import GdkPixbuf
-
-        image = Path(image)
-        if not image.is_file() or image.stat().st_size > 10 * 1024 * 1024:
-            raise ManagementError(_("Choose an image file smaller than 10 MB."))
         # Decode before changing any launcher. Store a PNG so the icon remains valid
         # after the selected image is moved, and SVG external resources aren't retained.
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(image), 512, 512, True)
-        success, contents = pixbuf.save_to_bufferv("png", [], [])
-        if not success:
-            raise ManagementError(_("The selected image could not be read."))
-        icon_path = (
-            data_home() / "housekeeper/icons" / (hashlib.sha256(contents).hexdigest() + ".png")
-        )
-        _atomic_write(icon_path, contents)
+        icon_path = store_icon_image(image)
         if not _get(keyfile, HAD_ICON):
             keyfile.set_string(GROUP, HAD_ICON, "true" if _has(keyfile, "Icon") else "false")
             keyfile.set_string(GROUP, ORIGINAL, _get(keyfile, "Icon"))

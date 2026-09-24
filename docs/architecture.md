@@ -82,6 +82,146 @@ inventory attribution, a preparation step, and execution. They must not call GTK
 The current package and Flatpak integrations are loaded lazily so missing typelibs
 do not prevent startup. No third-party plugin ABI or public D-Bus service is exposed.
 
+## Software sources
+
+Preferences has separate General and Software Sources pages. Repository reads begin
+only when the sources page opens. `RepositoryManager` enumerates native repositories
+through PackageKit and remotes in every configured Flatpak installation; one unavailable
+backend does not hide the others. The Software Sources page starts with Update Sources
+switches, which control the application types checked on Updates independently of
+the repositories listed below. General retains the update-check mode and interval.
+The native repository list initially shows enabled sources. A final Show Disabled Sources
+row reveals disabled sources below them and can collapse them again; the expanded
+state survives refreshes within the same preferences window.
+
+Enable/disable operations re-read the selected repository before writing and retain
+the native repository ID or exact Flatpak installation path and remote name. Flatpak
+changes modify only the disabled flag. Native repository creation and deletion remain
+in the distribution's software manager. Backend authorization errors appear in the page,
+which rereads actual state after a failed write instead of trusting the optimistic switch.
+
+Flatpak imports accept a bounded local `.flatpakrepo` file or HTTPS link. A preview
+records its bytes, destination, name, URL and signature-verification state; confirmation
+uses those same bytes and rejects an existing name. Imports enable GPG verification
+unless the file itself sets `GPGVerify=false`, matching the saved OSTree default even
+though libflatpak's uncommitted remote object reports both an unset and a false flag as
+false; the review then states that verification is disabled. The source's embedded key
+is imported by libflatpak. Downloads follow redirects only to HTTPS. See the
+[Flatpak repository format](https://docs.flatpak.org/en/latest/flatpak-command-reference.html#flatpak-flatpakrepo).
+
+Repository work runs on the serialized management worker. Changes cancel obsolete
+installer searches and clear their catalogues on the search worker, after any in-flight
+search finishes. Successful writes refresh inventory and invalidate update previews;
+failures also invalidate previews because a backend may have already saved its change.
+The preferences window stays open during a write, and late read callbacks are ignored
+after it closes.
+
+## Adding applications
+
+Every inventory page opens the same Install Application dialog with a type selector,
+initially set to the host's native package type regardless of the current page.
+Inventory refresh lives in the sidebar menu; the Updates page
+retains its own refresh action. Package searches debounce for 400 ms on a separate
+single worker, cancel obsolete requests, and discard callbacks after input changes
+or window closure. Results retain the exact PackageKit ID or Flatpak installation,
+remote and full ref. At most 12 candidates are shown. A query may be a phrase: runs
+of whitespace collapse to single spaces, and each word may contain letters, digits and
+`. + : -`. AppStream searches and the Snap Store receive the whole phrase; searches that
+can only match package names or app IDs use its longest word. A phrase counts as naming
+an app only when every word appears in the app's name.
+
+Native search first matches desktop applications in the distribution's AppStream
+catalogue (`LOAD_OS_CATALOG` only; loaded once on the search worker and dropped with
+the remote catalogues), so app names, summaries and keywords match while libraries,
+plugins and `-devel` packages never appear. Apps whose name contains the query come
+first, then AppStream's relevance order; rows show the catalogue name and icon. Their
+package names are resolved to exact available PackageKit IDs. When the catalogue is
+missing or nothing it matches is installable, as for many third-party repositories,
+search falls back to PackageKit name search with the GUI filter (packages with
+`application()` provides, i.e. a desktop file), ordered by exact name, prefix,
+substring and simple spelling similarity, with at most one shorter-prefix retry of
+at least three characters. Both paths drop installed names through an explicit
+`INSTALLED` resolve: the Fedora 44 DNF5 backend's `NOT_INSTALLED` filter still returns
+an installed build that a repository also carries.
+
+Flatpak search reads each enabled remote's own AppStream catalogue, the
+`appstream.xml.gz` Flatpak keeps in the remote's AppStream directory, and never
+downloads one; Flatpak refreshes it when the remote is updated. A parsed catalogue
+is reused until its resolved directory, size or modification time changes. Desktop
+applications whose Flatpak bundle is an uninstalled app ref of that remote match by
+name, summary and keywords, named apps first and then relevance across all remotes;
+addons and runtimes are excluded. Without any catalogue match, for example after a
+typo, app IDs are ranked as before. Either way, the shown rows use the catalogue's
+name, summary and cached icon (from the catalogue's `icons/<size>` directory, plain
+file names only) where the remote lists the app, and keep the remote, scope and
+branch in the subtitle. A remote's enumerated catalogue is reused for two minutes, so
+successive keystrokes re-rank it instead of re-reading every remote summary.
+Selecting a result is required before installation.
+
+PackageKit installs the selected native package ID and its dependencies with
+ONLY_TRUSTED and desktop Polkit interaction. It only operates on the host's package
+family; OSTree and bootc hosts retain external management. Flatpak searches
+configured user and system remotes, excludes installed refs, runtimes and foreign
+architectures, and installs into the selected source's installation. It permits
+dependencies from configured remotes but does not add new remotes automatically.
+Transactions include the default system installations as dependency sources, so
+user applications can reuse installed system runtimes without duplicating them.
+Snap uses snapd's read-only search endpoint and hands the selected name to the
+Snap Store; a host without snapd reports the missing service rather than a socket error. Steam opens its library for installation and shortcut creation.
+
+Web integration creates a per-user desktop file using the selected Chrome or
+Chromium executable with `--app=<http(s) URL>`. This is a website launcher, not an
+entry in the browser's installed-PWA database. Names default to the hostname.
+The launch command selects the Default browser profile so its window identity is
+stable. The desktop filename matches Chromium's Wayland app ID, while
+`StartupWMClass` matches its X11 instance. These derive from the canonical URL's
+host and path following Chromium's
+[Linux window identity implementation](https://chromium.googlesource.com/chromium/src/+/main/chrome/browser/ui/views/frame/browser_native_widget_aura_linux.cc).
+This lets GNOME associate the window with the website's launcher, name and icon even
+when a normal browser window already exists. URLs differing only in query, fragment,
+port or scheme share Chromium's window identity; an existing launcher is never
+overwritten. This desktop integration does not register an installed browser PWA.
+Exec arguments escape both desktop field codes and KeyFile syntax; no shell is used.
+Installation fetches the page's declared icon or touch icon, preferring larger sizes,
+then tries `/favicon.ico`. Relative links use the final page URL and its first base
+URL. Requests accept only HTTP(S), validate redirects, use short socket timeouts and
+an eight-second lookup budget checked between requests and reads. Page reads stop
+at 512 KiB; icons over 2 MiB are rejected. No browser cookies or external favicon
+service are used. Decoded icons are normalized to a local PNG, and lookup failures
+fall back to `web-browser` without blocking installation. Cancellation stops the
+installation. Inventory scans never fetch website icons.
+Inventory offers direct Uninstall for verified Housekeeper website launchers. The
+creation marker alone is insufficient: the file must be owned by the current user,
+unowned by a package, directly inside the user's applications directory, and match
+the generated Exec format and window-identity filename (or the legacy browser/URL
+filename hash). Symlinks and shared
+launchers are rejected. Removal previews the exact desktop file and rechecks its
+ownership, identity and contents before moving it to Trash. Browser data and icons
+are kept. Other website shortcuts and installed PWAs retain external management.
+
+AppImage integration follows [Gear Lever's](https://github.com/mijorus/gearlever)
+file-selection and managed-directory approach with only an optional name edit.
+The importer copies a regular, non-symlink file to `~/AppImages`, checks the copied
+ELF/AppImage marker, sets mode 0755, and publishes a launcher. It never executes
+the AppImage to extract metadata. Content hashes identify copies, existing files
+are never overwritten, and a failed launcher write removes only the new copy.
+The original download remains intact. Web App and AppImage forms offer an optional
+desktop icon with a preview and a reset button. Images use the same 10 MB input limit
+and normalized PNG storage as Appearance; launchers keep a private copy independent
+of the selected file. Web Apps default to the saved website icon; AppImages use the
+standard `application-x-executable` theme icon, also shown in the installation form.
+Custom icons take precedence and Appearance can restore these defaults later.
+Invalid custom images prevent launcher creation, and AppImage rollback
+also removes the new application copy if saving its icon fails.
+
+Installations reuse the serialized management worker, progress, cancellation,
+close protection and post-operation inventory refresh. External store/Steam
+handoffs are not reported as completed installations. Package-manager cancellation
+does not promise rollback of dependencies already installed; Flatpak reports
+completed operations separately if a later operation fails.
+PackageKit's search snapshot can briefly lag a completed transaction even with the
+not-installed filter; inventory refresh still reads the native package database.
+
 ## Removal boundaries
 
 RPM uses local ownership data and exact installed PackageKit IDs. Simulation must

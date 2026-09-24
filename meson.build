@@ -1,4 +1,4 @@
-project('housekeeper', version: '0.1.16', meson_version: '>= 0.63.0', license: 'MIT')
+project('housekeeper', version: '0.2.0', meson_version: '>= 0.63.0', license: 'MIT')
 
 gnome = import('gnome')
 i18n = import('i18n')

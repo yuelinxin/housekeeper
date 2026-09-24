@@ -99,10 +99,10 @@
                               </object>
                             </child>
                             <child type="start">
-                              <object class="GtkButton" id="refresh_button">
-                                <property name="icon-name">view-refresh-symbolic</property>
-                                <property name="tooltip-text" translatable="yes">Refresh</property>
-                                <property name="action-name">win.refresh</property>
+                              <object class="GtkButton" id="add_button">
+                                <property name="icon-name">list-add-symbolic</property>
+                                <property name="tooltip-text" translatable="yes">Install Application</property>
+                                <property name="action-name">win.add</property>
                               </object>
                             </child>
                           </object>

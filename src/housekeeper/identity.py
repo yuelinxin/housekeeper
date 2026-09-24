@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from housekeeper.appimage_format import appimage_format
+from housekeeper.i18n import _
 from housekeeper.launch import parse_launch
 from housekeeper.models import (
     Action,
@@ -79,6 +80,24 @@ def classify(entry: DesktopEntry) -> AppRecord:
             "Open the browser that installed this web app and use its app management menu. "
             "This launcher cannot be mapped to a direct management link."
         )
+        if (
+            entry.housekeeper_created
+            and binary in BROWSERS
+            and not app_id
+            and option(argv, "--app")
+        ):
+            from housekeeper.appearance import data_home
+
+            # The marker is only a hint. Offer to trash a launcher solely where this
+            # application writes them, never one the user has no permission to remove.
+            if entry.path.is_relative_to(data_home() / "applications"):
+                app.metadata["management_reason"] = (
+                    _(
+                        "To remove this website shortcut from your app menu, move the following "
+                        "launcher file to Trash using your file manager. Browser data is kept.\n\n%s"
+                    )
+                    % entry.path
+                )
         return app
     if binary in BROWSERS and re.fullmatch(r"[a-p]{32}", app_id):
         profile = option(argv, "--profile-directory")

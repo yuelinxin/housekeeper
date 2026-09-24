@@ -16,6 +16,7 @@ from housekeeper import APP_ID, VERSION
 from housekeeper.batch_updates import UpdateItem, grouped_names, installation_key
 from housekeeper.i18n import _, ngettext
 from housekeeper.models import (
+    TRASH_PROVIDERS,
     Action,
     OperationCancelled,
     Outcome,
@@ -40,7 +41,7 @@ SOURCES = {
     "pacman": (_("Pacman"), "package-x-generic-symbolic"),
     "apk": (_("APK"), "package-x-generic-symbolic"),
     "snap": (_("Snap"), "application-x-addon-symbolic"),
-    "flatpak": (_("Flatpak"), "application-x-addon-symbolic"),
+    "flatpak": (_("Flatpak"), "flatpak-symbolic"),
     "web": (_("Web Apps"), "web-browser-symbolic"),
     "appimage": (_("AppImage"), "application-x-executable-symbolic"),
     "steam": (_("Steam"), "applications-games-symbolic"),
@@ -90,7 +91,7 @@ def removal_details(app, plan):
         lines.append(
             (
                 _("Files moved to Trash:")
-                if plan.provider == "appimage"
+                if plan.provider in TRASH_PROVIDERS
                 else _("Application entries removed:")
             )
             + "\n"
@@ -140,7 +141,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     overview_box = Gtk.Template.Child()
     overview_toolbar = Gtk.Template.Child()
     header = Gtk.Template.Child()
-    refresh_button = Gtk.Template.Child()
+    add_button = Gtk.Template.Child()
 
     def __init__(self, application, settings):
         super().__init__(application=application)
@@ -177,6 +178,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.operation_key = None
         self.task_dialog = None
         self.confirm_dialog = None
+        self.install_dialog = None
         self.detail_app = None
         self.warnings = []
         self.set_default_size(settings.get_int("window-width"), settings.get_int("window-height"))
@@ -296,6 +298,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 ),
             ),
             ("search", self._show_search),
+            ("add", lambda *_: self.add_application()),
+            ("refresh-inventory", lambda *_: self.refresh()),
             ("preferences", lambda *_: self.preferences()),
             ("about", lambda *_: self.about()),
         ):
@@ -321,6 +325,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         )
         self._sort_tooltip()
         menu = Gio.Menu()
+        menu.append(_("Refresh App List"), "win.refresh-inventory")
         menu.append(_("Preferences"), "win.preferences")
         menu.append(_("About Housekeeper"), "win.about")
         self.sidebar_header.pack_end(
@@ -333,6 +338,18 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.get_application().set_accels_for_action("win.search", ["<Primary>f"])
         self.get_application().set_accels_for_action("win.refresh", ["<Primary>r", "F5"])
         self.get_application().set_accels_for_action("win.preferences", ["<Primary>comma"])
+
+    def add_application(self):
+        if self.closed:
+            return
+        if self.operation_active or self.service.busy:
+            self.toast(_("Wait for the current operation to finish."))
+            return
+        from housekeeper.ui.install import InstallWindow
+
+        # Each opening starts a fresh installation form.
+        self.install_dialog = InstallWindow(self)
+        self.install_dialog.present()
 
     def _factory_setup(self, _factory, item, mode):
         box = Gtk.Box(
@@ -1147,16 +1164,17 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 command=app.metadata.get("management_command", ""),
             )
 
-    def _begin_operation(self, app, kind):
+    def _begin_operation(self, app, kind, notify=None):
         if self.closed:
             return False
         if self.operation_active or self.service.busy:
-            self.toast(_("Wait for the current operation to finish."))
+            # A modal caller passes its own reporter; a toast would be hidden behind it.
+            (notify or self.toast)(_("Wait for the current operation to finish."))
             return False
         self.operation_active = True
         self.cancel_requested = False
         self.operation_kind = kind
-        self.operation_key = app.key if app is not None else "updates"
+        self.operation_key = app.key if app is not None else kind
         self.operation_serial += 1
         if self.detail_app:
             self.manage_button.set_sensitive(False)
@@ -1435,11 +1453,15 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         else:
             self.updates_page.invalidate()
         self._end_operation()
+        complete, failed = {
+            "install": (_("Installation Complete"), _("Installation Failed")),
+            "update": (_("Update Complete"), _("Update Failed")),
+        }.get(self.operation_kind, (_("Removal Complete"), _("Removal Failed")))
         title = {
-            Outcome.SUCCESS: _("Update Complete") if update else _("Removal Complete"),
+            Outcome.SUCCESS: complete,
             Outcome.PARTIAL: _("Partially Completed"),
             Outcome.CANCELLED: _("Operation Cancelled"),
-            Outcome.FAILED: _("Update Failed") if update else _("Removal Failed"),
+            Outcome.FAILED: failed,
         }[result.outcome]
         body = result.message
         if result.completed:
@@ -1491,8 +1513,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.toast_overlay.add_toast(Adw.Toast(title=text, timeout=5))
 
     def preferences(self):
+        from housekeeper.ui.repositories import SoftwareSourcesPage
+
         window = Adw.PreferencesWindow(transient_for=self, modal=True, title=_("Preferences"))
-        page = Adw.PreferencesPage()
+        page = Adw.PreferencesPage(
+            title=_("General"), icon_name="preferences-system-symbolic", name="general"
+        )
         group = Adw.PreferencesGroup(title=_("Application Inventory"))
         row = Adw.SwitchRow(
             title=_("Automatically Refresh App List"),
@@ -1539,20 +1565,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             "notify::selected", lambda row, _pspec: interval.set_sensitive(row.get_selected() == 0)
         )
         page.add(updates)
-        sources = Adw.PreferencesGroup(
-            title=_("Update Sources"),
-            description=_(
-                "Sources checked on the Updates page. You can still check individual apps in their details."
-            ),
-        )
-        for source, title in (("rpm", _("RPM Packages")), ("flatpak", _("Flatpak"))):
-            row = Adw.SwitchRow(title=title)
-            self.settings.bind(
-                "update-source-" + source, row, "active", Gio.SettingsBindFlags.DEFAULT
-            )
-            sources.add(row)
-        page.add(sources)
         window.add(page)
+        window.sources_page = SoftwareSourcesPage(self, window)
+        window.add(window.sources_page)
         window.present()
 
     def about(self):
@@ -1582,6 +1597,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.settings.set_int("window-width", max(360, min(10000, self.get_width())))
             self.settings.set_int("window-height", max(420, min(10000, self.get_height())))
         self.closed = True
+        if self.install_dialog:
+            self.install_dialog.close()
         if self.auto_refresh_source:
             GLib.source_remove(self.auto_refresh_source)
             self.auto_refresh_source = 0

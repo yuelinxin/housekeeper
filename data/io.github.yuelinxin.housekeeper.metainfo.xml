@@ -9,6 +9,8 @@
   <description>
     <p>Housekeeper brings desktop applications from different installation sources into one native, searchable inventory.</p>
     <ul>
+      <li>Install native and Flatpak applications from configured software sources.</li>
+      <li>Manage software sources, import AppImages, and create website launchers with custom icons.</li>
       <li>Browse applications in a list or an icon grid.</li>
       <li>Sort applications by name, software size, or Last Updated.</li>
       <li>Inspect installation sources, package identities, file locations, and software sizes.</li>
@@ -31,6 +33,18 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-09-24" type="stable">
+      <description>
+        <p>Install applications and manage software sources from Housekeeper.</p>
+        <ul>
+          <li>Search native and Flatpak applications by name or keyword with AppStream metadata and install selected results with their dependencies.</li>
+          <li>Enable or disable software sources and review Flatpak repository imports in Preferences.</li>
+          <li>Import local AppImages and create Chrome or Chromium website launchers with website or custom icons.</li>
+          <li>Match website window identities on Wayland and X11 and move verified website launchers to Trash while keeping browser data.</li>
+          <li>Keep installation cancellable, discard obsolete searches, and refresh inventory after operations.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.16" date="2026-09-18" type="stable">
       <description>
         <p>Keep the window responsive while the application inventory refreshes.</p>

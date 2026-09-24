@@ -3,5 +3,6 @@
   <gresource prefix="/io/github/yuelinxin/housekeeper">
     <file preprocess="xml-stripblanks">window.ui</file>
     <file>style.css</file>
+    <file>icons/scalable/actions/flatpak-symbolic.svg</file>
   </gresource>
 </gresources>

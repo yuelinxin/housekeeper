@@ -1,244 +1,26 @@
 # Changelog
 
-## 0.1.16 — 2026-09-18
+## 0.2.0 — 2026-09-24
 
-- Stop background inventory refreshes from blocking what you asked for. Opening
-  details, launching an app, checking for updates, and starting a removal or update
-  now work while a scan is running; the request waits for the scan on the same
-  worker and runs against the inventory it publishes. Only a second concurrent
-  management operation is still refused.
-- Offer a usable Cancel while a request waits for a scan, and withdraw it
-  immediately so the window is never held for the rest of the scan.
-- Coalesce automatic refreshes triggered by file changes or returning to the window
-  into one request, wait for a package transaction to stop writing before reading
-  its result, and refresh at most once every five minutes. Retry a failed scan after
-  one minute instead. Manual refresh still bypasses both.
-- Keep confirmation dialogs compact without dropping what they authorize: the exact
-  removal targets, and an update's transaction list, installation and target, now
-  live in the collapsed Details section of each dialog.
-
-## 0.1.15 — 2026-09-13
-
-- Offer a Keep User Data option when uninstalling a Flatpak, enabled by default.
-  Turning it off deletes this user's app data and resets Flatpak permissions after
-  successful uninstall; incomplete cleanup is reported separately.
-
-## 0.1.14 — 2026-09-13
-
-- Open applications directly from their details page, including browser web apps.
-  Desktop launchers retain their profile, environment, terminal, and D-Bus settings;
-  applications with multiple launchers offer a choice.
-- Show available updates beside the application name using the same symbol as the
-  Updates page. Keep update actions on the Updates page and remove update-instruction
-  buttons from application details.
-- Replace the Chrome management-page handoff with Manage in App, opening the selected
-  web app in its original profile so its own menu can handle removal.
-- Refresh the Housekeeper icon with a tightly fitted canvas, smooth roof corners,
-  and a curved smile. Development builds prefer the current source-tree icons over
-  an installed release's icons.
-
-## 0.1.13 — 2026-09-11
-
-- Report which running programs an update would replace. Package updates apply to the
-  running system, so the preview records the executables and other files a process is
-  still using. The confirmation states what to do about them in one line and keeps the
-  paths in Details. A program started after the preview stops execution; quitting one
-  beforehand does not.
-- Disclose a running Flatpak as a version that needs reopening rather than a hazard,
-  because its deployment survives until the instance exits.
-- Label an application's update action for what it will do: "Update" once a check has
-  found one for that installation, and "Check for Updates" before then.
-
-- Name the sandbox access a Flatpak update adds before granting it. The confirmation
-  summary counts the new permissions and a card above Details lists them, matching what
-  `flatpak` reports. Only widened access counts; metadata that cannot be read refuses
-  the update instead of implying that nothing changed.
-- Complete a Flatpak update that includes a repair operation. Such an operation resolves
-  to the commit it already has, which previously reported a finished transaction as
-  partial and stopped every remaining update in the batch.
-
-## 0.1.12 — 2026-09-11
-
-- Keep completed application updates out of the cached list while preserving stale
-  status for unrelated inventory changes, including newly installed applications.
-- Use consistent version text in update rows and dialogs. Disclose other visible,
-  checkable launchers sharing an installation, restore the transaction target in
-  Details, and center the disclosure control using public GTK widgets.
-- Honor cancellation during RPM and Flatpak removal setup and backend execution.
-- Verify RPM D-Bus activation through the canonical service resolver, including
-  override precedence, bounded reads, runtime filenames and service changes.
-- Report failed dpkg scans as unavailable for every affected launcher and retry on
-  the next scan. Keep AppImage management available without a supported package database.
-- Reduce repeated inventory snapshots, ownership validation and launcher lookups
-  while keeping partial inventory results independent. Add plural-aware UI text.
-- Keep strict type checking scoped to its configured modules and replace the
-  machine-dependent GTK filtering latency assertion with a diagnostic measurement.
-
-## 0.1.11 — 2026-09-09
-
-- Simplify update confirmation to the application name and version change, with
-  complete dependencies, sources and authorization guidance in collapsed Details.
-  Use the same layout for individual and batch updates; keep launcher aliases out
-  of the heading, center the Details control, and show full package revisions in Details.
-- Discover Flatpak update candidates once per installation and query PackageKit
-  updates once per check. Resolve full plans only for matching desktop applications.
-- Exclude hidden auxiliary entries, such as LibreOffice XSLT filters, from the
-  Updates page. Runtime or extension changes alone no longer mark an application
-  as updatable. Keep required dependencies in application transaction previews and
-  filter older cached rows using the same rules.
-
-## 0.1.10 — 2026-09-09
-
-- Verify the effective D-Bus service and installation before authorizing Flatpak
-  management; service overrides, contents and symlink changes invalidate previews.
-- Correct duplicate Flatpak/Other entries for D-Bus applications such as Gapless by
-  verifying their installed desktop exports, including icon-only user overrides.
-  Keep distinct D-Bus components separate even when their fallback commands match.
-- Verify Flatpak launcher targets and installation selection before association and
-  management; unrelated labels and guest apps cannot inherit host uninstall actions.
-- Resolve independent ownership evidence centrally, expose conflicts, and separate
-  visible components from installations and transaction targets. Revalidate all
-  direct operations and invalidate older cached previews.
-- Honor empty XDG defaults and common env options using the effective launch PATH.
-- Identify AppImages by ELF/type markers and query all applicable supported file
-  ownership backends before allowing Trash, including on non-RPM systems.
-
-## 0.1.9 — 2026-09-08
-
-- Place search and the main menu on either side of the Housekeeper sidebar title.
-  Hide the search field until requested; Ctrl+F opens it, and Escape or the search
-  button closes it and clears the filter.
-- Move refresh to the left of the application and Updates headers, with sorting
-  beside application refresh. Keep the sidebar button first in narrow windows.
-- Add Ctrl+comma to open Preferences and a remembered automatic app-list refresh
-  switch, enabled by default. Disabling it cancels queued automatic refreshes while
-  preserving startup loading, manual refreshes, and refreshes after app operations.
-- Display hidden application icons at 50% opacity in both list and grid views.
-- Refresh the README screenshots and synchronize application and release metadata.
-
-## 0.1.8 — 2026-09-08
-
-- Remove successfully updated applications from the visible and persisted update
-  cache while retaining remaining updates, selections, and the original check time.
-  Preserve unfinished applications after partial failures or cancellation, and keep
-  unrelated inventory changes subject to a fresh check.
-- Recognize RPM applications with shared executables or D-Bus launchers, including
-  LibreOffice Calc, Impress and Writer, GNOME Maps, and GNOME Weather, using desktop
-  package ownership and verified package relationships.
-- Check installed RPM launcher and entry-point contents, symlink targets, direct
-  dependencies, and applicable D-Bus services. Revalidate targets before direct
-  management; retain source identification with instructions when evidence is
-  insufficient, including unsupported systemd-delegated activation.
-- Add cache, attribution, and GTK regressions, and simplify the README.
-
-## 0.1.7 — 2026-09-08
-
-- Add update preferences for checks on entry or manual checks only, daily or
-  weekly intervals, and independent RPM/Flatpak source switches. Match cached
-  reports to the enabled sources and discard results when that selection changes.
-- Simplify the header: keep view switching beside sorting, including in narrow
-  windows, and keep hidden-entry visibility in Preferences only.
-- Add a remembered sort menu for list and grid views: name (default), largest software
-  size first, or Last Updated (newest first). Show the selected metric and put unknown
-  values last, with alphabetical ties and preserved selection when changing order.
-- Reuse inventory metadata for sorting. Last Updated comes from RPM, Pacman and Snap
-  metadata or Flatpak's local deployment journal and is also shown in details.
-- Match Flatpak history by installation, full ref and current commit, with user-scope
-  isolation and no fallback to a stale deployment before an uninstall or newer change.
-  Unavailable history leaves the date unknown without interrupting inventory.
-- Recompile the development settings schema when its source changes.
-
-## 0.1.6 — 2026-09-07
-
-- Show software size in app details for RPM, DEB, Pacman, APK, Flatpak, Snap and
-  AppImage installations. Keep unavailable sizes unknown; omit user-data scanning
-  and exclude shared dependencies and runtimes from estimates.
-- Identify DEB, Pacman, APK and Snap applications from local installed-package
-  metadata and exact desktop ownership. Include Pacman-registered AUR builds,
-  custom Pacman roots and Snap desktop exports. Keep update and removal actions
-  for these sources in their external package managers.
-- Use one overall update-check progress bar based on completed installations.
-  Backend phase percentages and unknown estimates no longer reset its progress.
-- Keep the progress window size stable with separate fixed-height application
-  and status lines, using tooltips for long messages.
-- Keep Cancel enabled throughout update checks and disable it once after a click.
-  Defer cancellation when a backend phase cannot stop immediately, and prevent
-  later progress callbacks from re-enabling the button.
-- Add storage, package-attribution, cancellation and GTK layout regressions, and
-  synchronize application, build, package and AppStream metadata for v0.1.6.
-
-## 0.1.5 — 2026-09-07
-
-- Name the second sidebar category from the distribution's native package family
-  using os-release, including DEB on Ubuntu/Debian and RPM on Fedora/openSUSE.
-  Keep unsupported-provider guidance separate from verified application sources.
-- Add an Appearance group at the bottom of app details with the icon theme or
-  custom image and explicit launcher GTK theme overrides when available. Show
-  resolved icon files in Technical Details.
-- Change launcher icons from local images and restore the original icon. Save
-  images durably, preserve other launcher fields, and keep verified RPM/Flatpak
-  attribution when creating a per-user icon override.
-- Explain GNOME's app-grid refresh limitation in Appearance and in a GNOME Tip
-  attached to the save/restore notification, with logout/login guidance when needed.
-- Move list and grid spacing inside scrolling content so scrollbars and overshoot
-  effects reach the page edges while preserving content insets.
-- Refresh README screenshots and synchronize application, build and package metadata.
-
-## 0.1.4 — 2026-09-07
-
-- Cache successful update checks across page navigation and application restarts,
-  including empty results. Show the last check time and recheck on page entry after
-  24 hours, with manual refresh available anytime. Invalidate affected entries when
-  installed applications change.
-- Keep the previous update list and selection when a check is cancelled, including
-  when providers have returned partial results. Preserve the cached check time.
-- Simplify Cancel Operation to Cancel and omit the intermediate cancellation-request notice.
-- Keep Updates actions compact at wide window sizes and shorten the header to an
-  update count and check time. Move updater guidance into Details and cache timing
-  guidance into the timestamp tooltip.
-- Place update actions at the bottom right and selection status at the bottom left,
-  in a footer that remains visible while scrolling the update list. Remove separators
-  above the footer and the Updates sidebar row.
-- Remove the rectangular hover background around detail-page pill buttons while
-  preserving their native hover, pressed, and keyboard-focus styling.
-- Draw grid selection, hover, and pressed backgrounds on the tile alone, give list
-  rows subtle rounded corners, and share the same state colors across both views.
-
-## 0.1.3 — 2026-09-07
-
-- Add RPM and Flatpak update checks beside the removal action, with current/target
-  versions, dependency previews, explicit confirmation, progress, and verified results.
-- Add Updates at the bottom of the sidebar, with app selection, Update All, shared
-  dependency handling, and partial-completion reporting. Checks run on explicit user action.
-- Support system Flatpak updates through Polkit while retaining exact plan checks.
-  Explain system password/fingerprint authentication when authorization is required.
-- Enable cooperative cancellation during Flatpak updates and extra-data downloads;
-  keep the window open until the backend stops and installed state is verified.
-- Provide source-specific update instructions for externally managed applications
-  and unsupported operations. Keep update capability independent of removal support.
-- Rebuild GTK resources before starting the development launcher and record failures
-  in rotating local diagnostic logs.
-- Remove ellipses from interface text and keep update/removal controls usable at narrow widths.
-- Add signed RPM and Flatpak update fixtures, system authorization and download-cancellation
-  regressions, service lifecycle tests, adaptive GTK coverage, and updated screenshots.
-- Synchronize application, package, and AppStream versions; derive archive names from
-  the application version and backfill the 0.1.2 release notes.
-
-## 0.1.2 — 2026-09-07
-
-- Fix startup crashes caused by GTK background SVG icon loading while preserving
-  icon themes, scaling, and fallback icons.
-- Rename the System Packages sidebar category to RPM to distinguish installation
-  source from System/User scope.
-- Add repeated SVG startup regression tests and update screenshots and testing guidance.
-
-## 0.1.0 — development
-
-- Add a unified inventory of desktop applications and supported installations.
-- Add source filters, list and grid views, search, and adaptive app details.
-- Add RPM and Flatpak removal previews and conservative AppImage trash operations.
-- Add browser web-app and Steam management guidance.
-- Add optional-provider degradation, package fixtures, GTK smoke tests, RPM packaging,
-  and draft release automation.
-
-This is a development release. Refer to the validation record before publishing.
+- Add an Install Application dialog for native packages and Flatpak applications.
+  Search configured sources by app name or keyword using AppStream metadata,
+  review the exact source and installation scope, and select a result to install
+  with its dependencies. Reuse installed system Flatpak runtimes when possible.
+- Add Software Sources to Preferences. List and enable or disable native and
+  Flatpak repositories, import Flatpak sources from a local file or HTTPS URL,
+  and review their installation scope and signature-verification setting before
+  adding them. Keep update-source preferences on the same page.
+- Import local AppImages into ~/AppImages and create desktop launchers without
+  executing the imported file. Keep the original download and allow an optional
+  name and custom icon. Snap and Steam installation open their external stores.
+- Create website launchers for Chrome or Chromium with an optional name and icon.
+  Retrieve the website's icon during installation, fall back when it is unavailable,
+  and store normalized images locally. Match Chromium's Wayland and X11 window
+  identities so the website window can use its own launcher, name and icon.
+- Uninstall verified Housekeeper website launchers by moving their desktop files
+  to Trash after rechecking ownership and contents. Preserve browser data and icons;
+  externally created shortcuts and browser-installed PWAs retain browser management.
+- Keep installation and source changes on the existing cancellable management
+  worker, discard obsolete search results, and refresh inventory after operations.
+  Add unit, GTK and isolated integration coverage for installation, software sources,
+  icon handling and website launcher creation and removal.

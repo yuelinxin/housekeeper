@@ -7,6 +7,7 @@ from pathlib import Path
 from housekeeper.discovery import application_roots, scan_entries
 from housekeeper.identity import classify, merge_records
 from housekeeper.models import (
+    TRASH_PROVIDERS,
     Action,
     ManagementError,
     OperationCancelled,
@@ -22,6 +23,8 @@ LOG = logging.getLogger(__name__)
 def collect(partial=None, roots=None, *, indexes=None):
     from copy import deepcopy
 
+    from gi.repository import GLib
+
     from housekeeper.attribution import attribute
     from housekeeper.inventory import (
         assign_actions,
@@ -30,6 +33,7 @@ def collect(partial=None, roots=None, *, indexes=None):
         installation_record,
     )
     from housekeeper.providers.appimage import AppImageProvider
+    from housekeeper.providers.web import WebLauncherProvider
 
     if partial:
         initial, _ = scan_entries(roots)
@@ -77,6 +81,7 @@ def collect(partial=None, roots=None, *, indexes=None):
 
     ownership = FileOwnershipIndex()
     image_provider = AppImageProvider(ownership=ownership.query)
+    web_provider = WebLauncherProvider(ownership=ownership.query)
     capabilities = {
         name: snapshot.capabilities
         for snapshot in snapshots
@@ -104,6 +109,20 @@ def collect(partial=None, roots=None, *, indexes=None):
             except (ManagementError, OSError, RuntimeError) as error:
                 record.action = Action.NONE
                 record.metadata["management_reason"] = str(error)
+        elif (
+            record.source == Source.WEB
+            and record.provider == "browser-wrapper"
+            and any(entry.housekeeper_created for entry in record.entries)
+        ):
+            try:
+                web_provider.prepare(record, output)
+            except (ManagementError, OSError, RuntimeError, ValueError, GLib.Error):
+                pass  # Unverified or externally created launchers retain browser guidance.
+            else:
+                record.provider, record.action = "web-launcher", Action.UNINSTALL
+                record.scope = "User"
+                record.location = str(record.entries[0].path)
+                record.metadata.pop("management_reason", None)
         elif record.source == Source.OTHER and not record.metadata.get("management_reason"):
             record.metadata["management_reason"] = (
                 "No supported package manager could establish this application's ownership."
@@ -125,6 +144,10 @@ class InventoryService:
     def __init__(self, dispatch):
         self.dispatch = dispatch
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="housekeeper")
+        self.search_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="housekeeper-search"
+        )
+        self.install_search = None
         self.inventory = []
         self.busy = False
         self.scanning = False
@@ -172,6 +195,10 @@ class InventoryService:
             from housekeeper.providers.appimage import AppImageProvider
 
             return AppImageProvider()
+        if app.provider == "web-launcher":
+            from housekeeper.providers.web import WebLauncherProvider
+
+            return WebLauncherProvider()
         raise ManagementError("This application is managed by another tool.")
 
     def prepare(self, app, completed, failed):
@@ -246,7 +273,7 @@ class InventoryService:
     def execute(self, app, plan, progress, completed):
         def run(provider):
             # Repeat ownership and shared-file checks against a fresh inventory before file removal.
-            if app.provider == "appimage":
+            if app.provider in TRASH_PROVIDERS:
                 current, *_ = collect()
                 match = next((item for item in current if item.key == app.key), None)
                 if match is None:
@@ -281,6 +308,111 @@ class InventoryService:
 
         self._submit(app, run, completed, failed, worker=object())
 
+    def cancel_install_search(self):
+        if self.install_search is not None:
+            worker, future = self.install_search
+            self.install_search = None
+            worker.request_cancel()
+            future.cancel()
+
+    def search_install(self, source, query, completed, failed):
+        from housekeeper.installations import Installer
+
+        self.cancel_install_search()
+        if self.closed:
+            return
+        worker = Installer()
+        try:
+            future = self.search_executor.submit(worker.search, source, query)
+        except Exception as error:
+            self.dispatch(failed, str(error))
+            return
+        self.install_search = (worker, future)
+
+        def finish(result):
+            # Runs on the dispatch (GTK) thread, like every other access to
+            # install_search, so a newer search cannot be cleared by an older one.
+            if self.closed or self.install_search != (worker, future):
+                return
+            # Release the finished worker and its results; a later cancellation must not
+            # act on this search, and the candidate list outlives the dialog otherwise.
+            self.install_search = None
+            try:
+                candidates = result.result()
+            except (CancelledError, OperationCancelled):
+                return
+            except Exception as error:
+                failed(str(error))
+                return
+            completed(candidates)
+
+        future.add_done_callback(lambda result: self.dispatch(finish, result))
+
+    def install(self, request, progress, completed):
+        from housekeeper.installations import Installer
+
+        self.cancel_install_search()
+        self._submit(
+            None,
+            lambda worker: worker.install(request, lambda *args: self.dispatch(progress, *args)),
+            completed,
+            lambda error: completed(self._failure(error)),
+            preserve_error=True,
+            worker=Installer(),
+            label="installation",
+        )
+
+    def software_sources(self, completed, failed):
+        from housekeeper.repositories import RepositoryManager
+
+        self._submit(
+            None,
+            lambda worker: worker.list_sources(),
+            completed,
+            failed,
+            worker=RepositoryManager(),
+            label="software sources",
+        )
+
+    def prepare_software_source(self, context, value, name, completed, failed):
+        from housekeeper.repositories import RepositoryManager
+
+        self._submit(
+            None,
+            lambda worker: worker.prepare_flatpak_source(context, value, name),
+            completed,
+            failed,
+            worker=RepositoryManager(),
+            label="software source preview",
+        )
+
+    def change_software_source(self, source, enabled, completed, failed):
+        from housekeeper.repositories import RepositoryManager
+
+        self.cancel_install_search()
+
+        def run(worker):
+            try:
+                return (
+                    worker.add_flatpak_source(source)
+                    if enabled is None
+                    else worker.set_enabled(source, enabled)
+                )
+            finally:
+                # Catalogue access stays on its own single worker, after any cancelled
+                # search finishes, so no late search can repopulate the stale cache.
+                from housekeeper.providers.install import forget_remote_refs
+
+                try:
+                    self.search_executor.submit(forget_remote_refs)
+                except RuntimeError:
+                    if not self.closed:
+                        raise
+
+        self._submit(
+            None, run, completed, failed, worker=RepositoryManager(), label="software source change"
+        )
+
     def measure_storage(self, app, completed):
         from housekeeper.storage import StorageUsage, measure_storage
 
@@ -309,7 +441,9 @@ class InventoryService:
         outcome = Outcome.CANCELLED if isinstance(error, OperationCancelled) else Outcome.FAILED
         return OperationResult(outcome, str(error))
 
-    def _submit(self, app, run, completed, failed, preserve_error=False, worker=None):
+    def _submit(
+        self, app, run, completed, failed, preserve_error=False, worker=None, label="update batch"
+    ):
         def failure(error):
             self.dispatch(failed, error if preserve_error else str(error))
 
@@ -346,7 +480,7 @@ class InventoryService:
             except Exception as error:
                 LOG.warning(
                     "Management operation failed for %s",
-                    app.identity if app else "update batch",
+                    app.identity if app else label,
                     exc_info=True,
                 )
                 failure(error)
@@ -355,7 +489,7 @@ class InventoryService:
                 LOG.log(
                     logging.INFO if outcome.outcome == Outcome.SUCCESS else logging.WARNING,
                     "Operation result for %s: %s; %s; completed=%s; errors=%s",
-                    app.identity if app else "update batch",
+                    app.identity if app else label,
                     outcome.outcome.value,
                     outcome.message,
                     outcome.completed,
@@ -376,4 +510,6 @@ class InventoryService:
 
     def close(self):
         self.closed = True
+        self.cancel_install_search()
+        self.search_executor.shutdown(wait=False, cancel_futures=True)
         self.executor.shutdown(wait=False, cancel_futures=True)

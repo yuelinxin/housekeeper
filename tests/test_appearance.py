@@ -5,9 +5,12 @@ import pytest
 from gi.repository import GLib
 
 from housekeeper.appearance import (
+    STAGING_MAX_AGE,
+    STAGING_PREFIX,
     can_reset_icon,
     launcher_theme,
     save_icon,
+    staged_write,
     verified_icon_source,
 )
 from housekeeper.attribution import attribute
@@ -185,3 +188,39 @@ def test_explicit_launcher_theme(entry):
     assert launcher_theme(entry(("env", "GTK_THEME=Yaru:dark", "example"))) == "Yaru:dark"
     assert launcher_theme(entry(("sh", "-c", "GTK_THEME=Yaru example"))) == ""
     assert launcher_theme(entry(("example", "GTK_THEME=Yaru"))) == ""
+
+
+def test_staged_write_publishes_once_complete_and_sweeps_abandoned_copies(tmp_path):
+    import os
+    import time
+
+    directory = tmp_path / "staging"
+    directory.mkdir()
+    abandoned = directory / (STAGING_PREFIX + "killed")
+    abandoned.write_bytes(b"partial")
+    os.utime(abandoned, (0, time.time() - STAGING_MAX_AGE - 60))
+    recent = directory / (STAGING_PREFIX + "concurrent")
+    recent.write_bytes(b"in flight")
+    target = directory / "published"
+    staged = []
+
+    def write(stream):
+        stream.write(b"contents")
+        assert not target.exists()
+
+    assert staged_write(directory, write, lambda s: staged.append(s) or os.link(s, target)) is None
+    assert target.read_bytes() == b"contents"
+    assert target.stat().st_mode & 0o777 == 0o644
+    assert not staged[0].exists()
+    assert not abandoned.exists() and recent.exists()
+
+
+def test_staged_write_leaves_nothing_behind_when_publishing_fails(tmp_path):
+    directory = tmp_path / "staging"
+
+    def publish(_staged):
+        raise ManagementError("No room")
+
+    with pytest.raises(ManagementError):
+        staged_write(directory, lambda stream: stream.write(b"contents"), publish)
+    assert not list(directory.iterdir())

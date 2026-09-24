@@ -102,6 +102,7 @@ def read_entry(path: Path, root: Path, desktops: set[str] | None = None) -> Desk
         flatpak_id=string("X-Flatpak"),
         dbus_activatable=dbus,
         launch=launch,
+        housekeeper_created=boolean("X-Housekeeper-Created"),
     )
 
 

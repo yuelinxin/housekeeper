@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.1.16
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -29,12 +29,16 @@ Recommends:     python3-rpm
 Recommends:     PackageKit
 Recommends:     PackageKit-glib
 Recommends:     flatpak-libs
+Recommends:     appstream
+Recommends:     appstream-data
 
 %description
 Housekeeper provides a searchable GTK application inventory with installation
 sources, file locations, and source-appropriate removal or management actions.
 It supports RPM and Flatpak update previews and selected or all-app updates,
-plus management of AppImages, browser web apps, and Steam shortcuts.
+plus installation from native and Flatpak sources, AppImage imports, and website
+launchers. Manage software sources in Preferences and remove verified website
+launchers without deleting browser data. Snap and Steam use their external stores.
 Application details include software sizes, icon themes, custom launcher icons
 and restoration. Read-only attribution covers DEB, Pacman, APK and Snap packages.
 Native source labels follow the distribution; unsupported providers remain manual.
@@ -68,6 +72,13 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Thu Sep 24 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.2.0-1
+- Add native and Flatpak application search and installation with AppStream metadata.
+- Manage native and Flatpak software sources in Preferences.
+- Import AppImages and create website launchers with durable custom or website icons.
+- Match website window identities and safely trash verified website launchers.
+- Add installation, repository, website and GTK regression coverage.
+
 * Fri Sep 18 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.1.16-1
 - Keep details, launching, update checks and management usable during inventory scans.
 - Queue a management request behind a running scan and let Cancel withdraw it.

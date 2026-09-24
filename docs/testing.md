@@ -2,6 +2,85 @@
 
 ## Local tests
 
+`test_repositories.py` covers separate user/system Flatpak sources, partial backend
+failures, exact native repository IDs, stale configuration, cancellation, duplicate
+names, bounded imports, HTTPS-only redirect hops, declared signature verification and
+confirmation bytes. Service tests cover serialized writes, search cancellation, a finished
+search never clearing a newer one, and catalogue invalidation after both successful and
+failed changes.
+GTK smoke verifies lazy loading in Preferences, source switches, failure recovery,
+add/confirm/cancel flows, busy refusals shown inside Preferences, narrow layout and late
+callbacks after closing. Set
+`HOUSEKEEPER_SMOKE_SOURCES_ONLY=1` for these UI flows and the
+`preferences-software-sources.png` capture.
+
+`integration_repositories.py` runs only in a disposable Fedora container with
+`HOUSEKEEPER_DISPOSABLE_TEST=1` and `PYTHONPATH=src`. It creates two temporary native
+repositories with the same display name and tests listing, exact-ID enable/disable,
+and stale-state rejection through real PackageKit as an unprivileged user. Temporary
+Polkit rules provide test authorization; no packages are downloaded or installed.
+
+`test_installations.py` covers URL validation and desktop Exec escaping, browser
+selection, AppImage import/rollback/duplicate handling, AppStream-first native search
+(packaged desktop apps only, named apps first, installed builds dropped, a real
+libappstream fixture catalogue), the GUI-filtered name fallback, per-remote Flatpak
+AppStream catalogues (names, cached icons, excluded addons, unlisted and installed
+apps, reuse until replaced), phrase queries (whole phrase for AppStream, longest word
+for name search), fuzzy package ranking,
+exact PackageKit IDs, trusted flags, and Flatpak scope/remote/ref preservation and
+partial results, and a runtime offered by several remotes. Service tests cover queued
+installation cancellation and obsolete
+search cancellation. Icon installation regressions cover both local app types,
+durable PNG copies, restoring defaults, duplicate launchers, invalid/oversized images
+and rollback, including removal of icons a failed or cancelled install added. GTK smoke checks icon selection, preview, reset, invalid images and
+file-picker callbacks arriving after a type change. It also checks shared installation
+entry points, stale search responses,
+selection-before-install, URL errors, automatic AppImage names, Steam handoff,
+installation results and inventory refresh. Set `HOUSEKEEPER_SMOKE_INSTALL_ONLY=1`
+to run just these UI flows and capture their dialogs.
+`test_website_icons.py` checks redirects, relative/base URLs, size preference, invalid
+images, bounded downloads, disallowed URL schemes, cancellation, timeout fallback and
+an actual HTTP download from a local fixture server. Installation tests verify that
+custom icon reset restores the website icon and AppImages use the executable icon.
+Web-launcher regressions follow creation through inventory classification and direct
+Uninstall, preserving browser data, icons and unrelated files. Changed contents,
+inodes, symlinks, package ownership and tampered plans stop removal; a symlinked data
+directory does not. Trash failures
+keep the launcher. External shortcuts and browser PWAs retain external management;
+creation markers alone never authorize removal. Launchers are written as UTF-8
+whatever the session locale is. GTK smoke checks removal confirmation, cancellation,
+the exact file preview, successful completion and inventory refresh.
+
+`integration_web_identity.py` runs real Chrome against disposable Xvfb and headless
+Weston displays. It first starts an ordinary Chrome window, then launches three
+generated website desktop entries in that same temporary browser profile. X11
+instances must match StartupWMClass, and Wayland `set_app_id` messages must match
+the desktop filename. It requires a disposable container with Chrome mounted
+read-only at `/opt/google/chrome`, Weston, Xvfb and xwininfo, plus
+`HOUSEKEEPER_DISPOSABLE_TEST=1`. It never opens the user's Chrome profile or display.
+
+`integration_install.py` exports a tiny signed local Flatpak application and runtime,
+imports its repository through `RepositoryManager`, verifies its signature settings,
+rejects duplicate sources, and toggles the source. It then searches by a partial name,
+installs the selected result, and checks both installed refs and the desktop export.
+Disabling the source afterward must leave the application installed.
+Run it as an unprivileged user in a disposable test
+container with `HOUSEKEEPER_DISPOSABLE_TEST=1`, `PYTHONPATH=src` and the isolated
+D-Bus session from the examples below.
+
+`integration_install_system_runtime.py` starts as root only in the disposable
+container, with the same opt-in variable and `PYTHONPATH=src`. It installs a tiny
+system runtime, then runs the application installer as an unprivileged user with
+an app-only repository. It verifies the desktop export, an unchanged system runtime
+commit, and the absence of a duplicate user runtime. No fixture application runs.
+
+`integration_package_install.py` runs as root **only inside the disposable test
+container** with the same opt-in variable. It reuses the signed RPM fixtures from
+`integration_rpm_update.py`, starts temporary D-Bus/Polkit/PackageKit daemons and
+performs the actual search and install as the fixture user. It verifies a signed
+application and its dependency. The image needs `rpm-sign` and `createrepo_c` as
+listed in `tests/Containerfile`. Neither fixture runs the application itself.
+
 Service tests verify that management requests queue behind inventory scans, previews
 and batch checks use the completed inventory, failed scans still release queued work,
 and a cancellation asked for while a request is queued withdraws it without contacting

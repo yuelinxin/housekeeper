@@ -1,4 +1,132 @@
-# v0.1.16 development validation
+# v0.2.0 validation
+
+## v0.2.0 release checks — September 24, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.2.0 / RPM release 1.
+  CHANGELOG contains only this version. README now describes application
+  installation, software sources, website launchers and AppImage imports.
+- Fedora 43 and 44 each pass 671 unit tests, with one dpkg test skipped. Both
+  pass clean source builds, full GTK smoke, five fresh SVG icon startups,
+  AppStream/desktop metadata validation, RPM/SRPM builds, and RPM installation,
+  replacement and removal inside disposable containers.
+- Ubuntu 24.04 passes 642 tests, with 30 optional-provider tests skipped, full
+  GTK smoke and five fresh SVG icon startups. The browser lookup fixture now
+  preserves system tool discovery so dpkg ownership checks work on Ubuntu.
+- Both Fedora versions pass the existing isolated transaction suite, including
+  signed RPM updates, shared-dependency batches, Flatpak updates and removal,
+  system authorization/cancellation, and real GIO Trash. Native RPM removal
+  retains its documented unavailable-preview fallback on these backends.
+- Fedora 44 passes the new real signed package/dependency installation,
+  repository enable/disable and stale-state checks, signed Flatpak source import
+  and app/runtime installation, user installation reusing a system runtime,
+  and website-launcher removal with browser data preserved.
+- Ruff lint and formatting, strict mypy for the seven configured modules, and
+  diff checks pass. Desktop acceptance limitations documented below remain;
+  these checks do not claim new graphical Polkit or GNOME Shell acceptance.
+
+## Web App window identity — September 22, 2026
+
+- Fedora 44: 653 tests passed, one dpkg test skipped. Legacy launchers still offer
+  direct Uninstall; new launchers have deterministic profile and window identities.
+- Chrome 153.0.8010.52 in an offline disposable container passed three URL-app cases
+  on Xvfb and Weston 15.0.1: root URL, path URL and a percent-escaped path. Each app
+  was opened with an ordinary browser window already running in a temporary profile.
+  Actual X11 window instances and Wayland app IDs match the generated desktop entries.
+- Ruff, formatting, strict mypy and diff checks passed. Existing user profiles,
+  browser-installed PWAs and personal launchers were not modified. GNOME Shell's
+  final Dock rendering remains a desktop acceptance check; the integration test
+  checks the actual window properties it uses for association.
+
+## Default installation icons — September 22, 2026
+
+- Fedora 44: 645 tests passed; one dpkg test skipped because dpkg-query is unavailable.
+  Website icon tests include actual HTTP redirects and image downloads from a loopback
+  fixture in an offline container, durable PNGs, fallback, cancellation and size limits.
+- Focused GTK installation smoke passed with automatic website-icon text, the standard
+  executable icon, custom selection and reset. Ruff, strict mypy, Meson build and diff
+  checks passed. No installed user launchers were changed by validation.
+
+## Direct Web App removal — September 22, 2026
+
+- Fedora 44: 631 tests passed, one dpkg test skipped because dpkg-query is unavailable.
+  New regressions cover exact launcher removal, preservation of browser data and
+  other files, changed launchers, package ownership, cancellation and Trash failures.
+- `integration_web_removal.py` passed as an unprivileged user in a disposable offline
+  container: creation, inventory Uninstall capability, real GIO Trash and its recovery
+  metadata, browser-data preservation and refreshed inventory were verified.
+- Focused GTK installation smoke passed, including Web App removal preview, default
+  Cancel, Uninstall, completion and inventory refresh. Ruff, strict mypy, Meson build
+  and diff checks passed. No personal launcher or browser data was modified.
+
+## Custom icons during installation — September 22, 2026
+
+- The 58 installation and appearance tests pass in the disposable Fedora container.
+  New cases verify durable normalized icons for Web Apps and AppImages, unchanged
+  existing launchers on duplicate installation, restoring defaults, invalid/oversized
+  images and removal of a new AppImage copy when icon creation fails.
+- Focused GTK installation smoke passes with icon previews, reset controls, invalid
+  selections and a late file-picker response after changing application type. Both
+  installation dialogs were visually inspected. Ruff, strict mypy and diff checks pass.
+
+## Software sources — September 22, 2026
+
+- Fedora 44: 611 tests passed, one dpkg test skipped; full GTK smoke passed.
+  Ubuntu 24.04: 587 tests passed, 24 optional-provider tests skipped, and full
+  GTK smoke passed. A later libflatpak-only regression also passes on Fedora.
+  Source-page captures were inspected at 360 pixels wide.
+- Disposable Fedora PackageKit testing verifies real repository listing and
+  enable/disable as an unprivileged client, with same-title repositories retaining
+  distinct IDs and stale source state rejected. Test Polkit rules provide authorization.
+- A signed local Flatpak fixture verifies repository-file import, GPG verification,
+  duplicate rejection, enable/disable, subsequent application/runtime installation,
+  and preservation of the installed application after disabling its source.
+- Synthetic checks cover per-provider errors, user/system scope separation,
+  bounded files, cancellation, saving failures, search-cache invalidation and late
+  callbacks after closing Preferences. Ruff, strict mypy and diff checks pass.
+- Repository changes remain inside disposable containers. Native backends beyond
+  Fedora, real graphical authentication, and Flatpak system/custom source mutations
+  still require desktop acceptance checks. A sandbox-only run could not decode icons
+  through the host's D-Bus image loader; both complete container suites pass.
+
+## Installation review fixes — September 22, 2026
+
+- Regression tests reproduced the missing system-runtime dependency and incorrect
+  website-launcher management instructions before their fixes.
+- The local unit suite passes 572 tests with one dpkg test skipped. Ubuntu 24.04
+  passes 65 installation, identity and service tests. Focused installation-dialog
+  GTK smoke passes in both Fedora 44 and Ubuntu 24.04 disposable containers.
+- The new offline Flatpak fixture installs an app as an unprivileged user using an
+  existing system runtime. Its app-only source cannot supply the runtime; the test
+  verifies no user runtime copy and no change to the system runtime commit. The
+  original user-scope app/runtime installation fixture also passes.
+- Launcher tests verify the exact desktop-file removal instruction after a complete
+  inventory scan, retain installed-PWA management and keep creation markers from
+  authorizing native removal. Ruff, strict mypy and `git diff --check` pass.
+
+## Application installation — September 22, 2026
+
+- Fedora 44: 569 unit tests passed, one dpkg test skipped; the full GTK smoke suite
+  and final focused installation-dialog smoke passed. Ubuntu 24.04 baseline:
+  546 passed, 24 optional-provider tests skipped, and full GTK smoke passed.
+- New dialogs were inspected at narrow and ordinary widths. Synthetic UI tests
+  exercise source selection, obsolete search responses, explicit package selection,
+  URL validation, default Chrome, AppImage name generation, Steam handoff, queued
+  cancellation, installation result headings and inventory refresh.
+- The real offline Flatpak fixture installs an application and runtime from a local
+  configured source, verifies installed refs and the desktop export, and excludes
+  the installed app from subsequent searches. It also fails on Python signal-handler
+  errors, catching the runtime-source callback's full argument signature.
+- The Fedora 44 PackageKit fixture passes real package-name search and installation
+  of a signed local RPM and its dependency as an unprivileged client. Independent
+  RPM database queries confirm both installed versions. Test-only Polkit rules
+  provide authorization inside the container; no graphical prompt is simulated.
+  The search path supplies the progress callback required by PackageKit's bindings.
+- Ruff lint/format, `git diff --check`, and the seven configured strict mypy modules
+  pass. No personal apps, launchers or package repositories were changed by tests.
+- Native DEB/Pacman/APK installation and graphical Polkit authorization still need
+  distribution-specific desktop acceptance tests. Snap Store and Steam launches
+  are mocked in UI tests. AppImage integration verifies file/launcher handling but
+  does not execute imported programs or validate their FUSE/runtime requirements.
 
 ## v0.1.16 responsive inventory refresh — September 18, 2026
 

@@ -335,3 +335,120 @@ def test_batch_check_forwards_provider_selection(service, monkeypatch):
     value.executor.finish()
     assert contacted == ["flatpak"]
     assert not results[0].errors and not value.busy
+
+
+def test_install_is_serialized_and_can_be_cancelled_before_start(service, monkeypatch):
+    from housekeeper.installations import Installer, InstallRequest
+
+    value, _provider = service
+    calls, results = [], []
+    monkeypatch.setattr(Installer, "install", lambda *_args: calls.append(True))
+    value.install(InstallRequest("web", "example.org"), lambda *_: None, results.append)
+    assert value.busy and not value.scan(None, None, None)
+    value.cancel()
+    value.executor.finish()
+    assert not calls and not value.busy
+    assert results[0].outcome == Outcome.CANCELLED
+
+
+def test_new_install_search_cancels_previous_and_close_cancels_pending(service, monkeypatch):
+    from housekeeper.installations import Installer
+
+    value, _provider = service
+    value.search_executor.shutdown()
+    value.search_executor = Executor()
+    searched, completed = [], []
+    monkeypatch.setattr(
+        Installer, "search", lambda _self, _source, query: searched.append(query) or (query,)
+    )
+    value.search_install("rpm", "old", completed.append, pytest.fail)
+    old, future = value.install_search
+    value.search_install("rpm", "new", completed.append, pytest.fail)
+    assert old.cancel.is_cancelled() and future.cancelled()
+    value.search_executor.finish()
+    value.search_executor.finish()
+    assert searched == ["new"] and completed == [("new",)]
+    assert not value.busy
+    value.search_install("rpm", "closing", completed.append, pytest.fail)
+    pending, future = value.install_search
+    value.close()
+    assert pending.cancel.is_cancelled() and future.cancelled()
+
+
+def test_a_search_finishing_on_its_thread_never_touches_a_newer_search(monkeypatch):
+    import threading
+
+    from housekeeper.installations import Installer
+
+    # Like GLib.idle_add: callbacks run later on the GTK thread, never on the worker.
+    queued = []
+    value = InventoryService(lambda fn, *args: queued.append((fn, args)))
+    value.search_executor.shutdown()
+    value.search_executor = Executor()
+    monkeypatch.setattr(Installer, "search", lambda _self, _source, query: (query,))
+    completed = []
+    value.search_install("rpm", "one", completed.append, pytest.fail)
+    first = value.install_search
+    worker = threading.Thread(target=value.search_executor.finish)
+    worker.start()
+    worker.join()
+    assert value.install_search == first  # The search thread changed nothing.
+    value.search_install("rpm", "two", completed.append, pytest.fail)
+    second = value.install_search
+    while queued:
+        fn, args = queued.pop(0)
+        fn(*args)
+    assert value.install_search == second and completed == []
+    value.search_executor.finish()
+    fn, args = queued.pop(0)
+    fn(*args)
+    assert completed == [("two",)] and value.install_search is None
+    value.close()
+
+
+@pytest.mark.parametrize("succeeds", [True, False])
+def test_source_change_cancels_search_and_invalidates_catalogue_in_order(
+    service, monkeypatch, succeeds
+):
+    from housekeeper.installations import Installer
+    from housekeeper.providers import install
+    from housekeeper.repositories import RepositoryManager
+
+    value, _provider = service
+    value.search_executor.shutdown()
+    value.search_executor = Executor()
+    calls, completed, errors = [], [], []
+    monkeypatch.setattr(Installer, "search", lambda *_: calls.append("search"))
+    monkeypatch.setattr(install, "forget_remote_refs", lambda: calls.append("clear"))
+
+    def change(_manager, source, enabled):
+        calls.append((source, enabled))
+        if not succeeds:
+            raise ManagementError("Authorization denied")
+
+    monkeypatch.setattr(RepositoryManager, "set_enabled", change)
+    value.search_install("flatpak", "old", pytest.fail, pytest.fail)
+    worker, future = value.install_search
+    value.change_software_source("source", False, completed.append, errors.append)
+    assert worker.cancel.is_cancelled() and future.cancelled()
+    assert value.busy and not value.scan(None, None, None)
+    value.executor.finish()
+    assert calls == [("source", False)] and not value.busy
+    value.search_executor.finish()  # Withdrawn search cannot refill the old catalogue.
+    value.search_executor.finish()
+    assert calls == [("source", False), "clear"]
+    assert completed == ([None] if succeeds else [])
+    assert errors == ([] if succeeds else ["Authorization denied"])
+
+
+def test_source_change_cancellation_before_start_never_writes(service, monkeypatch):
+    from housekeeper.repositories import RepositoryManager
+
+    value, _provider = service
+    writes, errors = [], []
+    monkeypatch.setattr(RepositoryManager, "add_flatpak_source", lambda *_: writes.append(True))
+    value.change_software_source("plan", None, pytest.fail, errors.append)
+    value.cancel()
+    value.executor.finish()
+    assert not writes and not value.busy
+    assert errors and "cancelled" in errors[0]

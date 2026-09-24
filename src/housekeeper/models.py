@@ -145,6 +145,13 @@ class DesktopEntry:
     dbus_activatable: bool = False
     root: Path = Path("/")
     launch: LaunchSpec | None = None
+    # A presentation hint, not evidence of ownership or permission to remove files.
+    housekeeper_created: bool = False
+
+
+# Providers whose removal moves the planned files to Trash. Their plans are
+# re-verified against a fresh inventory before any file is touched.
+TRASH_PROVIDERS = frozenset({"appimage", "web-launcher"})
 
 
 @dataclass(frozen=True)

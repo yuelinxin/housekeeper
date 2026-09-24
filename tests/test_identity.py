@@ -1,17 +1,24 @@
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
 from housekeeper.identity import classify, merge_records, unwrap_env
 from housekeeper.models import Action, Source
 
 APP_ID = "abcdefghijklmnopabcdefghijklmnop"
 
 
-def test_pwa_is_not_browser_package(entry):
+@pytest.mark.parametrize("created", [False, True])
+def test_pwa_is_not_browser_package(entry, created):
     app = classify(
         entry(
             (
                 "/opt/google/chrome/google-chrome",
                 "--profile-directory=Default",
                 "--app-id=" + APP_ID,
-            )
+            ),
+            housekeeper_created=created,
         )
     )
     assert app.provider == "chrome"
@@ -22,6 +29,30 @@ def test_pwa_is_not_browser_package(entry):
         "--profile-directory=Default",
         "--app-id=" + APP_ID,
     )
+
+
+def test_unmarked_website_launcher_keeps_external_management(entry):
+    app = classify(entry(("/usr/bin/chromium", "--app=https://example.org")))
+    assert app.source == Source.WEB and app.action == Action.INSTRUCTIONS
+    assert "app management menu" in app.metadata["management_reason"]
+
+
+@pytest.mark.parametrize("owned", [False, True])
+def test_trash_step_is_offered_only_for_launchers_this_application_wrote(
+    entry, tmp_path, monkeypatch, owned
+):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    launcher = (tmp_path / "data/applications") if owned else Path("/usr/share/applications")
+    created = entry(("/usr/bin/chromium", "--app=https://example.org"), housekeeper_created=True)
+    app = classify(replace(created, path=launcher / "housekeeper-web-example.desktop"))
+    instructions = app.metadata["management_reason"]
+    assert ("Trash" in instructions) is owned
+    assert ("app management menu" in instructions) is not owned
+
+
+def test_creation_marker_does_not_authorize_native_removal(entry):
+    app = classify(entry(("/usr/bin/true",), housekeeper_created=True))
+    assert app.source == Source.OTHER and app.action == Action.NONE
 
 
 def test_pwa_profiles_and_user_data_directories_are_distinct(entry):

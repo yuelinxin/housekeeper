@@ -27,9 +27,11 @@ gi.require_version("Gsk", "4.0")
 from gi.repository import Adw, Gdk, Gio, GLib, Gsk, Gtk
 
 from housekeeper import APP_ID
+from housekeeper.appearance import data_home
 from housekeeper.batch_updates import UpdateItem, UpdateReport
 from housekeeper.discovery import scan_entries
 from housekeeper.identity import classify
+from housekeeper.installations import InstallCandidate
 from housekeeper.models import (
     Action,
     AppRecord,
@@ -49,6 +51,7 @@ from housekeeper.models import (
     UpdateState,
 )
 from housekeeper.platforms import native_package_source
+from housekeeper.repositories import FlatpakSourcePlan, SoftwareSource, SourceGroup
 from housekeeper.services import InventoryService
 from housekeeper.storage import StorageUsage
 from housekeeper.updates import assign_update_action
@@ -129,7 +132,9 @@ def exception(kind, value, trace):
 
 sys.excepthook = exception
 application = Adw.Application(
-    application_id=APP_ID + ".Smoke", flags=Gio.ApplicationFlags.NON_UNIQUE
+    application_id=APP_ID + ".Smoke",
+    resource_base_path="/io/github/yuelinxin/housekeeper",
+    flags=Gio.ApplicationFlags.NON_UNIQUE,
 )
 started = time.monotonic()
 output = Path(os.environ.get("HOUSEKEEPER_SCREENSHOT_DIR", ROOT / "work/screenshots"))
@@ -162,6 +167,267 @@ def activate(app):
     steps = []
     icon_fixture = {}
     badge_fixture = {}
+    install_fixture = {}
+
+    def choose_install_icon(dialog, path):
+        class IconChooser:
+            def __init__(self, **_kwargs):
+                pass
+
+            def open(self, _parent, _cancel, callback):
+                callback(self, None)
+
+            def open_finish(self, _result):
+                return Gio.File.new_for_path(str(path))
+
+        with patch("housekeeper.ui.install.Gtk.FileDialog", IconChooser):
+            dialog.icon_button.emit("clicked")
+
+    def check_install_search():
+        assert window.add_button.get_icon_name() == "list-add-symbolic"
+        assert window.add_button.get_action_name() == "win.add"
+        with patch.object(window, "refresh") as refresh:
+            window.lookup_action("refresh-inventory").activate(None)
+            refresh.assert_called_once()
+        window.source = "all"
+        window.add_application()
+        dialog = window.install_dialog
+        assert dialog.source == window.native_source and not dialog.add_button.get_sensitive()
+        searches = []
+        timers = []
+        with (
+            patch(
+                "housekeeper.ui.install.GLib.timeout_add",
+                side_effect=lambda _delay, fn: (timers.append(fn), 0)[1],
+            ),
+            patch.object(
+                window.service, "search_install", side_effect=lambda *args: searches.append(args)
+            ),
+        ):
+            dialog.value.set_text("firefx")
+            timers.pop()()
+            old_result = searches[-1][2]
+            dialog.value.set_text("firefox")
+            timers.pop()()
+            icon = Path(cache_directory.name) / "catalogue-icon.svg"
+            icon.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
+                '<rect width="64" height="64" rx="12" fill="#e66100"/></svg>'
+            )
+            candidate = InstallCandidate(
+                window.native_source,
+                "firefox",
+                "firefox;1;x86_64;repo",
+                "Browse the web · firefox · 1 · x86_64 · repo",
+                title="Firefox",
+                icon=str(icon),
+            )
+            plain = InstallCandidate(
+                window.native_source, "firefox-extra", "firefox-extra;1;x86_64;repo", "Extra"
+            )
+            old_result((candidate,))
+            assert dialog.results.get_first_child() is None
+            searches[-1][2]((candidate, plain))
+            assert dialog.results.get_first_child() is not None
+            # Catalogue apps show their name and icon; other packages keep a plain row.
+            titles = [dialog.results.get_row_at_index(i).get_title() for i in (0, 1)]
+            assert titles == ["Firefox", "firefox-extra"]
+
+            def images(widget):
+                child = widget.get_first_child()
+                while child:
+                    if isinstance(child, Gtk.Image) and child.get_pixel_size() == 32:
+                        yield child
+                    yield from images(child)
+                    child = child.get_next_sibling()
+
+            assert [len(list(images(dialog.results.get_row_at_index(i)))) for i in (0, 1)] == [
+                1,
+                0,
+            ]
+            assert not dialog.add_button.get_sensitive()
+            dialog.results.select_row(dialog.results.get_row_at_index(0))
+            assert dialog.add_button.get_sensitive() and dialog.candidate == candidate
+        install_fixture["dialog"] = dialog
+        install_fixture["candidate"] = candidate
+        dialog.set_default_size(360, 480)
+
+    def check_install_selected():
+        dialog = install_fixture["dialog"]
+        capture(dialog, "install-package.png")
+        with patch.object(window.service, "install") as install:
+            dialog.add_button.emit("clicked")
+            request = install.call_args.args[0]
+            assert request.candidate == install_fixture["candidate"]
+            assert window.operation_active and window.operation_kind == "install"
+            with (
+                patch.object(window, "message") as message,
+                patch.object(window, "refresh") as refresh,
+            ):
+                install.call_args.args[2](OperationResult(Outcome.SUCCESS, "Installed"))
+                assert message.call_args.args[0] == "Installation Complete"
+                refresh.assert_called_once()
+            assert not window.operation_active
+        window.source = "web"
+        window.add_application()
+        dialog = window.install_dialog
+        assert dialog.source == window.native_source
+        dialog.type_row.set_selected(dialog.types.index("web"))
+        assert dialog.browser.get_selected() == 0
+        assert dialog.icon_row.get_subtitle() == "Website icon (automatic)"
+        dialog.value.set_text("file:///tmp/invalid")
+        dialog.add_button.emit("clicked")
+        assert window.install_dialog is dialog and dialog.status.get_label()
+        dialog.value.set_text("example.org/notes")
+        assert not dialog.status.get_label()
+        dialog.name.set_text("Notes")
+        picture = Path(cache_directory.name) / "install-icon.svg"
+        picture.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
+            '<rect width="32" height="32" rx="8" fill="#3584e4"/></svg>'
+        )
+        install_fixture["icon"] = picture
+        choose_install_icon(dialog, picture)
+        assert dialog.icon_file == str(picture) and dialog.icon_reset.get_sensitive()
+        dialog.icon_reset.emit("clicked")
+        assert not dialog.icon_file and not dialog.icon_reset.get_sensitive()
+        assert dialog.icon_row.get_subtitle() == "Website icon (automatic)"
+        choose_install_icon(dialog, picture)
+        invalid = Path(cache_directory.name) / "invalid-icon.png"
+        invalid.write_text("not an image")
+        choose_install_icon(dialog, invalid)
+        assert dialog.icon_file == str(picture) and dialog.status.get_label()
+        choose_install_icon(dialog, picture)
+        install_fixture["dialog"] = dialog
+
+    def check_install_web():
+        dialog = install_fixture["dialog"]
+        capture(dialog, "install-web.png")
+        with patch.object(window.service, "install") as install:
+            dialog.add_button.emit("clicked")
+            request = install.call_args.args[0]
+            assert request.source == "web" and request.value == "https://example.org/notes"
+            assert request.name == "Notes" and request.browser == "chrome"
+            assert request.icon == str(install_fixture["icon"])
+            with patch.object(window, "message") as message, patch.object(window, "refresh"):
+                install.call_args.args[2](OperationResult(Outcome.FAILED, "Browser unavailable"))
+                assert message.call_args.args[0] == "Installation Failed"
+        # Unverified launchers retain instructions; verified ones use removal confirmation.
+        website_entry = DesktopEntry(
+            "housekeeper-web-fixture.desktop",
+            data_home() / "applications/housekeeper-web-fixture.desktop",
+            "Website Fixture",
+            argv=("/usr/bin/chromium", "--app=https://example.org/notes"),
+            housekeeper_created=True,
+        )
+        with (
+            patch.object(window, "message") as message,
+            patch("gi.repository.Gio.Subprocess.new") as launch,
+        ):
+            window.manage(classify(website_entry))
+            heading, body = message.call_args.args
+            assert heading == "Management Instructions"
+            assert str(website_entry.path) in body and "Trash" in body
+            assert "Browser data is kept" in body and "app management menu" not in body
+            launch.assert_not_called()
+        website = classify(website_entry)
+        website.provider, website.action = "web-launcher", Action.UNINSTALL
+        plan = RemovalPlan(
+            website.key,
+            website.provider,
+            str(website_entry.path),
+            (str(website_entry.path),),
+            "Move the desktop launcher to Trash. Browser data is kept.",
+            "fixture",
+        )
+        for response in ("cancel", "remove"):
+            with (
+                patch.object(window.service, "prepare") as prepare,
+                patch.object(window.service, "execute") as execute,
+                patch.object(window, "message"),
+                patch.object(window, "refresh") as refresh,
+            ):
+                window.manage(website)
+                prepare.call_args.args[1](plan)
+                confirmation = window.confirm_dialog
+                assert confirmation.get_default_response() == "cancel"
+                assert confirmation.get_response_label("remove") == "Uninstall"
+                assert "Browser data is kept" in confirmation.get_body()
+                details = confirmation.get_extra_child().get_last_child()
+                assert "Files moved to Trash" in details.preview.get_label()
+                assert str(website_entry.path) in details.preview.get_label()
+                confirmation.response(response)
+                if response == "cancel":
+                    execute.assert_not_called()
+                else:
+                    assert execute.call_args.args[:2] == (website, plan)
+                    execute.call_args.args[3](OperationResult(Outcome.SUCCESS, "Uninstalled"))
+                    refresh.assert_called_once()
+                assert not window.operation_active
+        window.source = "appimage"
+        window.add_application()
+        dialog = window.install_dialog
+        dialog.type_row.set_selected(dialog.types.index("appimage"))
+        assert dialog.default_icon == "application-x-executable"
+        assert dialog.icon_row.get_subtitle() == "Executable icon"
+
+        class Chooser:
+            def __init__(self, **_kwargs):
+                pass
+
+            def set_filters(self, _filters):
+                pass
+
+            def open(self, _parent, _cancel, callback):
+                callback(self, None)
+
+            def open_finish(self, _result):
+                return Gio.File.new_for_path("/tmp/Notes_x86_64.AppImage")
+
+        with patch("housekeeper.ui.install.Gtk.FileDialog", Chooser):
+            dialog.file_button.emit("clicked")
+        assert dialog.name.get_text() == "Notes" and dialog.add_button.get_sensitive()
+        assert not dialog.icon_file
+        choose_install_icon(dialog, install_fixture["icon"])
+        install_fixture["dialog"] = dialog
+
+    def check_install_appimage():
+        dialog = install_fixture["dialog"]
+        capture(dialog, "install-appimage.png")
+        with patch.object(window.service, "install") as install:
+            dialog.add_button.emit("clicked")
+            assert install.call_args.args[0].value == "/tmp/Notes_x86_64.AppImage"
+            assert install.call_args.args[0].icon == str(install_fixture["icon"])
+            with patch.object(window, "message"), patch.object(window, "refresh"):
+                install.call_args.args[2](OperationResult(Outcome.CANCELLED, "Cancelled"))
+        window.source = "steam"
+        window.add_application()
+        dialog = window.install_dialog
+        dialog.type_row.set_selected(dialog.types.index("steam"))
+        assert dialog.add_button.get_label() == "Open Steam"
+        with patch("housekeeper.ui.install.Gtk.UriLauncher.new") as launcher:
+            dialog.add_button.emit("clicked")
+            launcher.assert_called_once_with("steam://open/games")
+        window.source = "all"
+        window.add_application()
+        dialog = window.install_dialog
+        dialog.type_row.set_selected(dialog.types.index("web"))
+        with patch("housekeeper.ui.install.Gtk.FileDialog") as chooser:
+            dialog.icon_button.emit("clicked")
+            pending_icon = chooser.return_value.open.call_args.args[2]
+            dialog.type_row.set_selected(dialog.types.index("flatpak"))
+            chooser.return_value.open_finish.return_value = Gio.File.new_for_path(
+                str(install_fixture["icon"])
+            )
+            pending_icon(chooser.return_value, None)
+        assert not dialog.icon_file
+        assert dialog.source == "flatpak" and not dialog.add_button.get_sensitive()
+        dialog.value.set_text("org.gnome")
+        assert dialog.timer
+        dialog.close()
+        assert not dialog.timer and window.install_dialog is None
+        assert not window.operation_active
+        window.source = "all"
 
     def inventory_names():
         return [
@@ -1138,7 +1404,7 @@ def activate(app):
 
         rows = {
             widget.get_title(): widget
-            for widget in descendants(preferences)
+            for widget in descendants(preferences.get_visible_page())
             if isinstance(widget, (Adw.ComboRow, Adw.SwitchRow))
         }
         rows["Check for Updates"].set_selected(1)
@@ -1149,9 +1415,14 @@ def activate(app):
         rows["Check Interval"].set_selected(1)
         assert Gio.Settings.new(APP_ID).get_string("update-check-interval") == "weekly"
         rows["Check Interval"].set_selected(0)
-        rows["RPM Packages"].set_active(False)
+        source_rows = {
+            widget.get_title(): widget
+            for widget in descendants(preferences.sources_page)
+            if isinstance(widget, Adw.SwitchRow)
+        }
+        source_rows["RPM Packages"].set_active(False)
         assert page.enabled_providers() == ("flatpak",)
-        rows["RPM Packages"].set_active(True)
+        source_rows["RPM Packages"].set_active(True)
 
     def capture_update_preferences():
         preferences = next(
@@ -1819,8 +2090,149 @@ def activate(app):
         window.close()
         app.quit()
 
+    sources_fixture = {}
+
+    def check_software_sources():
+        close_messages()
+        user = SoftwareSource(
+            "flatpak", "flathub", "Flathub", True, "/fixture/user", "https://example.org/repo", True
+        )
+        system = replace(user, context="/fixture/system")
+        state = [
+            SourceGroup(
+                "native", "System Packages", error="PackageKit is unavailable in this fixture."
+            ),
+            SourceGroup("flatpak", "Flatpak — User", user.context, (user,), can_add=True),
+            SourceGroup("flatpak", "Flatpak — System", system.context, (system,), can_add=True),
+        ]
+        loader = patch.object(
+            window.service, "software_sources", side_effect=lambda done, _failed: done(tuple(state))
+        )
+        loader.start()
+        sources_fixture["loader"] = loader
+        window.preferences()
+        preferences = next(
+            w for w in Gtk.Window.get_toplevels() if isinstance(w, Adw.PreferencesWindow)
+        )
+        page = preferences.sources_page
+        assert not page.loaded  # General does not read repository configuration.
+        preferences.set_visible_page(page)
+        page.reload()
+        assert page.loaded and len(page.groups) == 3
+        key = ("flatpak", user.context, user.identifier)
+        assert page.rows[key].get_active()
+        with patch.object(window.service, "change_software_source") as change:
+            page.rows[key].set_active(False)
+            assert page.busy and window.operation_active
+            assert not page.refresh_button.get_sensitive()
+            assert page._close() and not page.closed
+            assert change.call_args.args[:2] == (user, False)
+            change.call_args.args[3]("Authorization denied")
+            assert not page.busy and not window.operation_active
+            assert page.rows[key].get_active() and page.status.get_title() == "Authorization denied"
+            page.rows[key].set_active(False)
+            state[1] = replace(state[1], sources=(replace(user, enabled=False),))
+            with (
+                patch.object(window, "refresh") as refresh,
+                patch.object(window.updates_page, "invalidate") as invalidate,
+            ):
+                change.call_args.args[2](None)
+                refresh.assert_called_once()
+                invalidate.assert_called_once()
+            assert not page.rows[key].get_active()
+            assert page.rows[("flatpak", system.context, system.identifier)].get_active()
+        # A refusal is reported inside the modal Preferences window, not behind it.
+        with (
+            patch.object(window.service, "change_software_source") as change,
+            patch.object(window, "toast") as toast,
+        ):
+            window.service.busy = True
+            try:
+                page.rows[key].set_active(True)
+            finally:
+                window.service.busy = False
+            change.assert_not_called()
+            toast.assert_not_called()
+            assert not page.busy and not page.rows[key].get_active()
+            assert page.status.get_title() == "Wait for the current operation to finish."
+
+        plan = FlatpakSourcePlan(
+            user.context,
+            "new-source",
+            "Example Apps",
+            "https://apps.example.org/repo",
+            True,
+            b"fixture",
+        )
+        with patch.object(window.service, "prepare_software_source") as prepare:
+            dialog = page.add_source(state[1])
+
+            def descendants(widget):
+                yield widget
+                child = widget.get_first_child()
+                while child:
+                    yield from descendants(child)
+                    child = child.get_next_sibling()
+
+            location = next(
+                w
+                for w in descendants(dialog.get_extra_child())
+                if isinstance(w, Adw.EntryRow) and w.get_title() == "Source URL or File"
+            )
+            assert not dialog.get_response_enabled("review")
+            location.set_text("https://example.org/new-source.flatpakrepo")
+            dialog.response("review")
+            assert prepare.call_args.args[:3] == (user.context, location.get_text(), "")
+            prepare.call_args.args[3](plan)
+            confirmation = next(
+                w
+                for w in Gtk.Window.get_toplevels()
+                if isinstance(w, Adw.MessageDialog) and w.get_heading() == "Add Example Apps?"
+            )
+            assert (
+                plan.url in confirmation.get_body()
+                and "Signature verification: Enabled" in confirmation.get_body()
+            )
+            with patch.object(window.service, "change_software_source") as change:
+                confirmation.response("cancel")
+                change.assert_not_called()
+                confirmation = page._confirm_add(state[1], plan)
+                confirmation.response("add")
+                assert change.call_args.args[:2] == (plan, None)
+                state[1] = replace(
+                    state[1],
+                    sources=(
+                        *state[1].sources,
+                        SoftwareSource(
+                            "flatpak", plan.name, plan.title, True, plan.context, plan.url, True
+                        ),
+                    ),
+                )
+                with patch.object(window, "refresh"):
+                    change.call_args.args[2](None)
+            assert ("flatpak", user.context, "new-source") in page.rows
+        preferences.set_default_size(360, 640)
+        sources_fixture.update(preferences=preferences, page=page)
+
+    def finish_software_sources():
+        preferences, page = sources_fixture["preferences"], sources_fixture["page"]
+        capture(preferences, "preferences-software-sources.png")
+        with patch.object(window.service, "software_sources") as load:
+            page.reload()
+            preferences.close()
+            assert page.closed
+            load.call_args.args[0](())  # Late reads cannot rebuild a closed page.
+            assert len(page.groups) == 3
+        sources_fixture["loader"].stop()
+
     steps.extend(
         [
+            check_software_sources,
+            finish_software_sources,
+            check_install_search,
+            check_install_selected,
+            check_install_web,
+            check_install_appimage,
             check_scan_interactions,
             start_sorting,
             check_size_sorting,
@@ -1876,6 +2288,16 @@ def activate(app):
             finish,
         ]
     )
+    if os.environ.get("HOUSEKEEPER_SMOKE_INSTALL_ONLY") == "1":
+        steps[:] = [
+            check_install_search,
+            check_install_selected,
+            check_install_web,
+            check_install_appimage,
+            finish,
+        ]
+    if os.environ.get("HOUSEKEEPER_SMOKE_SOURCES_ONLY") == "1":
+        steps[:] = [check_software_sources, finish_software_sources, finish]
 
     def step():
         if failed:
@@ -1896,7 +2318,7 @@ def activate(app):
 
 application.connect("activate", activate)
 GLib.timeout_add_seconds(
-    40, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
+    50, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
 )
 application.run([sys.argv[0]])
 raise SystemExit(bool(failed))

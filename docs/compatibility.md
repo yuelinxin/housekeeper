@@ -33,6 +33,12 @@ of a successful real RPM removal or graphical Polkit authentication.
 
 ## Source-specific details
 
+- Software Sources in Preferences reads and toggles native repositories through
+  the host's PackageKit backend. Native source creation/deletion remains external.
+  Flatpak source listing, toggles and `.flatpakrepo` imports use libflatpak and keep
+  user, default system and named system installations separate. Missing integrations
+  produce a per-provider explanation. Imports enable signature verification by
+  default and disclose an explicit disabled setting before confirmation.
 - Pacman reads installed ALPM `desc`/`files` records, including AUR builds installed
   through Pacman. `pacman-conf` supplies custom database and installation roots.
 - APK reads `/lib/apk/db/installed`; downloaded repository indexes and package archive
@@ -60,6 +66,49 @@ of a successful real RPM removal or graphical Polkit authentication.
   alone is never presented as uninstalling the application.
 - Hidden and auxiliary entries are opt-in. Explicit hidden overrides continue to
   suppress matching synthetic Flatpak entries.
+
+## Adding applications
+
+Native package installation uses the host's PackageKit backend for RPM, DEB and
+other supported native families. The backend and its introspection bindings must
+be installed and support package search and installation. App search uses the
+AppStream introspection bindings and the distribution catalogue (`appstream` and
+`appstream-data` on Fedora) when present; without them, or for repositories that
+publish no AppStream metadata, it searches package names limited to packages that
+provide a desktop application. Flatpak search uses each remote's AppStream data as
+Flatpak last downloaded it; a remote that has none yet shows app IDs until it is
+updated, for example by `flatpak update --appstream`. Immutable systems retain
+external management. Existing update/removal restrictions are independent of this
+new installation path. A signed local RPM and its dependency install successfully
+in the Fedora 44 integration fixture. Other native backends and desktop authorization
+acceptance still need testing; synthetic tests cover target selection,
+trusted-package flags, errors and cancellation.
+
+Flatpak installation needs libflatpak and at least one configured remote. Search
+results show the remote, installation scope and branch; dependencies come from
+configured remotes. The offline integration fixture verifies a real user-scope app
+and runtime installation. System and custom-scope authorization remain desktop
+acceptance checks. Snap search needs snapd, and its installation handoff needs an
+application that handles `snap://` links.
+
+Web launchers require an installed native Chrome or Chromium executable. They do
+not register a PWA inside the browser. Verified Housekeeper launchers offer Uninstall,
+which moves their desktop file to Trash and keeps browser data and icons. Other web
+apps retain browser management. AppImage imports accept locally selected type
+1 or type 2 AppImages and use the filename as the default display name. Importing
+does not extract embedded icons, execute the file, or install FUSE/runtime dependencies.
+Both forms allow a custom desktop icon from a local image. Housekeeper validates and
+stores a normalized copy, so the selected image can be moved or deleted afterward.
+New Web Apps try the website's declared icon and `/favicon.ico` during installation;
+offline, inaccessible or invalid icons use the generic browser icon. This does not
+require a third-party favicon service. AppImages default to the standard GNOME
+executable icon. Custom selections override either default.
+
+Web App launchers select the browser's Default profile and include matching Wayland
+desktop IDs and X11 StartupWMClass values, so their windows can group under the
+website's own name and icon. These remain URL apps, without registration in Chrome's
+installed-PWA database. Earlier `housekeeper-web-*.desktop` launchers must be removed
+and installed again to receive this integration; their browser data is kept.
 
 ## Application updates
 

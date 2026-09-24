@@ -162,7 +162,9 @@ class UpdatesPage(Adw.NavigationPage):
         text = (
             _("Update sources changed. Check again for available updates.")
             if self.enabled_providers()
-            else _("Enable an update source in Preferences to check for updates.")
+            else _(
+                "Enable an update source in Preferences → Software Sources to check for updates."
+            )
         )
         self.status.set_label(text)
         self.empty.set_title(
