@@ -77,8 +77,8 @@ def test_icon_change_uses_serial_worker_without_a_package_provider(service, monk
     value, _provider = service
     calls, completed, errors = [], [], []
 
-    def save(entry, image):
-        calls.append((entry, image))
+    def save(app, image, inventory):
+        calls.append((app.key, image, inventory))
         if not succeeds:
             raise ManagementError("Invalid image")
         return "saved.desktop"
@@ -86,12 +86,12 @@ def test_icon_change_uses_serial_worker_without_a_package_provider(service, monk
     def unexpected_provider(_app):
         raise AssertionError("An icon change must not call a package manager")
 
-    monkeypatch.setattr("housekeeper.appearance.save_icon", save)
+    monkeypatch.setattr("housekeeper.app_icons.save_app_icon", save)
     monkeypatch.setattr(value, "_provider", unexpected_provider)
     value.change_icon(AppRecord("a", "Example"), "entry", "image", completed.append, errors.append)
     assert value.busy and not value.scan(None, None, None)
     value.executor.finish()
-    assert calls == [("entry", "image")]
+    assert calls == [("a", "image", value.inventory)]
     assert not value.busy and value.active_provider is None
     assert completed == (["saved.desktop"] if succeeds else [])
     assert errors == ([] if succeeds else ["Invalid image"])
@@ -259,7 +259,7 @@ def test_queued_icon_change_revalidates_a_refreshed_launcher(service, monkeypatc
         "housekeeper.services.collect",
         lambda _partial: ([replace(app, entries=[other])], [], [], {}),
     )
-    monkeypatch.setattr("housekeeper.appearance.save_icon", lambda *args: saved.append(args))
+    monkeypatch.setattr("housekeeper.app_icons.save_app_icon", lambda *args: saved.append(args))
     value.scan(lambda *_: None, lambda *_: None, pytest.fail)
     value.change_icon(app, entry, "image", pytest.fail, errors.append)
     value.executor.finish()
@@ -281,7 +281,7 @@ def test_failed_scan_does_not_drop_queued_icon_change(service, monkeypatch):
         events.append("saved")
 
     monkeypatch.setattr("housekeeper.services.collect", collect)
-    monkeypatch.setattr("housekeeper.appearance.save_icon", save)
+    monkeypatch.setattr("housekeeper.app_icons.save_app_icon", save)
     value.scan(lambda *_: None, pytest.fail, errors.append)
     value.change_icon(AppRecord("a", "Example"), "entry", "image", events.append, pytest.fail)
     assert not events
@@ -452,3 +452,31 @@ def test_source_change_cancellation_before_start_never_writes(service, monkeypat
     value.executor.finish()
     assert not writes and not value.busy
     assert errors and "cancelled" in errors[0]
+
+
+def test_running_recheck_bypasses_the_serial_worker_and_reports_failures(service):
+    value, provider = service
+    value.process_executor.shutdown()
+    value.process_executor = Executor()
+    states = iter([(("/usr/bin/app",), ()), ((), ())])
+    provider.running_state = lambda _app, _plan: next(states)
+    items = (NS(app="app", plan="plan"),)
+    value.busy = True  # An open confirmation already holds the operation.
+    results, errors = [], []
+    value.check_running(items, results.append, errors.append)
+    assert not value.executor.pending
+    value.process_executor.finish()
+    value.check_running(items, results.append, errors.append)
+    value.process_executor.finish()
+    assert results == [((("/usr/bin/app",), ()),), (((), ()),)]
+
+    def unreadable(_app, _plan):
+        raise ManagementError("The processes using this package could not be determined")
+
+    provider.running_state = unreadable
+    value.check_running(items, results.append, errors.append)
+    value.process_executor.finish()
+    assert len(results) == 2 and "could not be determined" in errors[0]
+    value.close()
+    value.check_running(items, results.append, errors.append)
+    assert len(value.process_executor.pending) == 0

@@ -57,7 +57,9 @@ from housekeeper.storage import StorageUsage
 from housekeeper.updates import assign_update_action
 
 Gio.resources_register(Gio.Resource.load(str(BUILD / "data/housekeeper.gresource")))
+from housekeeper.app_icons import _settings as desktop_settings
 from housekeeper.ui.disclosure import DetailsDisclosure
+from housekeeper.ui.update_confirmation import configure_update_confirmation
 from housekeeper.ui.updates import UpdatesPage
 from housekeeper.ui.window import HousekeeperWindow
 
@@ -635,12 +637,23 @@ def activate(app):
         environment = patch.dict(os.environ, {"XDG_DATA_HOME": str(root / "data")})
         environment.start()
         icon_fixture.update(
-            directory=directory, environment=environment, refresh=window.refresh, root=root
+            directory=directory,
+            environment=environment,
+            refresh=window.refresh,
+            root=root,
+            inventory=window.service.inventory,
+            # Minimal runtimes lack the GNOME desktop schema; icons then change launchers only.
+            desktop=desktop_settings(),
+        )
+        icon_fixture["theme"] = (
+            icon_fixture["desktop"].get_string("icon-theme") if icon_fixture["desktop"] else None
         )
 
         def refresh_fixture():
             entries, warnings = scan_entries([root / "data/applications", launcher_root])
-            window._complete([classify(entry) for entry in entries], warnings, [], {})
+            records = [classify(entry) for entry in entries]
+            window.service.inventory = records
+            window._complete(records, warnings, [], {})
 
         window.refresh = refresh_fixture
         window.section = "apps"
@@ -673,6 +686,13 @@ def activate(app):
         assert icon.is_file() and icon.suffix == ".png"
         assert group.icon_file.get_subtitle() == str(icon)
         assert group.icon_theme.get_subtitle() == "Custom Icon"
+        if icon_fixture["desktop"]:
+            theme = icon_fixture["desktop"].get_string("icon-theme")
+            assert theme.startswith("housekeeper-icons-")
+            alias = icon_fixture["root"] / "data/icons" / theme / "scalable/apps/example.png"
+            assert alias.resolve() == icon
+        else:
+            assert not (icon_fixture["root"] / "data/icons").exists()
         assert group.icon_file.get_ancestor(Adw.ExpanderRow).get_title() == "Technical Details"
         # The selection callback may arrive after the selected launcher disappears.
         stale = window.detail_app
@@ -690,6 +710,9 @@ def activate(app):
         assert not window.appearance_group.buttons[1][0].get_sensitive()
         assert not (icon_fixture["root"] / "data/applications/example.desktop").exists()
         window.refresh = icon_fixture["refresh"]
+        window.service.inventory = icon_fixture["inventory"]
+        if icon_fixture["desktop"]:
+            assert icon_fixture["desktop"].get_string("icon-theme") == icon_fixture["theme"]
         icon_fixture["environment"].stop()
         icon_fixture["directory"].cleanup()
         window.detail_app = None
@@ -1659,6 +1682,49 @@ def activate(app):
             notice.get_last_child().get_label() == "Running now. Reopen it to use the new version."
         )
         window.confirm_dialog.response("cancel")
+
+        # Quitting a program while the dialog is open updates the warning it gave.
+        checks = []
+        real_check = window.service.check_running
+        window.service.check_running = lambda items, done, failed: checks.append(done)
+        page.confirm((in_use,))
+        assert len(checks) == 1  # Checked on open, since a cached plan can be old.
+        content = window.confirm_dialog.get_extra_child()
+        checks[-1]((((), ("/usr/lib64/libboxes.so.1",)),))
+        notice = content.get_first_child()
+        assert "notice-warning" in notice.get_css_classes()
+        assert (
+            notice.get_first_child()
+            .get_last_child()
+            .get_label()
+            .startswith("Replaced files are in use.")
+        )
+        assert "Running now:" not in content.get_last_child().preview.get_label()
+        checks[-1]((((), ()),))
+        assert isinstance(content.get_first_child(), DetailsDisclosure)
+        assert "Replaced files in use:" not in content.get_last_child().preview.get_label()
+        checks[-1](((("/usr/bin/boxes",), ()),))
+        notice = content.get_first_child()
+        assert notice.get_first_child().get_first_child().get_label() == "In Use Right Now"
+        assert "Quit it before updating" in notice.get_first_child().get_last_child().get_label()
+        window.confirm_dialog.response("cancel")
+        late = checks[-1]
+        late((((), ()),))  # A check finishing after the answer changes nothing.
+        assert len(checks) == 1
+
+        # Confirming uses what the dialog showed last, and the dialog stops polling.
+        dialog = Adw.MessageDialog(transient_for=window, modal=True)
+        shown = configure_update_confirmation(
+            dialog, (in_use,), lambda items, done, failed: checks.append(done)
+        )
+        checks[-1]((((), ()),))
+        assert shown()[0].plan.running == () and shown()[0].plan.in_use == ()
+        assert shown()[0].plan.fingerprint == in_use.plan.fingerprint
+        dialog.present()
+        dialog.destroy()
+        checks[-1](((("/usr/bin/boxes",), ()),))
+        assert shown()[0].plan.running == ()
+        window.service.check_running = real_check
 
         page.confirm((page.items[0],))
         assert "sandbox permission" not in window.confirm_dialog.get_body()

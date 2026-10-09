@@ -21,6 +21,7 @@ from housekeeper.appearance import (
     store_icon_image,
 )
 from housekeeper.appimage_format import appimage_format
+from housekeeper.appimage_identity import read_appimage_identity
 from housekeeper.i18n import _
 from housekeeper.models import ManagementError, OperationCancelled, OperationResult, Outcome
 from housekeeper.web_identity import (
@@ -275,12 +276,23 @@ class Installer:
                 raise ManagementError(_("This AppImage has already been added.")) from None
             try:
                 # Ownership of the installed copy then belongs to its launcher.
+                identity = read_appimage_identity(destination)
+                self.check_cancelled()
+                if identity:
+                    from housekeeper.discovery import application_roots
+
+                    # Never shadow an installed launcher (e.g. an older import or a
+                    # packaged build); keep the hashed ID and no shared window class.
+                    if any((root / identity.desktop_id).exists() for root in application_roots()):
+                        identity = None
                 return create_launcher(
                     identifier,
                     name,
                     (str(destination),),
                     "application-x-executable",
                     custom_icon=request.icon,
+                    desktop_id=identity.desktop_id.removesuffix(".desktop") if identity else "",
+                    wm_class=identity.wm_class if identity else "",
                     created=created,
                 )
             except BaseException:

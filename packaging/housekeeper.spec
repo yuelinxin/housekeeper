@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -31,6 +31,7 @@ Recommends:     PackageKit-glib
 Recommends:     flatpak-libs
 Recommends:     appstream
 Recommends:     appstream-data
+Recommends:     squashfs-tools
 
 %description
 Housekeeper provides a searchable GTK application inventory with installation
@@ -72,6 +73,12 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Thu Oct 08 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.2.1-1
+- Apply custom icons to all launchers and unique named icons used by docks and panels.
+- Keep the user's icon theme through an inherited layer; fall back to launchers only.
+- Keep embedded AppImage desktop IDs and window classes; recommend squashfs-tools.
+- Keep the update confirmation's running-program notice current while it is open.
+
 * Thu Sep 24 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.2.0-1
 - Add native and Flatpak application search and installation with AppStream metadata.
 - Manage native and Flatpak software sources in Preferences.

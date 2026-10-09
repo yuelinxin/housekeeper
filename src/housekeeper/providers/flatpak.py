@@ -488,6 +488,10 @@ class FlatpakProvider:
             )
         return tuple(sorted(sandbox_permissions(new) - sandbox_permissions(old)))
 
+    def running_state(self, app, _plan):
+        """Live instances of this ref, as of now. Flatpak replaces no file in use."""
+        return self._running_instances(app), ()
+
     @staticmethod
     def _running_instances(app):
         """Name live instances of this ref. Their deployment survives until they exit."""

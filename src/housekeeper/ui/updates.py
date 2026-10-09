@@ -444,7 +444,7 @@ class UpdatesPage(Adw.NavigationPage):
             modal=True,
         )
         self.window.confirm_dialog = dialog
-        configure_update_confirmation(dialog, items)
+        shown = configure_update_confirmation(dialog, items, self.window.service.check_running)
         dialog.add_response("cancel", _("Cancel"))
         dialog.add_response("update", _("Update"))
         dialog.set_response_appearance("update", Adw.ResponseAppearance.SUGGESTED)
@@ -458,8 +458,11 @@ class UpdatesPage(Adw.NavigationPage):
                 self._selection_changed()
                 return
             self.window._show_task(_("Updating Applications"))
+            # Confirm the running programs the dialog showed last, not those at preview time.
             self.window.service.execute_updates(
-                items, self.window._guard(self.window._progress), self.window._guard(self.finished)
+                shown(),
+                self.window._guard(self.window._progress),
+                self.window._guard(self.finished),
             )
 
         dialog.connect("response", self.window._guard(response))

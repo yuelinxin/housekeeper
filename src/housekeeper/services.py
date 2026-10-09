@@ -147,6 +147,10 @@ class InventoryService:
         self.search_executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="housekeeper-search"
         )
+        # Read-only process checks for an open confirmation; never queued behind a write.
+        self.process_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="housekeeper-processes"
+        )
         self.install_search = None
         self.inventory = []
         self.busy = False
@@ -270,6 +274,35 @@ class InventoryService:
             worker=batch,
         )
 
+    def check_running(self, items, completed, failed):
+        """Re-read which programs each planned update would affect. Advisory only:
+        providers still refuse programs started after the plan the person confirmed."""
+        if self.closed:
+            return
+
+        def run():
+            return tuple(
+                self._provider(item.app).running_state(item.app, item.plan) for item in items
+            )
+
+        try:
+            future = self.process_executor.submit(run)
+        except RuntimeError:
+            return  # Closing.
+
+        def finish(result):
+            if self.closed:
+                return
+            try:
+                states = result.result()
+            except Exception as error:
+                LOG.debug("Could not re-check running programs: %s", error)
+                failed(str(error))
+                return
+            completed(states)
+
+        future.add_done_callback(lambda result: self.dispatch(finish, result))
+
     def execute(self, app, plan, progress, completed):
         def run(provider):
             # Repeat ownership and shared-file checks against a fresh inventory before file removal.
@@ -290,7 +323,7 @@ class InventoryService:
         )
 
     def change_icon(self, app, entry, image, completed, failed):
-        from housekeeper.appearance import save_icon
+        from housekeeper.app_icons import save_app_icon
 
         revision = self.revision
 
@@ -299,12 +332,12 @@ class InventoryService:
             # the launcher the window validated may no longer be the one on disk.
             if self.revision != revision:
                 current = next((item for item in self.inventory if item.key == app.key), None)
-                if current is None or entry not in current.entries:
+                if current is None or current.entries != app.entries:
                     raise ManagementError(
                         "The launcher changed while the inventory was refreshing. "
                         "Refresh and try again."
                     )
-            return save_icon(entry, image)
+            return save_app_icon(app, image, self.inventory)
 
         self._submit(app, run, completed, failed, worker=object())
 
@@ -512,4 +545,5 @@ class InventoryService:
         self.closed = True
         self.cancel_install_search()
         self.search_executor.shutdown(wait=False, cancel_futures=True)
+        self.process_executor.shutdown(wait=False, cancel_futures=True)
         self.executor.shutdown(wait=False, cancel_futures=True)

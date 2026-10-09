@@ -225,6 +225,22 @@ def save_icon(entry, image=None):
             if target != entry.path:
                 keyfile.set_string(GROUP, SOURCE, str(entry.path))
         keyfile.set_string(GROUP, "Icon", str(icon_path))
+        # Older imports used only a hashed filename. Recover their advertised
+        # window class so running windows can use this launcher's custom icon.
+        # Keep existing/user-supplied mappings, and never run the imported file.
+        if (
+            entry.housekeeper_created
+            and entry.path.is_relative_to(data_home() / "applications")
+            and entry.desktop_id.startswith("housekeeper-appimage-")
+            and not _get(keyfile, "StartupWMClass")
+            and _get(keyfile, "Exec") == entry.command
+            and len(entry.argv) == 1
+        ):
+            from housekeeper.appimage_identity import read_appimage_identity
+
+            identity = read_appimage_identity(entry.argv[0])
+            if identity:
+                keyfile.set_string(GROUP, "StartupWMClass", identity.wm_class)
     if entry.path.read_bytes() != before:
         raise ManagementError(_("The launcher changed while saving its icon. Try again."))
     _target(entry)

@@ -1,5 +1,6 @@
 """Application startup and installed/build-tree resource resolution."""
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from housekeeper import APP_ID, VERSION
 from housekeeper.diagnostics import configure_logging
@@ -45,10 +46,35 @@ def main(argv=None):
     class Application(Adw.Application):
         def __init__(self):
             super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+            self.icon_settings = None
+            self.icon_refresh = 0
+
+        def _refresh_icons(self):
+            from housekeeper.app_icons import IconUpdateBusy, refresh_icon_theme
+
+            self.icon_refresh = 0
+            try:
+                refresh_icon_theme(self.icon_settings)
+            except IconUpdateBusy:
+                self.icon_refresh = GLib.timeout_add(250, self._refresh_icons)
+            except Exception as error:
+                logging.getLogger(__name__).warning("Could not refresh custom icons: %s", error)
+            return GLib.SOURCE_REMOVE
+
+        def queue_icon_refresh(self, *_args):
+            if not self.icon_refresh:
+                self.icon_refresh = GLib.idle_add(self._refresh_icons)
 
         def do_activate(self):
             window = self.get_active_window()
             if window is None:
+                from housekeeper.app_icons import _settings
+
+                if self.icon_settings is None:
+                    self.icon_settings = _settings()
+                    if self.icon_settings:
+                        self.icon_settings.connect("changed::icon-theme", self.queue_icon_refresh)
+                self.queue_icon_refresh()
                 settings = Gio.Settings.new(APP_ID)
                 provider = Gtk.CssProvider()
                 provider.load_from_resource("/io/github/yuelinxin/housekeeper/style.css")

@@ -344,7 +344,8 @@ Content-addressed image files are retained for reuse. Launchers follow the
 system entries receive a per-user override with the same desktop ID; existing
 user entries keep their path. Atomic replacement preserves translations, desktop
 actions and other fields. Symlinked user launchers and conflicting overrides are
-rejected. Each launcher of a merged record is edited separately.
+rejected. An application icon edit updates every launcher of a merged record together;
+failure restores the launchers already changed.
 
 Private launcher keys retain the original icon and source path. Reset removes an
 unchanged generated override to reveal the current source, or restores only its
@@ -352,6 +353,33 @@ icon if other fields were edited. Source attribution compares every non-icon key
 against the referenced original before RPM or Flatpak can use its path; a source
 marker alone is never ownership evidence. Changed source commands or other fields
 can make attribution unavailable until the launcher override is reconciled.
+
+`app_icons.py` also publishes an immutable per-user icon theme generation under
+`$XDG_DATA_HOME/icons/housekeeper-icons-<digest>`. It inherits the user's selected
+theme and supplies the application's original icon names, desktop IDs and window
+classes, excluding generic names and names shared with other inventory records.
+This covers consumers such as Tasks in Panel that look up Chromium icons by window
+class instead of reading the desktop `Icon` key. All providers use this same path;
+no package, Flatpak export, or installed theme is modified. A registry under
+`$XDG_DATA_HOME/housekeeper/app-icons.json` tracks each group by desktop IDs.
+Icon edits and theme rebasing share a nonblocking file lock. New theme names make
+GTK/Shell invalidate named-icon caches. Failed saves restore launcher bytes and the
+registry. Reset removes only that application's aliases; resetting the last override
+restores the inherited theme. Superseded generated themes are removed after success.
+Overrides whose desktop IDs no longer exist in any application directory are pruned
+after inventory changes, on startup and on the next icon edit.
+Housekeeper rebases overrides when the user changes themes while it is running and
+on its next startup. There is no background daemon: changing themes while it is
+closed temporarily disables the named-icon layer until it is opened again.
+
+For type-2 AppImages, optional `unsquashfs` reads one regular root desktop file with
+bounded output and time, without running or extracting the AppImage. New imports
+retain its desktop ID and StartupWMClass. When that ID is already installed (for
+example an earlier build), the import keeps the hashed ID and no window class.
+Changing an old Housekeeper import's icon repairs a missing StartupWMClass while
+preserving its existing launcher ID and any user-supplied class. Embedded commands
+are never copied. Unsupported, ambiguous or unreadable metadata retains the previous
+generic integration. Icon reset retains a repaired window identity.
 
 ## Update boundaries
 

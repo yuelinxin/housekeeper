@@ -1,4 +1,25 @@
-# v0.2.0 validation
+# v0.2.1 validation
+
+## v0.2.1 release checks — October 8, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.2.1 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata validates.
+- Fedora 43 and 44 each pass clean source builds, unit tests, full GTK smoke,
+  five fresh SVG icon startups, RPM/SRPM builds, RPM installation, replacement
+  and removal, and the isolated transaction suite in disposable containers.
+- Both release SRPMs rebuild, including `%check`, in minimal Fedora 43 and 44
+  containers holding only the declared build requirements without weak
+  dependencies, approximating the COPR buildroot. squashfs-tools is absent there,
+  so the SquashFS identity fixtures skip as designed.
+- Ubuntu 24.04 passes 671 tests, with 39 optional-provider tests skipped, full GTK
+  smoke and five fresh SVG icon startups. Without the GNOME desktop schema, the
+  icon smoke step verifies the launcher-only fallback instead of aborting.
+- On a Fedora 44 desktop, 709 tests pass with one dpkg test skipped, and GTK smoke
+  passes under headless mutter. The update confirmation's running-program re-check
+  drops a real process after it exits.
+- Ruff lint and formatting, strict mypy for the seven configured modules, and
+  diff checks pass. GNOME Shell dock rendering of custom named icons remains a
+  desktop acceptance check.
 
 ## v0.2.0 release checks — September 24, 2026
 

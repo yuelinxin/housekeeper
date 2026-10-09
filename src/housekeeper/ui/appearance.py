@@ -4,14 +4,17 @@ from pathlib import Path
 
 from gi.repository import Adw, Gtk
 
+from housekeeper.app_icons import has_app_icon
 from housekeeper.appearance import can_reset_icon, launcher_theme
 from housekeeper.i18n import _
 from housekeeper.ui.icons import FALLBACK_ICON, icon_image
 
 ICON_REFRESH_NOTICE = _(
-    "Icon changes are saved to your launcher. GNOME may keep showing the old icon "
-    "in the app grid. If it does, save your work, log out and log back in. "
-    "Reopening the app alone may not refresh the grid."
+    "Custom icons apply to all launchers for this app and to its unique desktop icon names, "
+    "including those used by docks and task panels. Housekeeper adds an icon theme layer "
+    "that inherits your current theme. Shared icon names are left unchanged. "
+    "If a running window still shows the old icon, close and reopen the app. "
+    "Windows must be associated with the correct app; some extensions keep their own icons."
 )
 
 
@@ -19,7 +22,10 @@ class AppearanceGroup(Adw.PreferencesGroup):
     def __init__(self, window, app):
         super().__init__(
             title=_("Appearance"),
-            description=ICON_REFRESH_NOTICE,
+            description=_(
+                "Use the same icon in the app grid, dock and task panels. "
+                "Other icons keep your current theme."
+            ),
         )
         self.window = window
         self.app = app
@@ -39,9 +45,11 @@ class AppearanceGroup(Adw.PreferencesGroup):
                 )
                 row.set_subtitle_lines(0)
                 self.add(row)
+        if app.entries:
+            entry = app.entries[0]
             row = Adw.ActionRow(
-                title=_("Launcher Icon") if len(app.entries) == 1 else entry.name,
-                subtitle=entry.desktop_id,
+                title=_("Application Icon"),
+                subtitle=_("App grid, dock and task panels"),
                 use_markup=False,
             )
             row.set_subtitle_lines(0)
@@ -62,7 +70,8 @@ class AppearanceGroup(Adw.PreferencesGroup):
             reset.add_css_class("flat")
             reset.connect("clicked", lambda _b, e=entry: window.change_icon(app, e, None))
             row.add_suffix(reset)
-            self.buttons.extend([(change, True), (reset, can_reset_icon(entry))])
+            resettable = any(can_reset_icon(e) for e in app.entries) or has_app_icon(app)
+            self.buttons.extend([(change, True), (reset, resettable)])
             self.add(row)
         if not app.entries:
             self.add(

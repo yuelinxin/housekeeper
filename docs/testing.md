@@ -2,6 +2,14 @@
 
 ## Local tests
 
+`test_app_icons.py` exercises application-wide icon changes for every source,
+multi-launcher updates, real GTK named-icon lookup (including Chromium task-panel
+names), theme inheritance/rebasing, generic/shared-name exclusion, reset, concurrent
+updates and rollback. Theme settings are injected; no host preferences change.
+`test_appimage_identity.py` builds temporary SquashFS fixtures when `squashfs-tools`
+is available and checks embedded identity import, collisions, old-launcher repair,
+ambiguous metadata and bounded reads. Fixture AppImages are never executed.
+
 `test_repositories.py` covers separate user/system Flatpak sources, partial backend
 failures, exact native repository IDs, stale configuration, cancellation, duplicate
 names, bounded imports, HTTPS-only redirect hops, declared signature verification and

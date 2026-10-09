@@ -33,6 +33,16 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.1" date="2026-10-08" type="stable">
+      <description>
+        <p>Use custom application icons everywhere GNOME shows an app.</p>
+        <ul>
+          <li>Apply a custom icon to all of an application's launchers and to the icon names docks and task panels look up, while keeping the current icon theme for everything else.</li>
+          <li>Keep the desktop ID and window class embedded in imported AppImages when squashfs-tools is available, so running windows match their launchers.</li>
+          <li>Update the running-program notice in the update confirmation when an app is quit or started while it is open.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-09-24" type="stable">
       <description>
         <p>Install applications and manage software sources from Housekeeper.</p>

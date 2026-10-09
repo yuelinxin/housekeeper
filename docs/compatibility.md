@@ -110,6 +110,22 @@ website's own name and icon. These remain URL apps, without registration in Chro
 installed-PWA database. Earlier `housekeeper-web-*.desktop` launchers must be removed
 and installed again to receive this integration; their browser data is kept.
 
+Application icon changes are independent of installation source: native packages,
+Flatpak, Snap, web apps, AppImages and other desktop apps use the same all-launcher
+and named-icon override path. Named overrides need a writable GNOME `icon-theme`
+setting; without one (locked or no schema), only the launchers change.
+The generated theme inherits the current theme and never changes installed icons.
+Shared and generic names are deliberately excluded. Changing themes while Housekeeper
+is closed suspends named overrides until its next launch; desktop-file overrides
+remain in place. Running windows still need the correct desktop association, and
+extensions that use their own file paths or embedded icons can bypass both mechanisms.
+This feature covers desktop integration, not application content or tray icons.
+
+Optional `squashfs-tools` enables automatic desktop ID and window-class integration
+for type-2 AppImages. Old imported launchers gain a missing window class when their
+icon is changed. Type-1 images, symlinked root desktop files, ambiguous metadata and
+missing readers keep generic integration. Import never executes the selected file.
+
 ## Application updates
 
 RPM update capability is checked independently of removal capability. Fedora 43

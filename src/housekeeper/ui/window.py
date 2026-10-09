@@ -639,6 +639,10 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.initialized = True
         if not unchanged:
             self._replace(records)
+            # Removed apps release their custom named icons without a restart.
+            queue_icons = getattr(self.get_application(), "queue_icon_refresh", None)
+            if queue_icons:
+                queue_icons()
         self.spinner.stop()
         self.spinner.set_visible(False)
         count = self.filtered.get_n_items()
@@ -1298,9 +1302,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         )
         self.confirm_dialog = dialog
         keep_data = None
+        shown = None
         if update:
             names = grouped_names(self.records, app)
-            configure_update_confirmation(dialog, (UpdateItem(app, plan, names),))
+            shown = configure_update_confirmation(
+                dialog, (UpdateItem(app, plan, names),), self.service.check_running
+            )
         else:
             content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
             if plan.provider == "flatpak":
@@ -1337,11 +1344,13 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         def response(_dialog, result):
             self.confirm_dialog = None
             if result == response_id:
-                selected_plan = (
-                    replace(plan, delete_user_data=not keep_data.get_active())
-                    if keep_data is not None
-                    else plan
-                )
+                if shown is not None:
+                    # Confirm the running programs the dialog showed last.
+                    selected_plan = shown()[0].plan
+                elif keep_data is not None:
+                    selected_plan = replace(plan, delete_user_data=not keep_data.get_active())
+                else:
+                    selected_plan = plan
                 self._execute(app, selected_plan, update=update)
             else:
                 self._end_operation()

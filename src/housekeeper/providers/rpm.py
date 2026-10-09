@@ -768,6 +768,10 @@ class RpmProvider:
                 paths.update(str(path) for path in header["filenames"] or ())
         return paths
 
+    def running_state(self, _app, plan):
+        """Programs and in-use files the planned update would replace, as of now."""
+        return self._running_processes(plan.changes)
+
     def _running_processes(self, changes):
         """Report what an update would replace underneath a process that is still using it."""
         from housekeeper.processes import affected

@@ -29,7 +29,7 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 - Manage system and Flatpak software sources in Preferences; enable or disable sources and import Flatpak repository files or HTTPS links.
 - Inspect versions, file locations, installation scope, and hidden entries.
 - Open apps from their details page and see available updates beside their names.
-- Customize launcher icons and restore the originals.
+- Customize application icons across GNOME's app grid, docks and task panels, and restore the originals.
 - Preview RPM and Flatpak updates and removal where supported, preserving personal data by default.
 - Choose whether to keep or delete user data when uninstalling a Flatpak app.
 - Choose manual or on-entry update checks, daily or weekly, for RPM and Flatpak.
@@ -66,6 +66,7 @@ Fedora backends; Housekeeper provides guidance instead. See
 - A graphical desktop session; GNOME Shell itself is not required
 - Optional RPM, PackageKit, and Flatpak integrations for their respective sources
 - Optional AppStream bindings and distribution catalogues for application search metadata
+- Optional `squashfs-tools` for reading AppImage desktop identities without executing them
 
 ## Install on Fedora
 
