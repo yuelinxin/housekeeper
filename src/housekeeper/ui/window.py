@@ -13,6 +13,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, GObject, Gtk, Pango
 
 from housekeeper import APP_ID, VERSION
+from housekeeper.activity import ActivityLog
 from housekeeper.batch_updates import UpdateItem, grouped_names, installation_key
 from housekeeper.i18n import _, ngettext
 from housekeeper.models import (
@@ -27,9 +28,11 @@ from housekeeper.models import (
 from housekeeper.platforms import native_package_source
 from housekeeper.services import InventoryService
 from housekeeper.sorting import sort_key
+from housekeeper.ui.activity import ActivityButton, ActivityProgress
 from housekeeper.ui.appearance import ICON_REFRESH_NOTICE, AppearanceGroup
 from housekeeper.ui.disclosure import DetailsDisclosure, details_label
 from housekeeper.ui.icons import icon_image, set_icon
+from housekeeper.ui.install import InstallPage
 from housekeeper.ui.update_confirmation import configure_update_confirmation
 from housekeeper.ui.updates import UpdatesPage
 from housekeeper.updates import update_instructions
@@ -133,7 +136,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     sidebar_header = Gtk.Template.Child()
     search_button = Gtk.Template.Child()
     sidebar_button = Gtk.Template.Child()
-    updates_sidebar = Gtk.Template.Child()
+    pages_sidebar = Gtk.Template.Child()
+    install_row = Gtk.Template.Child()
     updates_row = Gtk.Template.Child()
     updates_count = Gtk.Template.Child()
     navigation = Gtk.Template.Child()
@@ -141,7 +145,6 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     overview_box = Gtk.Template.Child()
     overview_toolbar = Gtk.Template.Child()
     header = Gtk.Template.Child()
-    add_button = Gtk.Template.Child()
 
     def __init__(self, application, settings):
         super().__init__(application=application)
@@ -176,18 +179,23 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.operation_kind = "remove"
         self.operation_serial = 0
         self.operation_key = None
-        self.task_dialog = None
+        self.task_deferred_cancel = False
         self.confirm_dialog = None
-        self.install_dialog = None
         self.detail_app = None
+        # The pages a details page opened over: the app list, or Install Apps' pages.
+        self.detail_below = []
+        self.activities = ActivityLog()
+        self.activity_id = None
+        self.scan_activity_id = None
         self.warnings = []
         self.set_default_size(settings.get_int("window-width"), settings.get_int("window-height"))
         if settings.get_boolean("maximized"):
             self.maximize()
         self.section = "apps"
         self._build_overview()
+        self.install_page = InstallPage(self)
         self.updates_page = UpdatesPage(self)
-        self.updates_sidebar.connect("row-activated", self._updates_activated)
+        self.pages_sidebar.connect("row-activated", self._page_activated)
         self._actions()
         # Focus restoration can change selection; only activation changes the source.
         self.sidebar_handler = self.sidebar.connect("row-activated", self._source_activated)
@@ -198,13 +206,16 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.refresh()
 
     def _build_overview(self):
+        # Inset like the list rows below it; the shared style matches Install Apps.
         self.search = Gtk.SearchEntry(
             placeholder_text=_("Search apps, packages, and paths"),
             hexpand=True,
-            margin_start=16,
-            margin_end=16,
+            margin_start=12,
+            margin_end=12,
+            margin_top=12,
             margin_bottom=12,
         )
+        self.search.add_css_class("page-search")
         self.search.connect("search-changed", self._search_changed)
         self.search.connect("stop-search", lambda *_: self.search_button.set_active(False))
         self.search_revealer = Gtk.Revealer(
@@ -270,6 +281,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             description=_("Installed applications will appear here."),
             icon_name="view-app-grid-symbolic",
         )
+        self.empty.add_css_class("page-status")
         self.views.add_named(self.empty, "empty")
         self.overview_box.append(self.views)
         self.view_buttons = {}
@@ -298,7 +310,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 ),
             ),
             ("search", self._show_search),
-            ("add", lambda *_: self.add_application()),
+            ("add", lambda *_: self._page_activated(self.pages_sidebar, self.install_row)),
             ("refresh-inventory", lambda *_: self.refresh()),
             ("preferences", lambda *_: self.preferences()),
             ("about", lambda *_: self.about()),
@@ -333,23 +345,13 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 icon_name="open-menu-symbolic", menu_model=menu, tooltip_text=_("Main Menu")
             )
         )
+        self.activity_button = ActivityButton(self.activities, self.cancel_operation)
+        self.sidebar_header.pack_start(self.activity_button)
         self.header.pack_start(self.sort_button)
         self.header.pack_end(self.view_controls)
         self.get_application().set_accels_for_action("win.search", ["<Primary>f"])
         self.get_application().set_accels_for_action("win.refresh", ["<Primary>r", "F5"])
         self.get_application().set_accels_for_action("win.preferences", ["<Primary>comma"])
-
-    def add_application(self):
-        if self.closed:
-            return
-        if self.operation_active or self.service.busy:
-            self.toast(_("Wait for the current operation to finish."))
-            return
-        from housekeeper.ui.install import InstallWindow
-
-        # Each opening starts a fresh installation form.
-        self.install_dialog = InstallWindow(self)
-        self.install_dialog.present()
 
     def _factory_setup(self, _factory, item, mode):
         box = Gtk.Box(
@@ -510,25 +512,32 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.sidebar.handler_unblock(self.sidebar_handler)
         self.overview_page.set_title(self.sources[self.source][0])
 
-    def _updates_activated(self, _list, row):
+    def _page_activated(self, _list, row):
         if row is None:
             return
-        self.section = "updates"
+        section, page = (
+            ("install", self.install_page)
+            if row is self.install_row
+            else ("updates", self.updates_page)
+        )
         self.detail_app = None
         self.sidebar.unselect_all()
-        self.updates_sidebar.select_row(self.updates_row)
-        self.navigation.replace([self.updates_page])
+        self.pages_sidebar.select_row(row)
+        self.section = section
+        if self.navigation.get_visible_page() is not page:
+            self.navigation.replace([page])
         if self.split.get_collapsed():
             self.split.set_show_sidebar(False)
-        self.updates_page.enter()
+        if page is self.updates_page:
+            self.updates_page.enter()
 
     def _source_activated(self, _list, row):
         if row is None:
             return
-        if self.section == "updates":
+        if self.section != "apps":
             self.navigation.replace([self.overview_page])
         self.section = "apps"
-        self.updates_sidebar.unselect_all()
+        self.pages_sidebar.unselect_all()
         self.source = row.source
         self.overview_page.set_title(self.sources[self.source][0])
         self.filter.changed(Gtk.FilterChange.DIFFERENT)
@@ -609,7 +618,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.spinner.set_visible(True)
         self.spinner.start()
         self.summary.set_label(_("Reading installed applications"))
-        self.service.scan(self._partial, self._complete, self._scan_failed)
+        if self.service.scan(self._partial, self._complete, self._scan_failed):
+            self.scan_activity_id = self.activities.start("scan", _("Refreshing App List"))
 
     def _replace(self, records):
         if self.closed:
@@ -633,6 +643,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _complete(self, records, warnings, roots, installations):
         if self.closed:
             return
+        # Refreshes run often and on their own, so only a failed one is kept as recent.
+        self.activities.finish(self.scan_activity_id)
         self.last_scan_finished = time.monotonic()
         self.scan_cooldown = SCAN_COOLDOWN
         unchanged = self.initialized and self.records == records
@@ -669,6 +681,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _scan_failed(self, error):
         if self.closed:
             return
+        self.activities.finish(
+            self.scan_activity_id, Outcome.FAILED, _("Could Not Refresh App List"), str(error)
+        )
         # A failed scan must not spend the cooldown a successful one earns.
         self.last_scan_finished = time.monotonic()
         self.scan_cooldown = FAILED_SCAN_COOLDOWN
@@ -864,6 +879,15 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.manage_button.set_sensitive(not self.operation_active)
         self.open_button.set_sensitive(not self.operation_active and bool(app.entries))
         hero.append(actions)
+        # Removing, updating or re-iconing this app.
+        self.detail_progress = ActivityProgress(
+            self.activities,
+            self.cancel_operation,
+            lambda activity: activity.key == app.key,
+            page,
+            width_request=280,
+        )
+        hero.append(self.detail_progress)
         body.append(hero)
         if app.status:
             status = Gtk.Label(label=app.status, wrap=True)
@@ -967,8 +991,10 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         body.append(advanced)
         body.append(self.appearance_group)
         if replace:
-            self.navigation.replace([self.overview_page, page])
+            self.navigation.replace([*(self.detail_below or [self.overview_page]), page])
         else:
+            stack = self.navigation.get_navigation_stack()
+            self.detail_below = [stack.get_item(i) for i in range(stack.get_n_items())]
             self.navigation.push(page)
         self.detail_app = app
         page.connect("hidden", self._detail_hidden, app.key)
@@ -978,7 +1004,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         if (
             self.detail_app
             and self.detail_app.key == key
-            and self.navigation.get_visible_page() is self.overview_page
+            and self.detail_below
+            and self.navigation.get_visible_page() is self.detail_below[-1]
         ):
             self.detail_app = None
 
@@ -1019,15 +1046,14 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             return
         if not self._begin_operation(current, "icon"):
             return
-        self._show_task(_("Saving Application Icon"))
-        self.task_label.set_label(_("Saving Application Icon"))
         # An icon save reports no progress, so Cancel is offered only while it is queued.
-        self.cancel_button.set_visible(self.cancel_button.get_sensitive())
+        self._start_task(_("Saving Application Icon"), detail="")
 
         def completed(_path):
-            self._end_operation()
+            saved = _("Icon saved") if image else _("Original icon restored")
+            self._end_operation(Outcome.SUCCESS, saved)
             notice = Adw.Toast(
-                title=_("Icon saved") if image else _("Original icon restored"),
+                title=saved,
                 button_label=_("GNOME Tip"),
                 timeout=8,
             )
@@ -1040,10 +1066,11 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
         def failed(error):
             cancelled = self.cancel_requested
-            self._end_operation()
             if cancelled:
+                self._end_operation(Outcome.CANCELLED, _("Icon Change Cancelled"))
                 self.toast(_("Icon change cancelled."))
             else:
+                self._end_operation(Outcome.FAILED, _("Could Not Change Icon"), str(error))
                 self.message(_("Could Not Change Icon"), str(error))
             self.refresh()
 
@@ -1134,7 +1161,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         if app.action in {Action.UNINSTALL, Action.TRASH}:
             if not self._begin_operation(app, "remove"):
                 return
-            self._show_task(_("Preparing a removal preview"))
+            self._start_task(_("Preparing a removal preview"))
             self.service.prepare(
                 app,
                 self._guard(lambda plan: self._confirm(app, plan)),
@@ -1168,7 +1195,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 command=app.metadata.get("management_command", ""),
             )
 
-    def _begin_operation(self, app, kind, notify=None):
+    def _begin_operation(self, app, kind, notify=None, subject=None):
         if self.closed:
             return False
         if self.operation_active or self.service.busy:
@@ -1180,6 +1207,19 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.operation_kind = kind
         self.operation_key = app.key if app is not None else kind
         self.operation_serial += 1
+        titles = {
+            "install": _("Installing"),
+            "remove": _("Preparing Removal"),
+            "update": _("Checking for Updates"),
+            "icon": _("Saving Application Icon"),
+            "sources": _("Saving Software Sources"),
+        }
+        self.activity_id = self.activities.start(
+            kind,
+            titles.get(kind, _("Working")),
+            (app.name if app is not None else "") if subject is None else subject,
+            self.operation_key,
+        )
         if self.detail_app:
             self.manage_button.set_sensitive(False)
             self.open_button.set_sensitive(False)
@@ -1200,13 +1240,13 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
         return guarded
 
-    def _end_operation(self):
+    def _end_operation(self, outcome=None, title="", detail=""):
+        """Release the window; an outcome keeps the operation in recent activity."""
+        self.activities.finish(self.activity_id, outcome, title, detail)
+        self.activity_id = None
         self.operation_active = False
         self.operation_serial += 1
         pending = self.updates_page.inventory_pending
-        if self.task_dialog:
-            self.task_dialog.destroy()
-            self.task_dialog = None
         self.confirm_dialog = None
         self.updates_page._selection_changed()
         if self.detail_app:
@@ -1236,7 +1276,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             return
         if not self._begin_operation(app, "update"):
             return
-        self._show_task(_("Checking Updates for %s") % app.name, deferred_cancel=True)
+        self._start_task(_("Checking Updates for %s") % app.name, deferred_cancel=True)
         self.service.prepare_update(
             app,
             self._guard(self._progress),
@@ -1246,10 +1286,12 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
     def _update_checked(self, app, result):
         if result.state == UpdateState.CURRENT:
-            self._end_operation()
-            self.message(
+            self._end_operation(Outcome.SUCCESS, _("No Updates Available"))
+            self.announce(
+                Outcome.SUCCESS,
                 _("No Updates Available"),
                 _("No updates are available from the configured software sources."),
+                app.name,
             )
         elif result.plan is not None:
             self._confirm(app, result.plan, update=True)
@@ -1259,10 +1301,11 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             )
 
     def _update_failed(self, app, error):
-        self._end_operation()
         if isinstance(error, OperationCancelled):
-            self.message(_("Update Check Cancelled"), str(error))
+            self._end_operation(Outcome.CANCELLED, _("Update Check Cancelled"), str(error))
+            self.announce(Outcome.CANCELLED, _("Update Check Cancelled"), str(error), app.name)
         else:
+            self._end_operation(Outcome.FAILED, _("Update Unavailable"), str(error))
             self.message(_("Update Unavailable"), str(error) + "\n\n" + update_instructions(app))
 
     def _uri_opened(self, launcher, result):
@@ -1274,10 +1317,11 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _preview_failed(self, error):
         if self.closed:
             return
-        self._end_operation()
         if isinstance(error, OperationCancelled):
-            self.message(_("Removal Cancelled"), str(error))
+            self._end_operation(Outcome.CANCELLED, _("Removal Cancelled"), str(error))
+            self.announce(Outcome.CANCELLED, _("Removal Cancelled"), str(error))
             return
+        self._end_operation(Outcome.FAILED, _("Removal Unavailable"), str(error))
         error = str(error)
         if self.detail_app and self.detail_app.provider == "rpm":
             package = self.detail_app.metadata.get("name")
@@ -1291,9 +1335,6 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def _confirm(self, app, plan, update=False):
         if self.closed:
             return
-        if self.task_dialog:
-            self.task_dialog.destroy()
-            self.task_dialog = None
         dialog = Adw.MessageDialog(
             transient_for=self,
             heading=(_("Update %s?") if update else _("Remove %s?")) % app.name,
@@ -1363,94 +1404,49 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             app, "update" if update else "remove"
         ):
             return
-        self._show_task((_("Updating %s") if update else _("Removing %s")) % app.name)
+        self._start_task((_("Updating %s") if update else _("Removing %s")) % app.name)
         execute = self.service.execute_update if update else self.service.execute
         execute(app, plan, self._guard(self._progress), self._guard(self._operation_finished))
 
-    def _show_task(self, title, *, deferred_cancel=False):
+    def _start_task(self, title, *, deferred_cancel=False, detail=None):
+        """Name the running operation; its progress shows in Activity and on its page."""
+        # Checks accept a cancellation request even if the current backend phase
+        # must finish first; other work can be withdrawn while it waits for a scan.
         self.task_deferred_cancel = deferred_cancel
         queued = self.service.scanning
-        self.task_dialog = Adw.Window(
-            transient_for=self,
-            modal=True,
+        if queued:
+            detail = _("Waiting for the application inventory")
+        elif detail is None:
+            detail = _("Waiting for the application manager")
+        self.activities.update(
+            self.activity_id,
             title=title,
-            default_width=420,
-            resizable=False,
+            detail=detail,
+            fraction=None,
+            cancellable=(deferred_cancel or queued) and not self.cancel_requested,
         )
-        toolbar = Adw.ToolbarView()
-        toolbar.add_top_bar(
-            Adw.HeaderBar(show_start_title_buttons=False, show_end_title_buttons=False)
-        )
-        box = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL,
-            spacing=18,
-            margin_start=24,
-            margin_end=24,
-            margin_top=24,
-            margin_bottom=24,
-        )
-        self.task_label = Gtk.Label(
-            label=_("Waiting for the application inventory")
-            if queued
-            else _("Waiting for the application manager"),
-            single_line_mode=True,
-            ellipsize=Pango.EllipsizeMode.END,
-            width_chars=36,
-            max_width_chars=36,
-        )
-        self.task_detail_label = Gtk.Label(
-            single_line_mode=True,
-            ellipsize=Pango.EllipsizeMode.END,
-            width_chars=36,
-            max_width_chars=36,
-        )
-        self.task_detail_label.add_css_class("dim-label")
-        status = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        status.append(self.task_label)
-        status.append(self.task_detail_label)
-        box.append(status)
-        self.task_progress = Gtk.ProgressBar()
-        box.append(self.task_progress)
-        self.cancel_button = Gtk.Button(label=_("Cancel"), sensitive=deferred_cancel or queued)
-        self.cancel_button.connect("clicked", self._cancel_operation)
-        box.append(self.cancel_button)
-        toolbar.set_content(box)
-        self.task_dialog.set_content(toolbar)
-        self.task_dialog.connect("close-request", lambda *_: self.operation_active)
-        self.task_dialog.present()
 
-    def _cancel_operation(self, _button):
+    def cancel_operation(self):
+        activity = self.activities.get(self.activity_id)
         if (
             not self.operation_active
             or self.cancel_requested
-            or not self.cancel_button.get_sensitive()
+            or activity is None
+            or not activity.cancellable
         ):
             return
         self.cancel_requested = True
-        self.cancel_button.set_sensitive(False)
+        self.activities.update(self.activity_id, detail=_("Cancelling…"), cancellable=False)
         self.service.cancel()
 
     def _progress(self, message, fraction, can_cancel):
-        if not self.task_dialog:
-            return
-        summary, _, detail = message.partition("\n")
-        detail = " ".join(detail.splitlines())
-        if self.task_label.get_label() != summary:
-            self.task_label.set_label(summary)
-        if self.task_detail_label.get_label() != detail:
-            self.task_detail_label.set_label(detail)
-        if self.task_label.get_tooltip_text() != message:
-            self.task_label.set_tooltip_text(message)
-            self.task_detail_label.set_tooltip_text(message)
-        if fraction is None:
-            self.task_progress.pulse()
-        else:
-            self.task_progress.set_fraction(fraction)
-        # Checks accept a cancellation request even if the current backend phase
-        # must finish first. Phase-level capability changes must not flash the button.
-        sensitive = (self.task_deferred_cancel or can_cancel) and not self.cancel_requested
-        if self.cancel_button.get_sensitive() != sensitive:
-            self.cancel_button.set_sensitive(sensitive)
+        summary = message.partition("\n")[0]
+        self.activities.update(
+            self.activity_id,
+            detail=_("Cancelling…") if self.cancel_requested else summary,
+            fraction=fraction,
+            cancellable=(self.task_deferred_cancel or can_cancel) and not self.cancel_requested,
+        )
 
     def _operation_finished(self, result):
         update = self.operation_kind == "update"
@@ -1461,7 +1457,6 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 self.updates_page.updates_completed((self.operation_key,))
         else:
             self.updates_page.invalidate()
-        self._end_operation()
         complete, failed = {
             "install": (_("Installation Complete"), _("Installation Failed")),
             "update": (_("Update Complete"), _("Update Failed")),
@@ -1472,6 +1467,11 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             Outcome.CANCELLED: _("Operation Cancelled"),
             Outcome.FAILED: failed,
         }[result.outcome]
+        activity = self.activities.get(self.activity_id)
+        subject = activity.subject if activity else ""
+        self._end_operation(result.outcome, title, result.message)
+        if self.operation_kind == "install" and result.outcome == Outcome.SUCCESS:
+            self.install_page.installed()
         body = result.message
         if result.completed:
             body += "\n\n" + _("Completed:") + "\n" + "\n".join(result.completed)
@@ -1481,7 +1481,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             body += "\n\n" + result.restart_hint
         if update and result.outcome == Outcome.FAILED and self.detail_app:
             body += "\n\n" + update_instructions(self.detail_app)
-        self.message(title, body)
+        self.announce(result.outcome, title, body, subject)
         self.refresh()
 
     def message(self, heading, body, help_url=None, command=None):
@@ -1521,7 +1521,20 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def toast(self, text):
         self.toast_overlay.add_toast(Adw.Toast(title=text, timeout=5))
 
-    def preferences(self):
+    def announce(self, outcome, title, body, subject=""):
+        """Report finished work; only results that need attention interrupt with a dialog."""
+        if outcome in {Outcome.FAILED, Outcome.PARTIAL}:
+            self.message(title, body)
+            return
+        # Work runs in the background, so name what finished.
+        text = _("%(title)s · %(subject)s") % {"title": title, "subject": subject}
+        toast = Adw.Toast(title=GLib.markup_escape_text(text if subject else title), timeout=5)
+        if body:
+            toast.set_button_label(_("Details"))
+            toast.connect("button-clicked", lambda _toast: self.message(title, body))
+        self.toast_overlay.add_toast(toast)
+
+    def preferences(self, page_name=None, import_file=None):
         from housekeeper.ui.repositories import SoftwareSourcesPage
 
         window = Adw.PreferencesWindow(transient_for=self, modal=True, title=_("Preferences"))
@@ -1574,9 +1587,31 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             "notify::selected", lambda row, _pspec: interval.set_sensitive(row.get_selected() == 0)
         )
         page.add(updates)
+        installing = Adw.PreferencesGroup(title=_("Installing Apps"))
+        preferences = ("flatpak", "native", "snap")
+        row = Adw.ComboRow(
+            title=_("Preferred Source"),
+            subtitle=_("Offered first when several sources have the same app."),
+            model=Gtk.StringList.new(
+                [_("Flatpak"), self.sources[self.native_source][0], _("Snap")]
+            ),
+        )
+        row.set_selected(preferences.index(self.settings.get_string("install-source-preference")))
+        row.connect(
+            "notify::selected",
+            lambda row, _pspec: self.settings.set_string(
+                "install-source-preference", preferences[row.get_selected()]
+            ),
+        )
+        installing.add(row)
+        page.add(installing)
         window.add(page)
         window.sources_page = SoftwareSourcesPage(self, window)
         window.add(window.sources_page)
+        if page_name:
+            window.set_visible_page_name(page_name)
+        if import_file:
+            window.sources_page.import_file(import_file)
         window.present()
 
     def about(self):
@@ -1606,8 +1641,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.settings.set_int("window-width", max(360, min(10000, self.get_width())))
             self.settings.set_int("window-height", max(420, min(10000, self.get_height())))
         self.closed = True
-        if self.install_dialog:
-            self.install_dialog.close()
+        self.install_page.close()
         if self.auto_refresh_source:
             GLib.source_remove(self.auto_refresh_source)
             self.auto_refresh_source = 0

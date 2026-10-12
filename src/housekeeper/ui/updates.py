@@ -8,9 +8,19 @@ from gi.repository import Adw, GLib, GObject, Gtk
 from housekeeper.batch_updates import UPDATE_PROVIDERS, installation_key
 from housekeeper.i18n import _, ngettext
 from housekeeper.models import OperationCancelled, Outcome
+from housekeeper.ui.activity import ActivityFollower, StatusSpinner, cancel_pill
 from housekeeper.ui.icons import icon_image
 from housekeeper.ui.update_confirmation import configure_update_confirmation, version_change
 from housekeeper.update_cache import UpdateCache, cache_expired
+
+
+def report_summary(report):
+    if report.errors:
+        return _("Update check incomplete")
+    if report.items:
+        count = len(report.items)
+        return ngettext("%d update available", "%d updates available", count) % count
+    return _("No updates available")
 
 
 class UpdatesPage(Adw.NavigationPage):
@@ -41,26 +51,29 @@ class UpdatesPage(Adw.NavigationPage):
             "collapsed", header, "show-start-title-buttons", GObject.BindingFlags.SYNC_CREATE
         )
         header.pack_start(toggle)
-        self.refresh_button = Gtk.Button(
-            icon_name="view-refresh-symbolic", tooltip_text=_("Check for Updates")
-        )
-        self.refresh_button.connect("clicked", lambda _b: self.check())
-        header.pack_start(self.refresh_button)
         toolbar.add_top_bar(header)
         content = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,
             spacing=12,
-            margin_start=16,
-            margin_end=16,
+            margin_start=12,
+            margin_end=12,
             margin_top=12,
-            margin_bottom=16,
+            margin_bottom=12,
         )
         toolbar.set_content(content)
-        self.status = Gtk.Label(label=_("Check for Updates"), xalign=0, wrap=True)
+        # The summary above the list; without updates the status page says it all.
+        self.summary = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.append(self.summary)
+        title = Gtk.Box(spacing=12)
+        self.summary.append(title)
+        self.status = Gtk.Label(label=_("Check for Updates"), xalign=0, wrap=True, hexpand=True)
         self.status.add_css_class("title-2")
-        content.append(self.status)
+        title.append(self.status)
+        self.refresh_button = Gtk.Button(label=_("Check Again"), valign=Gtk.Align.CENTER)
+        self.refresh_button.connect("clicked", lambda _b: self.check())
+        title.append(self.refresh_button)
         metadata = Gtk.Box(spacing=12, halign=Gtk.Align.START)
-        content.append(metadata)
+        self.summary.append(metadata)
         self.last_checked = Gtk.Label(xalign=0, visible=False)
         self.last_checked.add_css_class("dim-label")
         metadata.append(self.last_checked)
@@ -84,22 +97,56 @@ class UpdatesPage(Adw.NavigationPage):
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.list.add_css_class("boxed-list")
         self.list.set_valign(Gtk.Align.START)
-        self.empty = Adw.StatusPage(
-            title=_("Check for Updates"),
-            icon_name="software-update-available-symbolic",
-            description=_("Available desktop app updates will appear here."),
+        self.empty = Adw.StatusPage(icon_name="software-update-available-symbolic")
+        self.empty.add_css_class("page-status")
+        empty_actions = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=12, halign=Gtk.Align.CENTER
         )
+        self.check_button = Gtk.Button(label=_("Check for Updates"))
+        self.check_button.add_css_class("pill")
+        self.check_button.add_css_class("suggested-action")
+        self.check_button.connect("clicked", lambda _b: self.check())
+        empty_actions.append(self.check_button)
+        self.empty_details = Gtk.Button(label=_("Details"), visible=False)
+        self.empty_details.add_css_class("flat")
+        self.empty_details.connect(
+            "clicked", lambda _b: window.message(_("Update Check Details"), self.details)
+        )
+        empty_actions.append(self.empty_details)
+        self.empty.set_child(empty_actions)
+        # What the status page explains in place of the last check time, if anything.
+        self.notice = ""
+        self._set_empty(
+            _("Check for Updates"), _("Available desktop app updates will appear here.")
+        )
+        # Checking for or installing updates from this page puts a spinner in place of
+        # the status icon until it finishes.
+        self.working_page = Adw.StatusPage()
+        self.working_page.add_css_class("page-status")
+        working_actions = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=12, halign=Gtk.Align.CENTER
+        )
+        self.working_spinner = StatusSpinner(self.working_page, working_actions)
+        self.working_spinner.set_active(True)
+        self.working_cancel = cancel_pill(window.cancel_operation)
+        working_actions.append(self.working_cancel)
+        self.working_page.set_child(working_actions)
+        self.working = False
         self.stack = Gtk.Stack(vexpand=True)
         self.stack.add_named(self.empty, "empty")
+        self.stack.add_named(self.working_page, "working")
         self.stack.add_named(
             Gtk.ScrolledWindow(child=self.list, hscrollbar_policy=Gtk.PolicyType.NEVER), "list"
         )
         content.append(self.stack)
+        self.follower = ActivityFollower(
+            window.activities, lambda activity: activity.key == "update", self, self._working
+        )
         footer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.footer = Gtk.Box(
             spacing=12,
-            margin_start=16,
-            margin_end=16,
+            margin_start=12,
+            margin_end=12,
             margin_top=12,
             margin_bottom=16,
         )
@@ -115,6 +162,7 @@ class UpdatesPage(Adw.NavigationPage):
         breakpoint.add_setter(self.actions, "orientation", Gtk.Orientation.VERTICAL)
         footer_bin.add_breakpoint(breakpoint)
         toolbar.add_bottom_bar(footer_bin)
+        self.footer_bin = footer_bin
         self.details = ""
         for key in ("update-check-mode", "update-check-interval"):
             window.settings.connect("changed::" + key, self._check_policy_changed)
@@ -124,6 +172,7 @@ class UpdatesPage(Adw.NavigationPage):
         if not self.enabled_providers():
             self._sources_changed()
         self._selection_changed()
+        self._show_stack()
 
     def enabled_providers(self):
         return tuple(
@@ -158,6 +207,7 @@ class UpdatesPage(Adw.NavigationPage):
         self.last_checked.set_visible(False)
         self.details = ""
         self.errors_button.set_visible(False)
+        self.empty_details.set_visible(False)
         self.render(())
         text = (
             _("Update sources changed. Check again for available updates.")
@@ -167,10 +217,10 @@ class UpdatesPage(Adw.NavigationPage):
             )
         )
         self.status.set_label(text)
-        self.empty.set_title(
-            _("Check for Updates") if self.enabled_providers() else _("No Update Sources Enabled")
+        self._set_empty(
+            _("Check for Updates") if self.enabled_providers() else _("No Update Sources Enabled"),
+            text,
         )
-        self.empty.set_description(text)
         if self.checking:
             self.window.service.cancel()
 
@@ -250,10 +300,18 @@ class UpdatesPage(Adw.NavigationPage):
 
     def _show_stale(self):
         self.stale = True
-        text = _("Installed applications changed. Refresh to check for remaining updates.")
+        text = _("Installed applications changed. Check again for remaining updates.")
         self.status.set_label(text)
-        self.empty.set_title(_("Check for Updates"))
-        self.empty.set_description(text)
+        self._set_empty(_("Check for Updates"), text)
+
+    def _set_empty(self, title, notice=""):
+        self.empty.set_title(title)
+        self.notice = notice
+        self._describe_empty()
+
+    def _describe_empty(self):
+        checked = self.last_checked.get_visible() and self.last_checked.get_label()
+        self.empty.set_description(GLib.markup_escape_text(self.notice or checked or ""))
 
     def _set_checked_at(self, timestamp):
         self.checked_at = timestamp
@@ -262,6 +320,7 @@ class UpdatesPage(Adw.NavigationPage):
             return
         self.last_checked.set_label(_("Last checked: %s") % date.format("%x %H:%M"))
         self.last_checked.set_visible(True)
+        self._describe_empty()
 
     def invalidate(self):
         self.cache.clear()
@@ -306,15 +365,15 @@ class UpdatesPage(Adw.NavigationPage):
         active = self.window.operation_active
         self.selected_button.set_sensitive(bool(count) and not active)
         self.all_button.set_sensitive(bool(self.items) and not active)
-        self.refresh_button.set_sensitive(not active and bool(self.enabled_providers()))
+        can_check = not active and bool(self.enabled_providers())
+        self.refresh_button.set_sensitive(can_check)
+        self.check_button.set_sensitive(can_check)
         for _item, check in self.checks:
             check.set_sensitive(not active)
 
     def check(self):
         window = self.window
         if self.checking:
-            if window.task_dialog:
-                window.task_dialog.present()
             return
         providers = self.enabled_providers()
         if not providers:
@@ -325,7 +384,7 @@ class UpdatesPage(Adw.NavigationPage):
         self.checking = True
         self.visited = True
         self._selection_changed()
-        window._show_task(_("Checking for Updates"), deferred_cancel=True)
+        window._start_task(_("Checking for Updates"), deferred_cancel=True)
         revision = self.source_revision
         window.service.check_updates(
             window._guard(window._progress),
@@ -336,15 +395,21 @@ class UpdatesPage(Adw.NavigationPage):
 
     def checked(self, report, *, revision=None):
         self.checking = False
-        self.window._end_operation()
         if revision is not None and revision != self.source_revision:
+            self.window._end_operation()
             self._selection_changed()
             return
         if report.cancelled:
             # A cancelled check is not a replacement snapshot, even if some
             # providers returned results before cancellation was acknowledged.
+            self.window._end_operation(Outcome.CANCELLED, _("Update Check Cancelled"))
             self.window.toast(_("Update check cancelled."))
             return
+        self.window._end_operation(
+            Outcome.PARTIAL if report.errors else Outcome.SUCCESS,
+            report_summary(report),
+            "\n".join(report.errors),
+        )
         self._show_report(report)
         self.inventory_snapshot = {a.key: a for a in self.window.records}
         self.updated_keys.clear()
@@ -360,15 +425,12 @@ class UpdatesPage(Adw.NavigationPage):
         self.stale = False
         self.render(report.items)
         details = list(report.errors)
+        text = report_summary(report)
         if report.errors:
-            text = _("Update check incomplete")
             empty_title = _("Could Not Check All Apps")
         elif report.items:
-            count = len(report.items)
-            text = ngettext("%d update available", "%d updates available", count) % count
             empty_title = _("Updates Available")
         else:
-            text = _("No updates available")
             empty_title = _("You're Up to Date")
         if report.unsupported:
             details.append(
@@ -381,20 +443,24 @@ class UpdatesPage(Adw.NavigationPage):
             )
         self.details = "\n\n".join(details)
         self.errors_button.set_visible(bool(details))
+        self.empty_details.set_visible(bool(details))
         self.status.set_label(text)
-        self.empty.set_title(empty_title)
-        self.empty.set_description(text)
+        self._set_empty(empty_title)
 
     def failed(self, error, *, revision=None):
         self.checking = False
-        self.window._end_operation()
-        self._selection_changed()
         if revision is not None and revision != self.source_revision:
+            self.window._end_operation()
+            self._selection_changed()
             return
         if isinstance(error, OperationCancelled):
+            self.window._end_operation(Outcome.CANCELLED, _("Update Check Cancelled"))
+            self._selection_changed()
             # Withdrawn before a provider was contacted; previous results still stand.
             self.window.toast(_("Update check cancelled."))
             return
+        self.window._end_operation(Outcome.FAILED, _("Could Not Check Updates"), str(error))
+        self._selection_changed()
         self.status.set_label(_("The update check failed. Previous results may be out of date."))
         self.window.message(_("Could Not Check Updates"), str(error))
 
@@ -429,16 +495,33 @@ class UpdatesPage(Adw.NavigationPage):
             row.set_child(check)
             self.list.append(row)
             self.checks.append((item, check))
-        self.stack.set_visible_child_name("list" if items else "empty")
+        self._show_stack()
         self.window.updates_count.set_label(str(len(items)) if items else "")
         self.window._refresh_update_badge()
         self._selection_changed()
 
+    def _working(self, activity):
+        self.working = activity is not None
+        if activity is not None:
+            self.working_page.set_title(GLib.markup_escape_text(activity.title))
+            self.working_page.set_description(GLib.markup_escape_text(activity.detail))
+            self.working_cancel.set_sensitive(activity.cancellable)
+        self._show_stack()
+
+    def _show_stack(self):
+        name = "working" if self.working else ("list" if self.items else "empty")
+        if self.stack.get_visible_child_name() != name:
+            self.stack.set_visible_child_name(name)
+        # The summary and the update buttons only concern a list of updates.
+        self.summary.set_visible(name == "list")
+        self.footer_bin.set_visible(name == "list")
+
     def confirm(self, items):
-        if not items or not self.window._begin_operation(None, "update"):
+        items = tuple(items)
+        subject = ngettext("%d app", "%d apps", len(items)) % len(items)
+        if not items or not self.window._begin_operation(None, "update", subject=subject):
             return
         self._selection_changed()
-        items = tuple(items)
         dialog = Adw.MessageDialog(
             transient_for=self.window,
             modal=True,
@@ -457,7 +540,7 @@ class UpdatesPage(Adw.NavigationPage):
                 self.window._end_operation()
                 self._selection_changed()
                 return
-            self.window._show_task(_("Updating Applications"))
+            self.window._start_task(_("Updating Applications"))
             # Confirm the running programs the dialog showed last, not those at preview time.
             self.window.service.execute_updates(
                 shown(),
@@ -472,13 +555,13 @@ class UpdatesPage(Adw.NavigationPage):
         # Record the completed updates before releasing the page, so a scan that finished
         # mid-batch is reconciled against them instead of marking the list stale.
         self.updates_completed(result.completed_app_keys)
-        self.window._end_operation()
         titles = {
             Outcome.SUCCESS: _("Updates Complete"),
             Outcome.PARTIAL: _("Updates Partially Complete"),
             Outcome.CANCELLED: _("Updates Cancelled"),
             Outcome.FAILED: _("Updates Failed"),
         }
+        self.window._end_operation(result.outcome, titles[result.outcome], result.message)
         text = result.message
         if result.completed:
             text += "\n\n" + _("Completed:") + "\n" + "\n".join(result.completed)
@@ -486,5 +569,5 @@ class UpdatesPage(Adw.NavigationPage):
             text += "\n\n" + "\n".join(result.errors)
         if result.restart_hint:
             text += "\n\n" + result.restart_hint
-        self.window.message(titles[result.outcome], text)
+        self.window.announce(result.outcome, titles[result.outcome], text)
         self.window.refresh()

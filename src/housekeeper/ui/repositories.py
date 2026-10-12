@@ -1,5 +1,7 @@
 """Repository management and update-source preferences on the Software Sources page."""
 
+from pathlib import Path
+
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from housekeeper.i18n import _
@@ -19,6 +21,7 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
         self.loading = False
         self.loaded = False
         self.native_sources_expanded = False
+        self.pending_import = ""
         self.groups = []
         self.controls = []
         self.snapshot = ()
@@ -100,6 +103,8 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
             self.snapshot = groups
             self._render(groups)
             self._status(notice)
+            if self.pending_import:
+                self._offer_import()
 
         def failed(error):
             self.loading = False
@@ -239,6 +244,25 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
 
         self.owner.service.change_software_source(source, enabled, complete, failed)
 
+    def import_file(self, path):
+        """Add the source a .flatpakrepo file describes, once sources are listed."""
+        self.pending_import = path
+        if self.loaded and not self.loading:
+            self._offer_import()
+
+    def _offer_import(self):
+        targets = [record for record in self.snapshot if record.can_add]
+        if len(targets) == 1:
+            self.add_source(targets[0])
+        elif targets:
+            self._status(
+                _("Choose where to add %s with an Add Flatpak Source button below.")
+                % Path(self.pending_import).name
+            )
+        else:
+            self.pending_import = ""
+            self._status(_("No Flatpak installation can accept a new source."))
+
     def add_source(self, record):
         if self.closed or self.busy or self.loading:
             return
@@ -256,6 +280,9 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
         name = Adw.EntryRow(title=_("Name (Optional)"))
         fields.add(location)
         fields.add(name)
+        if self.pending_import:
+            location.set_text(self.pending_import)
+            self.pending_import = ""
         box.append(fields)
         choose = Gtk.Button(label=_("Choose .flatpakrepo File…"))
         box.append(choose)

@@ -1,5 +1,6 @@
 """Installation inputs, desktop integration and exact package targets; no host changes."""
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
@@ -15,6 +16,7 @@ from housekeeper.installations import (
     InstallCandidate,
     Installer,
     InstallRequest,
+    LocalPackage,
     normalize_url,
     ranked_matches,
 )
@@ -343,17 +345,31 @@ def rpm_package(name, summary="Summary", repo="updates"):
     )
 
 
-def app_component(title, summary, icon=""):
-    icons = [NS(get_width=lambda: 64, get_height=lambda: 64, get_filename=lambda: icon)]
+def app_component(title, summary, icon="", app_id=""):
+    icons = [
+        NS(
+            get_width=lambda: 64,
+            get_height=lambda: 64,
+            get_scale=lambda: 1,
+            get_filename=lambda: icon,
+        )
+    ]
     icons = icons if icon else []
-    return NS(get_name=lambda: title, get_summary=lambda: summary, get_icons=lambda: icons)
+    return NS(
+        get_name=lambda: title,
+        get_summary=lambda: summary,
+        get_icons=lambda: icons,
+        get_id=lambda: app_id,
+    )
 
 
-def test_catalogue_apps_come_first_in_catalogue_order_without_installed_ones(monkeypatch, tmp_path):
+def test_catalogue_apps_come_first_in_catalogue_order_marking_installed_ones(monkeypatch, tmp_path):
     icon = tmp_path / "te.png"
     icon.write_bytes(b"png")
     apps = {
-        "gnome-text-editor": app_component("Text Editor", "Edit text files", str(icon)),
+        "gnome-text-editor": app_component(
+            "Text Editor", "Edit text files", str(icon), "org.gnome.TextEditor"
+        ),
         "kate": app_component("Kate", "Advanced text editor"),
         "gedit": app_component("gedit", "Text editor"),
         "unavailable": app_component("Gone", "Not in any enabled repository"),
@@ -367,11 +383,14 @@ def test_catalogue_apps_come_first_in_catalogue_order_without_installed_ones(mon
         apps=apps,
     )
     candidates = Installer().search("rpm", "text")
-    assert [c.name for c in candidates] == ["gnome-text-editor", "gedit"]
-    assert [c.title for c in candidates] == ["Text Editor", "gedit"]
-    assert candidates[0].icon == str(icon) and candidates[1].icon == ""
+    assert [c.name for c in candidates] == ["gnome-text-editor", "kate", "gedit"]
+    assert [c.title for c in candidates] == ["Text Editor", "Kate", "gedit"]
+    assert [c.installed for c in candidates] == [False, True, False]
+    assert candidates[0].icon == str(icon) and candidates[2].icon == ""
     assert candidates[0].target == "gnome-text-editor;1;x86_64;updates"
     assert candidates[0].description == "Edit text files · gnome-text-editor · 1 · x86_64 · updates"
+    assert candidates[0].app_id == "org.gnome.TextEditor"
+    assert candidates[0].summary == "Edit text files" and candidates[0].origin == "updates"
     client.search_names.assert_not_called()
     filters = [call.args[0] for call in client.resolve.call_args_list]
     assert filters[0] & 1 << pk.FilterEnum.NOT_INSTALLED
@@ -396,7 +415,10 @@ def test_desktop_package_fallback_without_an_installable_catalogue_match(monkeyp
         monkeypatch, [chrome, firefox], installed=[firefox, rpm_package("kate")], apps=apps
     )
     candidates = Installer().search("rpm", "chrome")
-    assert [(c.name, c.title) for c in candidates] == [("google-chrome-stable", "")]
+    # An installed catalogue match is listed, but does not stop the search for others.
+    shown = [("kate", "Kate")] if apps else []
+    assert [(c.name, c.title) for c in candidates] == [*shown, ("google-chrome-stable", "")]
+    assert [c.installed for c in candidates] == [True] * len(shown) + [False]
     # Only packages that provide a desktop application: no plugins, libraries or -devel.
     assert client.search_names.call_args.args[0] & 1 << pk.FilterEnum.GUI
 
@@ -404,15 +426,19 @@ def test_desktop_package_fallback_without_an_installable_catalogue_match(monkeyp
 def test_package_search_typo_fallback_and_install_exact_selected_id(monkeypatch):
     client, pk, found = packagekit(monkeypatch, [rpm_package("firefox", "Browser")])
     empty = packages_result()
-    client.search_names.side_effect = [empty, found]
+    # The third search lists installed apps.
+    client.search_names.side_effect = [empty, found, empty]
     installer = Installer()
     candidates = installer.search("rpm", "firefx")
     assert len(candidates) == 1
-    assert [call.args[1] for call in client.search_names.call_args_list] == [["firefx"], ["fir"]]
+    searches = [call.args[1] for call in client.search_names.call_args_list]
+    assert searches == [["firefx"], ["fir"], ["firefx"]]
+    assert client.search_names.call_args.args[0] & 1 << pk.FilterEnum.INSTALLED
     # Short queries never fall back to a two-character substring of the whole catalogue.
-    client.search_names.side_effect = [empty, empty]
+    client.search_names.reset_mock()
+    client.search_names.side_effect = [empty, empty, empty]
     installer.search("rpm", "gimq")
-    assert client.search_names.call_args.args[1] == ["gim"]
+    assert client.search_names.call_args_list[1].args[1] == ["gim"]
     assert all(callable(call.args[3]) for call in client.search_names.call_args_list)
     result = installer.install(InstallRequest("rpm", candidate=candidates[0]), lambda *_: None)
     assert result.outcome == Outcome.SUCCESS
@@ -426,6 +452,9 @@ def test_install_requires_selection_and_matching_source(monkeypatch):
     for request in (
         InstallRequest("rpm", "firefox"),
         InstallRequest("deb", candidate=InstallCandidate("rpm", "firefox", "id")),
+        InstallRequest(
+            "rpm", candidate=InstallCandidate("rpm", "firefox", "firefox;1;x86_64;", installed=True)
+        ),
     ):
         with pytest.raises(ManagementError):
             Installer().install(request, lambda *_: None)
@@ -454,6 +483,7 @@ def test_flatpak_search_keeps_scope_branch_and_remote(monkeypatch):
     def ref(name, kind=1, arch="x86_64", branch="stable"):
         return NS(
             get_name=lambda: name,
+            get_origin=lambda: "flathub",
             get_kind=lambda: kind,
             get_arch=lambda: arch,
             get_branch=lambda: branch,
@@ -464,6 +494,7 @@ def test_flatpak_search_keeps_scope_branch_and_remote(monkeypatch):
         get_disabled=lambda: False,
         get_noenumerate=lambda: False,
         get_name=lambda: "flathub",
+        get_title=lambda: "Flathub",
         get_appstream_dir=lambda _arch: None,
     )
     refs = [
@@ -499,6 +530,7 @@ def flatpak_installation(refs, monkeypatch, warnings=(), path="/user/flatpak"):
         get_disabled=lambda: False,
         get_noenumerate=lambda: False,
         get_name=lambda: "flathub",
+        get_title=lambda: "Flathub",
         get_appstream_dir=lambda _arch: None,
     )
     installation = NS(
@@ -517,9 +549,10 @@ def flatpak_installation(refs, monkeypatch, warnings=(), path="/user/flatpak"):
     return installation
 
 
-def flatpak_ref(name, kind=1, arch="x86_64", branch="stable"):
+def flatpak_ref(name, kind=1, arch="x86_64", branch="stable", origin="flathub"):
     return NS(
         get_name=lambda: name,
+        get_origin=lambda: origin,
         get_kind=lambda: kind,
         get_arch=lambda: arch,
         get_branch=lambda: branch,
@@ -560,10 +593,15 @@ def test_remote_catalogue_is_enumerated_once_across_keystrokes(monkeypatch):
     assert installation.list_remote_refs_sync.call_count == 2
 
 
-def test_an_installed_application_is_dropped_from_a_cached_catalogue(monkeypatch):
+def test_an_installed_application_is_marked_in_a_cached_catalogue(monkeypatch):
     installation = flatpak_installation([flatpak_ref("org.mozilla.firefox")], monkeypatch)
-    assert Installer().search("flatpak", "firefox")
+    assert not Installer().search("flatpak", "firefox")[0].installed
     installation.list_installed_refs = lambda _: [flatpak_ref("org.mozilla.firefox")]
+    assert Installer().search("flatpak", "firefox")[0].installed
+    # Installed from another remote, this remote's copy cannot be installed beside it.
+    installation.list_installed_refs = lambda _: [
+        flatpak_ref("org.mozilla.firefox", origin="fedora")
+    ]
     assert Installer().search("flatpak", "firefox") == ()
     installation.list_remote_refs_sync.assert_called_once()
 
@@ -678,7 +716,15 @@ def test_snap_search_keeps_store_package_name(monkeypatch, tmp_path):
         read=lambda _: json.dumps(
             {
                 "type": "sync",
-                "result": [{"name": "firefox", "summary": "Browser"}, {"name": "other"}],
+                "result": [
+                    {
+                        "name": "firefox",
+                        "title": "Firefox",
+                        "summary": "Browser",
+                        "common-ids": ["org.mozilla.firefox.desktop"],
+                    },
+                    {"name": "other"},
+                ],
             }
         ).encode(),
     )
@@ -687,6 +733,8 @@ def test_snap_search_keeps_store_package_name(monkeypatch, tmp_path):
     )
     result = Installer().search("snap", "fire")
     assert len(result) == 1 and result[0].name == "firefox"
+    assert result[0].title == "Firefox" and result[0].summary == "Browser"
+    assert result[0].app_id == "org.mozilla.firefox.desktop"
     connection.request.assert_called_once_with("GET", "/v2/find?q=fire")
     connection.close.assert_called_once()
 
@@ -772,8 +820,10 @@ def test_flatpak_search_uses_each_remotes_appstream_catalogue(tmp_path, monkeypa
     if backend.load_appstream() is None:
         pytest.skip("AppStream introspection is unavailable")
     directory = tmp_path / "appstream/flathub/x86_64/active"
-    (directory / "icons/64x64").mkdir(parents=True)
-    (directory / "icons/64x64/com.obsproject.Studio.png").write_bytes(b"png")
+    # The largest copy on disk wins; the 128px one is listed but missing.
+    for size in ("64x64", "128x128@2"):
+        (directory / "icons" / size).mkdir(parents=True)
+        (directory / "icons" / size / "com.obsproject.Studio.png").write_bytes(b"png")
 
     def app(ident, name, summary, kind="desktop-application", keyword=""):
         ref = f"app/{ident}/x86_64/stable"
@@ -781,7 +831,10 @@ def test_flatpak_search_uses_each_remotes_appstream_catalogue(tmp_path, monkeypa
         return (
             f'<component type="{kind}"><id>{ident}</id><name>{name}</name>{keywords}'
             f'<summary>{summary}</summary><bundle type="flatpak">{ref}</bundle>'
-            f'<icon type="cached" width="64" height="64">{ident}.png</icon></component>'
+            f'<icon type="cached" width="64" height="64">{ident}.png</icon>'
+            f'<icon type="cached" width="128" height="128">{ident}.png</icon>'
+            f'<icon type="cached" width="128" height="128" scale="2">{ident}.png</icon>'
+            "</component>"
         )
 
     def publish(*components):
@@ -809,12 +862,16 @@ def test_flatpak_search_uses_each_remotes_appstream_catalogue(tmp_path, monkeypa
     remote = installation.list_remotes(None)[0]
     remote.get_appstream_dir = lambda _arch: Gio.File.new_for_path(str(directory))
     found = Installer().search("flatpak", "obs")
-    assert [c.name for c in found] == ["com.obsproject.Studio", "org.example.Recorder"]
+    names = ["com.obsproject.Studio", "org.example.Installed", "org.example.Recorder"]
+    assert [c.name for c in found] == names
+    assert [c.installed for c in found] == [False, True, False]
     studio = found[0]
     assert studio.title == "OBS Studio" and studio.remote == "flathub"
-    assert studio.icon == str(directory / "icons/64x64/com.obsproject.Studio.png")
+    assert studio.app_id == "com.obsproject.Studio" and studio.origin == "Flathub · User"
+    assert studio.summary == "Live stream and record videos"
+    assert studio.icon == str(directory / "icons/128x128@2/com.obsproject.Studio.png")
     assert studio.description.startswith("Live stream and record videos · com.obsproject.Studio")
-    assert found[1].icon == ""  # A cached icon that is missing on disk is not shown.
+    assert found[2].icon == ""  # A cached icon that is missing on disk is not shown.
     # The parsed catalogue is reused until Flatpak publishes a new one.
     pool = backend.remote_catalogue(installation, remote)[0]
     assert backend.remote_catalogue(installation, remote)[0] is pool
@@ -822,7 +879,7 @@ def test_flatpak_search_uses_each_remotes_appstream_catalogue(tmp_path, monkeypa
     stat = (directory / "appstream.xml.gz").stat()
     os.utime(directory / "appstream.xml.gz", ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
     assert backend.remote_catalogue(installation, remote)[0] is not pool
-    assert [c.name for c in Installer().search("flatpak", "obs")] == ["com.obsproject.Studio"]
+    assert [c.name for c in Installer().search("flatpak", "obs")] == names[:2]
 
 
 def test_a_phrase_reaches_appstream_whole_and_name_search_by_its_longest_word(monkeypatch):
@@ -848,3 +905,227 @@ def test_a_phrase_counts_as_named_only_when_every_word_is_in_the_name():
     assert not backend.named_first("text editor", "COSMIC Text Editor", "cosmic-edit")
     assert backend.named_first("text editor", "Kate", "kate")
     assert backend.named_first("video editor", "Video Player", "")
+
+
+def test_source_order_puts_the_preferred_source_first():
+    from housekeeper.installations import source_order
+
+    assert source_order("flatpak", "rpm") == ["flatpak", "rpm", "snap"]
+    assert source_order("native", "deb") == ["deb", "flatpak", "snap"]
+    assert source_order("snap", "rpm") == ["snap", "flatpak", "rpm"]
+
+
+def test_combined_results_merge_one_app_across_sources():
+    from housekeeper.installations import group_candidates
+
+    native = InstallCandidate(
+        "rpm",
+        "firefox",
+        "firefox;1;x86_64;fedora",
+        title="Firefox",
+        app_id="org.mozilla.firefox.desktop",
+    )
+    plain = InstallCandidate("rpm", "firefox-langpacks", "firefox-langpacks;1;x86_64;fedora")
+    system = InstallCandidate("flatpak", "org.mozilla.firefox", "app/a", "System", "/system")
+    user = replace(system, target="app/b", description="User", context="/user", title="Firefox")
+    snap = InstallCandidate("snap", "firefox", "firefox", app_id="org.mozilla.firefox")
+    tool = InstallCandidate("snap", "firefox-tool", "firefox-tool", title="Fox Tool")
+    order = ["flatpak", "rpm", "snap"]
+    choices = group_candidates(
+        "firefox", {"rpm": (native, plain), "flatpak": (system, user), "snap": (tool, snap)}, order
+    )
+    firefox = choices[0]
+    assert firefox.options == (system, user, native, snap)
+    assert firefox.title == "Firefox" and firefox.is_app
+    assert [choice.best for choice in choices[1:]] == [tool, plain]
+    assert choices[1].is_app and not choices[2].is_app
+    # The preference only orders copies of one app; it never hides another source.
+    choices = group_candidates("firefox", {"rpm": (native,), "snap": (snap,)}, ["snap", "rpm"])
+    assert choices[0].options == (snap, native)
+    assert not choices[0].installed
+    # An installed copy leads its app, whatever the preference, so its page opens on it.
+    installed = replace(native, installed=True)
+    choices = group_candidates("firefox", {"rpm": (installed,), "snap": (snap,)}, ["snap", "rpm"])
+    assert choices[0].options == (installed, snap) and choices[0].installed
+
+
+def test_a_named_app_outranks_a_keyword_match_from_another_source():
+    from housekeeper.installations import group_candidates
+
+    keyword = InstallCandidate("flatpak", "org.example.Studio", "a", title="Studio")
+    named = InstallCandidate("rpm", "kate", "b", title="Kate")
+    choices = group_candidates("kate", {"flatpak": (keyword,), "rpm": (named,)}, ["flatpak"])
+    assert [choice.best for choice in choices] == [named, keyword]
+
+
+@pytest.mark.parametrize(
+    ("text", "website"),
+    [
+        ("example.org", True),
+        ("https://example.org/notes", True),
+        ("www.example", True),
+        ("music.youtube.com/library", True),
+        ("localhost:8080", False),
+        ("org.gnome.Maps", False),
+        ("firefox", False),
+        ("video editor", False),
+        ("", False),
+    ],
+)
+def test_website_detection(text, website):
+    from housekeeper.installations import looks_like_website
+
+    assert looks_like_website(text) is website
+
+
+@pytest.mark.parametrize(
+    ("name", "kind"),
+    [
+        ("Notes-x86_64.AppImage", "appimage"),
+        ("notes.RPM", "rpm"),
+        ("notes_1.0_amd64.deb", "deb"),
+        ("org.example.Notes.flatpakref", "flatpakref"),
+        ("notes.flatpak", "flatpak-bundle"),
+        ("flathub.flatpakrepo", "flatpakrepo"),
+        ("notes.tar.gz", None),
+    ],
+)
+def test_file_kinds_follow_the_extension(name, kind):
+    from housekeeper.installations import file_kind
+
+    assert file_kind(name) == kind
+
+
+def flatpakref(tmp_path, **values):
+    lines = "".join(f"{key}={value}\n" for key, value in values.items())
+    path = tmp_path / "app.flatpakref"
+    path.write_text("[Flatpak Ref]\n" + lines)
+    return path
+
+
+def test_a_flatpakref_is_reviewed_with_its_source_and_signing(monkeypatch, tmp_path):
+    flatpak_installation([], monkeypatch)
+    path = flatpakref(
+        tmp_path,
+        Name="org.example.Notes",
+        Title="Notes",
+        Comment="Take notes",
+        Branch="stable",
+        Url="https://dl.example.org/repo/",
+        SuggestRemoteName="example",
+        GPGKey="a2V5",
+        RuntimeRepo="https://dl.example.org/example.flatpakrepo",
+    )
+    package = Installer().inspect(str(path))
+    assert (package.kind, package.title, package.name) == (
+        "flatpakref",
+        "Notes",
+        "org.example.Notes",
+    )
+    assert package.summary == "Take notes" and package.version == "stable"
+    assert package.origin == "dl.example.org" and package.verified
+    assert package.adds_remote == "example" and package.runtime_repo
+    assert package.installations == (("/user/flatpak", "User"),)
+    assert package.data == path.read_bytes()
+    unsigned = flatpakref(tmp_path, Name="org.example.Notes", Url="https://dl.example.org/")
+    assert not Installer().inspect(str(unsigned)).verified
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"Name": "org.example.Notes"}, "does not name an app"),
+        ({"Name": "org.example.Platform", "Url": "https://x", "IsRuntime": "true"}, "runtime"),
+    ],
+)
+def test_a_flatpakref_that_is_not_an_app_is_refused(monkeypatch, tmp_path, values, message):
+    flatpak_installation([], monkeypatch)
+    with pytest.raises(ManagementError, match=message):
+        Installer().inspect(str(flatpakref(tmp_path, **values)))
+
+
+def test_a_flatpakref_installs_the_reviewed_bytes_and_may_add_its_source(monkeypatch, tmp_path):
+    from housekeeper.installations import file_fingerprint
+
+    callbacks = {}
+    tx = Mock()
+    tx.connect.side_effect = lambda signal, callback: callbacks.setdefault(signal, callback)
+    tx.run.side_effect = lambda _cancel: callbacks["add-new-remote"](
+        tx, 0, "", "example", "https://dl.example.org/"
+    )
+    installation = NS(
+        get_path=lambda: Gio.File.new_for_path("/chosen/system"), list_remotes=lambda _: []
+    )
+    fp = NS(Transaction=NS(new_for_installation=Mock(return_value=tx)))
+    monkeypatch.setattr(backend, "load_flatpak", lambda: fp)
+    monkeypatch.setattr(backend, "configured_installations", lambda _: ([installation], []))
+    path = flatpakref(tmp_path, Name="org.example.Notes", Url="https://dl.example.org/")
+    reviewed = path.read_bytes()
+    package = LocalPackage(
+        "flatpakref",
+        str(path),
+        "Notes",
+        "org.example.Notes",
+        fingerprint=file_fingerprint(path),
+        data=reviewed,
+    )
+    request = InstallRequest("file", package=package, context="/chosen/system")
+    result = Installer().install(request, lambda *_: None)
+    # The user reviewed the source this file names, so the transaction may add it.
+    assert result.outcome == Outcome.SUCCESS
+    assert tx.add_install_flatpakref.call_args.args[0].get_data() == reviewed
+    assert fp.Transaction.new_for_installation.call_args.args[0] is installation
+    # A file replaced after it was reviewed is never installed.
+    path.write_text(path.read_text() + "Title=Changed\n")
+    with pytest.raises(ManagementError, match="changed after it was opened"):
+        Installer().install(request, lambda *_: None)
+
+
+def package_file_backend(monkeypatch, native="rpm"):
+    pk = NS(
+        TransactionFlagEnum=NS(ONLY_TRUSTED=1),
+        ErrorEnum=NS(BAD_GPG_SIGNATURE=10, MISSING_GPG_SIGNATURE=11, GPG_FAILURE=12),
+        client_error_quark=lambda: GLib.quark_from_string("pk-client-error-quark"),
+    )
+    client = Mock()
+    details = NS(get_package_id=lambda: "notes;2.0-1;x86_64;local", get_summary=lambda: "Notes")
+    client.get_details_local.return_value = NS(get_details_array=lambda: [details])
+    client.install_files.return_value = NS(get_error_code=lambda: None)
+    monkeypatch.setattr(backend, "native_package_source", lambda: (native, native.upper()))
+    monkeypatch.setattr(backend, "package_client", lambda source: (client, pk))
+    monkeypatch.setattr(backend, "checked_packages", lambda *_args: ())
+    return client, pk
+
+
+def test_a_package_file_is_read_before_installing(monkeypatch, tmp_path):
+    client, _pk = package_file_backend(monkeypatch)
+    path = tmp_path / "notes-2.0-1.x86_64.rpm"
+    path.write_bytes(b"rpm")
+    package = Installer().inspect(str(path))
+    assert (package.kind, package.name, package.summary) == ("rpm", "notes", "Notes")
+    assert package.version == "2.0-1 · x86_64"
+    assert client.get_details_local.call_args.args[0] == [str(path)]
+    deb = tmp_path / "notes_2.0_amd64.deb"
+    deb.write_bytes(b"deb")
+    with pytest.raises(ManagementError, match="DEB package, but this system uses RPM"):
+        Installer().inspect(str(deb))
+
+
+def test_an_unverified_package_file_needs_explicit_consent(monkeypatch, tmp_path):
+    from housekeeper.installations import file_fingerprint
+
+    client, pk = package_file_backend(monkeypatch)
+    path = tmp_path / "notes.rpm"
+    path.write_bytes(b"rpm")
+    package = LocalPackage("rpm", str(path), "notes", "notes", fingerprint=file_fingerprint(path))
+    client.install_files.side_effect = GLib.Error.new_literal(
+        pk.client_error_quark(), "Package is not signed", 0xFF + 11
+    )
+    with pytest.raises(ManagementError, match="Allow Unverified Package"):
+        Installer().install(InstallRequest("file", package=package), lambda *_: None)
+    assert client.install_files.call_args.args[0] == 1 << 1  # Only trusted packages.
+    client.install_files.side_effect = None
+    result = Installer().install(
+        InstallRequest("file", package=package, untrusted=True), lambda *_: None
+    )
+    assert result.outcome == Outcome.SUCCESS and client.install_files.call_args.args[0] == 0

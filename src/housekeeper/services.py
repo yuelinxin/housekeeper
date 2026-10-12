@@ -348,15 +348,54 @@ class InventoryService:
             worker.request_cancel()
             future.cancel()
 
-    def search_install(self, source, query, completed, failed):
+    def search_apps(self, query, sources, found, finished, failed):
+        """Search each source in turn, reporting every source's results as they arrive.
+
+        `found(source, candidates, error)` runs once per source; a source that cannot be
+        searched reports its error without stopping the others. `finished()` follows the
+        last source, and `failed(message)` replaces both for a query no source accepts.
+        """
+        from housekeeper.installations import Installer, search_query
+
+        self.cancel_install_search()
+        if self.closed:
+            return
+        worker = Installer()
+
+        def current():
+            return self.install_search is not None and self.install_search[0] is worker
+
+        def report(source, candidates, error):
+            if not self.closed and current():
+                found(source, candidates, error)
+
+        def run():
+            text = search_query(query)
+            for source in sources:
+                try:
+                    candidates, error = worker.search(source, text), None
+                except OperationCancelled:
+                    raise
+                except Exception as exc:
+                    worker.check_cancelled()
+                    candidates, error = (), str(exc)
+                self.dispatch(report, source, candidates, error)
+
+        self._search_job(worker, run, lambda _result: finished(), failed)
+
+    def inspect_install_file(self, path, completed, failed):
+        """Read a package or Flatpak file on the search worker; a new search cancels it."""
         from housekeeper.installations import Installer
 
         self.cancel_install_search()
         if self.closed:
             return
         worker = Installer()
+        self._search_job(worker, lambda: worker.inspect(path), completed, failed)
+
+    def _search_job(self, worker, run, completed, failed):
         try:
-            future = self.search_executor.submit(worker.search, source, query)
+            future = self.search_executor.submit(run)
         except Exception as error:
             self.dispatch(failed, str(error))
             return
@@ -368,16 +407,16 @@ class InventoryService:
             if self.closed or self.install_search != (worker, future):
                 return
             # Release the finished worker and its results; a later cancellation must not
-            # act on this search, and the candidate list outlives the dialog otherwise.
+            # act on this search, and the candidate list outlives the page otherwise.
             self.install_search = None
             try:
-                candidates = result.result()
+                value = result.result()
             except (CancelledError, OperationCancelled):
                 return
             except Exception as error:
                 failed(str(error))
                 return
-            completed(candidates)
+            completed(value)
 
         future.add_done_callback(lambda result: self.dispatch(finish, result))
 

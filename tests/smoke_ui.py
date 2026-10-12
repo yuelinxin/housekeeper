@@ -31,7 +31,7 @@ from housekeeper.appearance import data_home
 from housekeeper.batch_updates import UpdateItem, UpdateReport
 from housekeeper.discovery import scan_entries
 from housekeeper.identity import classify
-from housekeeper.installations import InstallCandidate
+from housekeeper.installations import AppChoice, InstallCandidate, LocalPackage
 from housekeeper.models import (
     Action,
     AppRecord,
@@ -59,6 +59,7 @@ from housekeeper.updates import assign_update_action
 Gio.resources_register(Gio.Resource.load(str(BUILD / "data/housekeeper.gresource")))
 from housekeeper.app_icons import _settings as desktop_settings
 from housekeeper.ui.disclosure import DetailsDisclosure
+from housekeeper.ui.install import InstallDetailsPage
 from housekeeper.ui.update_confirmation import configure_update_confirmation
 from housekeeper.ui.updates import UpdatesPage
 from housekeeper.ui.window import HousekeeperWindow
@@ -171,7 +172,10 @@ def activate(app):
     badge_fixture = {}
     install_fixture = {}
 
-    def choose_install_icon(dialog, path):
+    def running():
+        return window.activities.get(window.activity_id)
+
+    def choose_install_icon(details, path):
         class IconChooser:
             def __init__(self, **_kwargs):
                 pass
@@ -183,130 +187,347 @@ def activate(app):
                 return Gio.File.new_for_path(str(path))
 
         with patch("housekeeper.ui.install.Gtk.FileDialog", IconChooser):
-            dialog.icon_button.emit("clicked")
+            details.icon_button.emit("clicked")
 
-    def check_install_search():
-        assert window.add_button.get_icon_name() == "list-add-symbolic"
-        assert window.add_button.get_action_name() == "win.add"
+    def check_install_opened():
         with patch.object(window, "refresh") as refresh:
             window.lookup_action("refresh-inventory").activate(None)
             refresh.assert_called_once()
         window.source = "all"
-        window.add_application()
-        dialog = window.install_dialog
-        assert dialog.source == window.native_source and not dialog.add_button.get_sensitive()
+        # Clicking the sidebar row leaves keyboard focus on it.
+        window.install_row.grab_focus()
+        window.pages_sidebar.emit("row-activated", window.install_row)
+        page = window.install_page
+        assert window.navigation.get_visible_page() is page
+        assert window.section == "install" and window.sidebar.get_selected_row() is None
+        assert page.placeholder.get_title() == "Find Apps to Install"
+        assert page.placeholder_file.get_visible() and not page.results.get_visible()
+        # Empty pages share one status page size instead of Adwaita's default and compact.
+        for status in (page.placeholder, window.updates_page.empty, window.empty):
+            assert status.has_css_class("page-status") and not status.has_css_class("compact")
+
+    def check_install_search():
+        # The opening step left the empty page drawn.
+        capture(window, "install-empty.png")
+        page = window.install_page
         searches = []
         timers = []
+        install_fixture["timers"], install_fixture["searches"] = timers, searches
         with (
             patch(
                 "housekeeper.ui.install.GLib.timeout_add",
                 side_effect=lambda _delay, fn: (timers.append(fn), 0)[1],
             ),
             patch.object(
-                window.service, "search_install", side_effect=lambda *args: searches.append(args)
+                window.service, "search_apps", side_effect=lambda *args: searches.append(args)
             ),
         ):
-            dialog.value.set_text("firefx")
+            # Snap is searched only where snapd runs.
+            with patch("housekeeper.providers.snap.SNAP_SOCKET", Path("/nonexistent/snapd")):
+                page.search.set_text("fire")
+            assert not page.placeholder.get_title()
+            assert page.spinner.active
             timers.pop()()
-            old_result = searches[-1][2]
-            dialog.value.set_text("firefox")
-            timers.pop()()
+            text, order, found, finished, failed = searches[-1]
+            # Flatpak is preferred by default.
+            assert text == "fire" and order == ["flatpak", window.native_source]
+            for source in order:
+                found(source, (), None)
+            finished()
+            assert page.placeholder.get_title() == "No Results Found"
+            failed("Catalogue unavailable")
+            assert page.placeholder.get_title() == "Search Failed"
+            assert page.placeholder.get_description() == "Catalogue unavailable"
+            with patch("housekeeper.providers.snap.SNAP_SOCKET", Path(cache_directory.name)):
+                page.search.set_text("firefx")
+                timers.pop()()
+                old_found = searches[-1][2]
+                page.search.set_text("firefox")
+                timers.pop()()
+            _text, order, found, finished, _failed = searches[-1]
+            assert order == ["flatpak", window.native_source, "snap"]
             icon = Path(cache_directory.name) / "catalogue-icon.svg"
             icon.write_text(
                 '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
                 '<rect width="64" height="64" rx="12" fill="#e66100"/></svg>'
             )
-            candidate = InstallCandidate(
-                window.native_source,
-                "firefox",
-                "firefox;1;x86_64;repo",
-                "Browse the web · firefox · 1 · x86_64 · repo",
+            system = InstallCandidate(
+                "flatpak",
+                "org.mozilla.firefox",
+                "app/org.mozilla.firefox/x86_64/stable",
+                "flathub · System · stable",
+                "/var/lib/flatpak",
+                "flathub",
                 title="Firefox",
                 icon=str(icon),
+                app_id="org.mozilla.firefox",
+                summary="Browse the web",
+                origin="Flathub · System",
+            )
+            user = replace(system, context="/home/user/flatpak", origin="Flathub · User")
+            # Not the fixture inventory's installed "firefox" package.
+            native = InstallCandidate(
+                window.native_source,
+                "firefox-esr",
+                "firefox-esr;1;x86_64;repo",
+                "Browse the web · firefox-esr · 1 · x86_64 · repo",
+                remote="repo",
+                title="Firefox",
+                app_id="org.mozilla.firefox.desktop",
+                summary="Browse the web",
+                origin="repo",
             )
             plain = InstallCandidate(
                 window.native_source, "firefox-extra", "firefox-extra;1;x86_64;repo", "Extra"
             )
-            old_result((candidate,))
-            assert dialog.results.get_first_child() is None
-            searches[-1][2]((candidate, plain))
-            assert dialog.results.get_first_child() is not None
-            # Catalogue apps show their name and icon; other packages keep a plain row.
-            titles = [dialog.results.get_row_at_index(i).get_title() for i in (0, 1)]
-            assert titles == ["Firefox", "firefox-extra"]
-
-            def images(widget):
-                child = widget.get_first_child()
-                while child:
-                    if isinstance(child, Gtk.Image) and child.get_pixel_size() == 32:
-                        yield child
-                    yield from images(child)
-                    child = child.get_next_sibling()
-
-            assert [len(list(images(dialog.results.get_row_at_index(i)))) for i in (0, 1)] == [
-                1,
-                0,
-            ]
-            assert not dialog.add_button.get_sensitive()
-            dialog.results.select_row(dialog.results.get_row_at_index(0))
-            assert dialog.add_button.get_sensitive() and dialog.candidate == candidate
-        install_fixture["dialog"] = dialog
-        install_fixture["candidate"] = candidate
-        dialog.set_default_size(360, 480)
+            old_found("flatpak", (system,), None)
+            assert not page.results.get_visible()
+            found("flatpak", (system, user), None)
+            assert page.results.get_visible() and not page.placeholder.get_visible()
+            assert page.progress.get_visible()
+            found(window.native_source, (native, plain), None)
+            found("snap", (), "Snap is not available on this system.")
+            finished()
+            assert not page.progress.get_visible()
+            assert page.notice.get_visible() and "Snap" in page.notice.get_label()
+            # One row per app, whichever sources offer it; bare packages are collapsed.
+            row = page.results.get_row_at_index(0)
+            assert page.results.get_row_at_index(1) is None
+            assert row.get_title() == "Firefox" and row.get_subtitle() == "Browse the web"
+            assert row.choice.options == (system, user, native)
+            assert page.packages.get_visible()
+            expander = page.packages.get_row_at_index(0)
+            assert not expander.get_expanded()
+            install_fixture.update(system=system, native=native)
 
     def check_install_selected():
-        dialog = install_fixture["dialog"]
-        capture(dialog, "install-package.png")
-        with patch.object(window.service, "install") as install:
-            dialog.add_button.emit("clicked")
-            request = install.call_args.args[0]
-            assert request.candidate == install_fixture["candidate"]
-            assert window.operation_active and window.operation_kind == "install"
-            with (
-                patch.object(window, "message") as message,
-                patch.object(window, "refresh") as refresh,
-            ):
-                install.call_args.args[2](OperationResult(Outcome.SUCCESS, "Installed"))
-                assert message.call_args.args[0] == "Installation Complete"
-                refresh.assert_called_once()
-            assert not window.operation_active
-        window.source = "web"
-        window.add_application()
-        dialog = window.install_dialog
-        assert dialog.source == window.native_source
-        dialog.type_row.set_selected(dialog.types.index("web"))
-        assert dialog.browser.get_selected() == 0
-        assert dialog.icon_row.get_subtitle() == "Website icon (automatic)"
-        dialog.value.set_text("file:///tmp/invalid")
-        dialog.add_button.emit("clicked")
-        assert window.install_dialog is dialog and dialog.status.get_label()
-        dialog.value.set_text("example.org/notes")
-        assert not dialog.status.get_label()
-        dialog.name.set_text("Notes")
+        page = window.install_page
+        # Opening the page put the cursor in its search field.
+        assert window.get_focus().is_ancestor(page.search)
+        capture(window, "install-search.png")
+        page.results.emit("row-activated", page.results.get_row_at_index(0))
+        details = window.navigation.get_visible_page()
+        assert isinstance(details, InstallDetailsPage) and details.kind == "app"
+        assert details.heading.get_label() == "Firefox"
+        assert isinstance(details.source_row, Adw.ComboRow)
+        labels = details.source_row.get_model()
+        assert [labels.get_string(i) for i in range(labels.get_n_items())] == [
+            "Flatpak · Flathub · System",
+            "Flatpak · Flathub · User",
+            f"{window.sources[window.native_source][0]} · repo",
+        ]
+        assert details.candidate == install_fixture["system"]
+        details.source_row.set_selected(2)
+        assert details.candidate == install_fixture["native"]
+        assert details.details_row.get_subtitle() == "firefox-esr 1 · x86_64"
+        assert details.install_button.get_label() == "Install"
+        install_fixture["details"] = details
+
+    def start_install_details():
+        details = install_fixture["details"]
+        capture(window, "install-details.png")
+        installer = patch.object(window.service, "install")
+        install = installer.start()
+        install_fixture["installer"] = installer
+        windows = list(Gtk.Window.get_toplevels())
+        details.install_button.emit("clicked")
+        request = install.call_args.args[0]
+        assert request.candidate == install_fixture["native"]
+        assert window.operation_active and window.operation_kind == "install"
+        # Progress replaces the Install button inline; nothing covers the window.
+        install.call_args.args[1]("Downloading packages\nfirefox-esr-1.x86_64", 0.4, True)
+        assert details.progress.get_visible() and not details.install_button.get_visible()
+        assert details.progress.label.get_label() == "Downloading packages"
+        assert details.progress.label.get_tooltip_text() == "Installing Firefox"
+        assert details.progress.cancel.get_sensitive()
+        assert list(Gtk.Window.get_toplevels()) == windows
+        install_fixture["install"] = install
+
+    def check_install_details():
+        page, details = window.install_page, install_fixture["details"]
+        capture(window, "install-progress.png")
+        install = install_fixture.pop("install")
+        with (
+            patch.object(window, "message") as message,
+            patch.object(window, "announce", wraps=window.announce) as announce,
+            patch.object(window, "refresh") as refresh,
+        ):
+            install.call_args.args[2](OperationResult(Outcome.SUCCESS, "Installed"))
+            # Success is announced without interrupting.
+            assert announce.call_args.args[:2] == (Outcome.SUCCESS, "Installation Complete")
+            message.assert_not_called()
+            refresh.assert_called_once()
+        install_fixture.pop("installer").stop()
+        assert not window.operation_active
+        assert details.install_button.get_visible() and not details.progress.get_visible()
+        # A successful installation returns to a fresh search.
+        assert window.navigation.get_visible_page() is page
+        assert not page.search.get_text() and page.placeholder_file.get_visible()
+        timers, searches = install_fixture["timers"], install_fixture["searches"]
+        with (
+            patch(
+                "housekeeper.ui.install.GLib.timeout_add",
+                side_effect=lambda _delay, fn: (timers.append(fn), 0)[1],
+            ),
+            patch.object(
+                window.service, "search_apps", side_effect=lambda *args: searches.append(args)
+            ),
+        ):
+            page.search.set_text("notes")
+            window.settings.set_string("install-source-preference", "native")
+            timers.pop()()
+            assert searches[-1][1][:2] == [window.native_source, "flatpak"]
+            window.settings.reset("install-source-preference")
+            page.search.set_text("")
+        snap = InstallCandidate(
+            "snap", "notes", "notes", "Notes", title="Notes", origin="Snap Store"
+        )
+        details = page.open_choice(AppChoice((snap,)))
+        assert isinstance(details.source_row, Adw.ActionRow)
+        assert details.source_row.get_subtitle() == "Snap Store"
+        assert details.install_button.get_label() == "Open in Snap Store"
+        with patch("housekeeper.ui.install.Gtk.UriLauncher.new") as launcher:
+            details.install_button.emit("clicked")
+            launcher.assert_called_once_with("snap://notes")
+        assert not window.operation_active
+        window.navigation.pop()
+        window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
+        assert window.navigation.get_visible_page() is window.overview_page
+        assert window.pages_sidebar.get_selected_row() is None
+        window.lookup_action("add").activate(None)
+        assert window.navigation.get_visible_page() is page
+        assert window.pages_sidebar.get_selected_row() is window.install_row
+        page.search.set_text("example.org/notes")
+        # A web address cannot be a package search; it offers a web app instead.
+        assert page.website_list.get_visible() and not page.timer
+        assert "example.org/notes" in page.website_row.get_title()
+        assert not page.placeholder.get_visible()
+        page.website_row.emit("activated")
+        details = window.navigation.get_visible_page()
+        assert details.kind == "web" and details.value.get_text() == "example.org/notes"
+        assert details.heading.get_label() == "example.org"
+        assert details.browser.get_selected() == 0
+        assert details.icon_row.get_subtitle() == "Website icon (automatic)"
+        details.value.set_text("file:///tmp/invalid")
+        details.install_button.emit("clicked")
+        assert not window.operation_active and details.status.get_visible()
+        details.value.set_text("example.org/notes")
+        assert not details.status.get_visible()
+        details.name.set_text("Notes")
+        assert details.heading.get_label() == "Notes"
         picture = Path(cache_directory.name) / "install-icon.svg"
         picture.write_text(
             '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
             '<rect width="32" height="32" rx="8" fill="#3584e4"/></svg>'
         )
         install_fixture["icon"] = picture
-        choose_install_icon(dialog, picture)
-        assert dialog.icon_file == str(picture) and dialog.icon_reset.get_sensitive()
-        dialog.icon_reset.emit("clicked")
-        assert not dialog.icon_file and not dialog.icon_reset.get_sensitive()
-        assert dialog.icon_row.get_subtitle() == "Website icon (automatic)"
-        choose_install_icon(dialog, picture)
+        choose_install_icon(details, picture)
+        assert details.icon_file == str(picture) and details.icon_reset.get_sensitive()
+        details.icon_reset.emit("clicked")
+        assert not details.icon_file and not details.icon_reset.get_sensitive()
+        assert details.icon_row.get_subtitle() == "Website icon (automatic)"
+        choose_install_icon(details, picture)
         invalid = Path(cache_directory.name) / "invalid-icon.png"
         invalid.write_text("not an image")
-        choose_install_icon(dialog, invalid)
-        assert dialog.icon_file == str(picture) and dialog.status.get_label()
-        choose_install_icon(dialog, picture)
-        install_fixture["dialog"] = dialog
+        choose_install_icon(details, invalid)
+        assert details.icon_file == str(picture) and details.status.get_label()
+        choose_install_icon(details, picture)
+        install_fixture["details"] = details
+
+    def check_install_installed():
+        page = window.install_page
+        window.pages_sidebar.emit("row-activated", window.install_row)
+        assert window.navigation.get_visible_page() is page
+        timers, searches = install_fixture["timers"], install_fixture["searches"]
+        with (
+            patch(
+                "housekeeper.ui.install.GLib.timeout_add",
+                side_effect=lambda _delay, fn: (timers.append(fn), 0)[1],
+            ),
+            patch.object(
+                window.service, "search_apps", side_effect=lambda *args: searches.append(args)
+            ),
+        ):
+            page.search.set_text("firefox")
+            timers.pop()()
+        _text, _order, found, finished, _failed = searches[-1]
+        flatpak = install_fixture["system"]
+        # The inventory lists RPM Firefox, so its result is marked though unflagged.
+        rpm = InstallCandidate(
+            "rpm",
+            "firefox",
+            "firefox;1;x86_64;installed:updates",
+            title="Firefox",
+            app_id="org.mozilla.firefox",
+            summary="Browse the web",
+            origin="updates",
+        )
+        # A source may flag an installed package the inventory has no app for.
+        tool = InstallCandidate("rpm", "firefox-tool", "firefox-tool;1;x86_64;", installed=True)
+        found("flatpak", (flatpak,), None)
+        found("rpm", (rpm, tool), None)
+        finished()
+
+        def descendants(widget):
+            yield widget
+            child = widget.get_first_child()
+            while child:
+                yield from descendants(child)
+                child = child.get_next_sibling()
+
+        def badges(row):
+            return [
+                w.get_label()
+                for w in descendants(row)
+                if isinstance(w, Gtk.Label) and w.has_css_class("installed-badge")
+            ]
+
+        row = page.results.get_row_at_index(0)
+        assert row.choice.installed and badges(row) == ["Installed"]
+        assert row.choice.best == replace(rpm, installed=True)
+        tool_row = next(
+            w for w in descendants(page.packages) if getattr(w, "choice", None) is not None
+        )
+        assert badges(tool_row) == ["Installed"]
+        window.navigation.set_animate_transitions(False)
+        page.results.emit("row-activated", row)
+        details = window.navigation.get_visible_page()
+        labels = details.source_row.get_model()
+        assert [labels.get_string(i) for i in range(labels.get_n_items())] == [
+            f"{window.sources['rpm'][0]} · updates (Installed)",
+            "Flatpak · Flathub · System",
+        ]
+        button = details.install_button
+        assert button.get_label() == "View Details" and button.get_sensitive()
+        assert not button.has_css_class("suggested-action")
+        # An installed copy opens its app page over the install page, which back returns to.
+        with patch.object(window.service, "install") as install:
+            button.emit("clicked")
+            install.assert_not_called()
+        assert window.detail_app.name == "Firefox"
+        assert window.navigation.get_visible_page() is not details
+        window.navigation.pop()
+        assert window.navigation.get_visible_page() is details and window.detail_app is None
+        details.source_row.set_selected(1)
+        assert button.get_label() == "Install" and button.has_css_class("suggested-action")
+        window.navigation.pop()
+        page.open_choice(tool_row.choice)
+        details = window.navigation.get_visible_page()
+        assert details.install_button.get_label() == "Installed"
+        assert not details.install_button.get_sensitive()
+        window.navigation.pop()
+        window.navigation.set_animate_transitions(True)
+
+    def check_install_installed_capture():
+        capture(window, "install-installed.png")
+        window.install_page.search.set_text("")
+        window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
 
     def check_install_web():
-        dialog = install_fixture["dialog"]
-        capture(dialog, "install-web.png")
+        details = install_fixture["details"]
+        capture(window, "install-web.png")
         with patch.object(window.service, "install") as install:
-            dialog.add_button.emit("clicked")
+            details.install_button.emit("clicked")
             request = install.call_args.args[0]
             assert request.source == "web" and request.value == "https://example.org/notes"
             assert request.name == "Notes" and request.browser == "chrome"
@@ -314,6 +535,8 @@ def activate(app):
             with patch.object(window, "message") as message, patch.object(window, "refresh"):
                 install.call_args.args[2](OperationResult(Outcome.FAILED, "Browser unavailable"))
                 assert message.call_args.args[0] == "Installation Failed"
+        # A failed installation keeps its page for another attempt.
+        assert window.navigation.get_visible_page() is details
         # Unverified launchers retain instructions; verified ones use removal confirmation.
         website_entry = DesktopEntry(
             "housekeeper-web-fixture.desktop",
@@ -366,12 +589,9 @@ def activate(app):
                     execute.call_args.args[3](OperationResult(Outcome.SUCCESS, "Uninstalled"))
                     refresh.assert_called_once()
                 assert not window.operation_active
-        window.source = "appimage"
-        window.add_application()
-        dialog = window.install_dialog
-        dialog.type_row.set_selected(dialog.types.index("appimage"))
-        assert dialog.default_icon == "application-x-executable"
-        assert dialog.icon_row.get_subtitle() == "Executable icon"
+        page = window.install_page
+        window.lookup_action("add").activate(None)
+        assert window.navigation.get_visible_page() is page
 
         class Chooser:
             def __init__(self, **_kwargs):
@@ -387,49 +607,144 @@ def activate(app):
                 return Gio.File.new_for_path("/tmp/Notes_x86_64.AppImage")
 
         with patch("housekeeper.ui.install.Gtk.FileDialog", Chooser):
-            dialog.file_button.emit("clicked")
-        assert dialog.name.get_text() == "Notes" and dialog.add_button.get_sensitive()
-        assert not dialog.icon_file
-        choose_install_icon(dialog, install_fixture["icon"])
-        install_fixture["dialog"] = dialog
+            page.placeholder_file.emit("clicked")
+        details = window.navigation.get_visible_page()
+        assert details.kind == "appimage" and details.heading.get_label() == "Notes"
+        assert details.name.get_text() == "Notes" and details.install_button.get_sensitive()
+        assert details.file_row.get_subtitle() == "Notes_x86_64.AppImage"
+        assert details.default_icon == "application-x-executable"
+        assert details.icon_row.get_subtitle() == "Executable icon"
+        assert not details.icon_file
+        details.name.set_text("")
+        assert not details.install_button.get_sensitive()
+        details.name.set_text("Notes")
+        choose_install_icon(details, install_fixture["icon"])
+        install_fixture["details"] = details
 
     def check_install_appimage():
-        dialog = install_fixture["dialog"]
-        capture(dialog, "install-appimage.png")
+        page, details = window.install_page, install_fixture["details"]
+        capture(window, "install-appimage.png")
         with patch.object(window.service, "install") as install:
-            dialog.add_button.emit("clicked")
+            details.install_button.emit("clicked")
             assert install.call_args.args[0].value == "/tmp/Notes_x86_64.AppImage"
             assert install.call_args.args[0].icon == str(install_fixture["icon"])
             with patch.object(window, "message"), patch.object(window, "refresh"):
                 install.call_args.args[2](OperationResult(Outcome.CANCELLED, "Cancelled"))
-        window.source = "steam"
-        window.add_application()
-        dialog = window.install_dialog
-        dialog.type_row.set_selected(dialog.types.index("steam"))
-        assert dialog.add_button.get_label() == "Open Steam"
-        with patch("housekeeper.ui.install.Gtk.UriLauncher.new") as launcher:
-            dialog.add_button.emit("clicked")
-            launcher.assert_called_once_with("steam://open/games")
-        window.source = "all"
-        window.add_application()
-        dialog = window.install_dialog
-        dialog.type_row.set_selected(dialog.types.index("web"))
+        assert window.navigation.get_visible_page() is details
+        assert details.file == "/tmp/Notes_x86_64.AppImage"
+        # Several pages open and close within this step; skip their transitions.
+        window.navigation.set_animate_transitions(False)
+        window.navigation.pop()
+        # Dropping a file other than an AppImage opens nothing.
+        assert not page._dropped(None, Gio.File.new_for_path("/tmp/notes.txt"), 0, 0)
+        assert window.navigation.get_visible_page() is page
+        assert page._dropped(None, Gio.File.new_for_path("/tmp/Notes.appimage"), 0, 0)
+        assert window.navigation.get_visible_page().file == "/tmp/Notes.appimage"
+        window.navigation.pop()
+        details = page.open_website("example.org")
         with patch("housekeeper.ui.install.Gtk.FileDialog") as chooser:
-            dialog.icon_button.emit("clicked")
+            details.icon_button.emit("clicked")
             pending_icon = chooser.return_value.open.call_args.args[2]
-            dialog.type_row.set_selected(dialog.types.index("flatpak"))
+            page.search.set_text("org.gnome")
+            assert page.timer
+            page.close()
             chooser.return_value.open_finish.return_value = Gio.File.new_for_path(
                 str(install_fixture["icon"])
             )
             pending_icon(chooser.return_value, None)
-        assert not dialog.icon_file
-        assert dialog.source == "flatpak" and not dialog.add_button.get_sensitive()
-        dialog.value.set_text("org.gnome")
-        assert dialog.timer
-        dialog.close()
-        assert not dialog.timer and window.install_dialog is None
+        # A late file chooser cannot change a page whose window has closed.
+        assert not details.icon_file
+        assert not page.timer and page.closed
+        page.closed = False
+        page.search.set_text("")
+        window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
+        window.navigation.set_animate_transitions(True)
         assert not window.operation_active
         window.source = "all"
+
+    def check_install_files():
+        page = window.install_page
+        window.lookup_action("add").activate(None)
+        # Several pages open and close within this step; skip their transitions.
+        window.navigation.set_animate_transitions(False)
+        assert not page.open_file("/tmp/notes.tar.gz")
+        assert window.navigation.get_visible_page() is page
+        with patch.object(window, "preferences") as preferences:
+            assert page.open_file("/tmp/example.flatpakrepo")
+            preferences.assert_called_once_with(
+                "software-sources", import_file="/tmp/example.flatpakrepo"
+            )
+        path = str(Path(cache_directory.name) / "notes-2.0-1.x86_64.rpm")
+        with patch.object(window.service, "inspect_install_file") as inspect:
+            assert page.open_file(path)
+            details = window.navigation.get_visible_page()
+            assert details.kind == "file" and inspect.call_args.args[0] == path
+            assert not details.install_button.get_sensitive()
+            inspect.call_args.args[2]("This is a DEB package, but this system uses RPM packages.")
+            assert details.status.get_visible() and not details.install_button.get_visible()
+        window.navigation.pop()
+        package = LocalPackage(
+            "rpm",
+            path,
+            "notes",
+            "notes",
+            summary="Take notes",
+            version="2.0-1 · x86_64",
+            fingerprint=(1,),
+        )
+        with patch.object(window.service, "inspect_install_file") as inspect:
+            page.open_file(path)
+            details = window.navigation.get_visible_page()
+            inspect.call_args.args[1](package)
+        assert details.heading.get_label() == "notes" and details.install_button.get_sensitive()
+        assert details.warning.get_visible() and not details.untrusted_row.get_active()
+        install_fixture["details"], install_fixture["package"] = details, package
+        window.navigation.set_animate_transitions(True)
+
+    def check_install_file_requests():
+        page, details = window.install_page, install_fixture["details"]
+        capture(window, "install-package-file.png")
+        window.navigation.set_animate_transitions(False)
+        with patch.object(window.service, "install") as install:
+            details.install_button.emit("clicked")
+            request = install.call_args.args[0]
+            assert request.source == "file" and request.package == install_fixture["package"]
+            assert not request.untrusted
+            with patch.object(window, "message"), patch.object(window, "refresh"):
+                install.call_args.args[2](OperationResult(Outcome.FAILED, "Untrusted"))
+            details.untrusted_row.set_active(True)
+            details.install_button.emit("clicked")
+            assert install.call_args.args[0].untrusted
+            with patch.object(window, "message"), patch.object(window, "refresh"):
+                install.call_args.args[2](OperationResult(Outcome.CANCELLED, "Cancelled"))
+        window.navigation.pop()
+        reference = LocalPackage(
+            "flatpakref",
+            "/tmp/org.example.Notes.flatpakref",
+            "Notes",
+            "org.example.Notes",
+            version="stable",
+            origin="dl.example.org",
+            adds_remote="example",
+            icon=b"not an image",
+            installations=(("/user", "User"), ("/system", "System · default")),
+            fingerprint=(1,),
+        )
+        with patch.object(window.service, "inspect_install_file") as inspect:
+            page.open_file(reference.path)
+            details = window.navigation.get_visible_page()
+            inspect.call_args.args[1](reference)
+        assert isinstance(details.target_row, Adw.ComboRow)
+        details.target_row.set_selected(1)
+        with patch.object(window.service, "install") as install:
+            details.install_button.emit("clicked")
+            request = install.call_args.args[0]
+            assert request.package == reference and request.context == "/system"
+            with patch.object(window, "message"), patch.object(window, "refresh"):
+                install.call_args.args[2](OperationResult(Outcome.SUCCESS, "Installed"))
+        assert window.navigation.get_visible_page() is page
+        window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
+        window.navigation.set_animate_transitions(True)
 
     def inventory_names():
         return [
@@ -724,6 +1039,12 @@ def activate(app):
             f"source={window.source}, query={window.query}, count={window.filtered.get_n_items()}"
         )
         assert window.views.get_visible_child_name() == "list"
+        # Search belongs to the app list pages, just before their sort button, and
+        # shares the Install Apps search style.
+        assert window.search_button.get_ancestor(Adw.HeaderBar) is window.header
+        assert window.search_button.get_next_sibling() is window.sort_button
+        assert window.search.has_css_class("page-search")
+        assert window.install_page.search.has_css_class("page-search")
         capture(window, "list-light.png")
         all_row = window.sidebar.get_row_at_index(0)
         native_key, native_title = native_package_source()
@@ -1270,8 +1591,8 @@ def activate(app):
             "Updating synthetic application", 0.5, False
         )
         window.confirm_dialog.response("update")
-        assert window.operation_active and not window.cancel_button.get_sensitive()
-        assert window.task_dialog.get_title() == "Updating Boxes"
+        assert window.operation_active and not running().cancellable
+        assert running().title == "Updating Boxes"
         assert window._close(window)
         window._operation_finished(OperationResult(Outcome.SUCCESS, "Synthetic update completed."))
         assert not window.operation_active
@@ -1289,16 +1610,14 @@ def activate(app):
         cancelled = []
         window.service.cancel = lambda: cancelled.append(True)
         window._execute(window.records[0], None)
-        assert window.cancel_button.get_sensitive()
-        window.cancel_button.emit("clicked")
+        assert running().cancellable
+        window.cancel_operation()
         assert cancelled == [True]
-        assert window.cancel_button.get_label() == "Cancel"
-        assert window.task_label.get_label() == "Testing an operation window"
+        assert running().detail == "Cancelling…"
         window._progress("A late download callback", 0.6, True)
-        assert not window.cancel_button.get_sensitive()
-        window.cancel_button.emit("clicked")
+        assert not running().cancellable and running().detail == "Cancelling…"
+        window.cancel_operation()
         assert cancelled == [True]
-        assert window.task_dialog.get_visible()
         assert window.operation_active
         assert window._close(window)
         window._operation_finished(
@@ -1312,13 +1631,13 @@ def activate(app):
         # never held for the whole scan behind a Cancel button that cannot be pressed.
         window.service.scanning = True
         assert window._begin_operation(window.records[0], "remove")
-        window._show_task("Preparing a removal preview")
-        assert window.task_label.get_label() == "Waiting for the application inventory"
-        assert window.cancel_button.get_sensitive()
+        window._start_task("Preparing a removal preview")
+        assert running().detail == "Waiting for the application inventory"
+        assert running().cancellable
         with patch.object(window.service, "cancel") as cancel:
-            window.cancel_button.emit("clicked")
+            window.cancel_operation()
             cancel.assert_called_once()
-        assert window.cancel_requested and not window.cancel_button.get_sensitive()
+        assert window.cancel_requested and not running().cancellable
         # A scan landing mid-operation must not rewrite the Updates list under it.
         window.service.scanning = False
         with patch.object(window.updates_page, "_retain_items") as retain:
@@ -1385,20 +1704,20 @@ def activate(app):
         assert page.checked_at is None and not page.items and not page.cache.path.exists()
         page.enter()
         assert len(calls) == 2
-        page.refresh_button.emit("clicked")
+        page.check_button.emit("clicked")
         assert calls[-1] == ("flatpak",)
         restored = UpdatesPage(window)
         restored.inventory_ready()
         restored.enter()
         assert restored.checked_at is not None and len(calls) == 3
         settings.set_boolean("update-source-flatpak", False)
-        assert not page.refresh_button.get_sensitive()
+        assert not page.check_button.get_sensitive()
         assert page.empty.get_title() == "No Update Sources Enabled"
         page.check()
         page.enter()
         assert len(calls) == 3
         settings.set_boolean("update-source-flatpak", True)
-        assert page.refresh_button.get_sensitive() and page.checked_at is None
+        assert page.check_button.get_sensitive() and page.checked_at is None
         # Results started under earlier source settings must not overwrite the new state,
         # even if the sources are toggled off and then back on before completion.
         pending = []
@@ -1485,7 +1804,7 @@ def activate(app):
             done(UpdateReport(tuple(items), unsupported=19))
 
         window.service.check_updates = check
-        window.updates_sidebar.emit("row-activated", window.updates_row)
+        window.pages_sidebar.emit("row-activated", window.updates_row)
         page = window.updates_page
         assert window.navigation.get_visible_page() is page
         assert window.sidebar.get_selected_row() is None
@@ -1498,7 +1817,7 @@ def activate(app):
         assert page.selected_button.get_sensitive() and len(page.selected()) == 1
         for _ in range(3):
             window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
-            window.updates_sidebar.emit("row-activated", window.updates_row)
+            window.pages_sidebar.emit("row-activated", window.updates_row)
         page.inventory_ready()
         assert len(check_calls) == 1 and len(page.selected()) == 1
         assert page.last_checked.get_visible()
@@ -1535,12 +1854,17 @@ def activate(app):
             )
             page.refresh_button.emit("clicked")
             assert window.operation_active
-            assert window.cancel_button.get_sensitive()
+            assert page.stack.get_visible_child_name() == "working"
+            assert page.working_page.get_title() == "Checking for Updates"
+            assert running().cancellable
             window._progress("A backend phase cannot stop immediately", 0.1, False)
-            assert window.cancel_button.get_sensitive()
+            assert running().cancellable
             window._progress("Checking synthetic updates", 0.2, True)
-            window.cancel_button.emit("clicked")
-            assert not window.operation_active and window.task_dialog is None
+            assert page.working_page.get_description() == "Checking synthetic updates"
+            assert page.working_cancel.get_sensitive()
+            page.working_cancel.emit("clicked")
+            assert not window.operation_active and window.activity_id is None
+            assert page.stack.get_visible_child_name() == "list"
             assert (
                 page.items,
                 page.selected(),
@@ -1844,6 +2168,24 @@ def activate(app):
         window.confirm_dialog.response("cancel")
         window.set_size_request(1200, 720)
         window.set_default_size(1200, 720)
+        assert window._begin_operation(None, "update")
+        window._start_task("Checking for Updates", deferred_cancel=True)
+        window._progress("Checking Boxes (2 of 19)", 0.1, True)
+
+    def check_updates_working():
+        page = window.updates_page
+        # A spinner stands in for the status icon until the check finishes.
+        assert page.stack.get_visible_child_name() == "working"
+        assert page.working_spinner.active
+        assert page.working_page.get_description() == "Checking Boxes (2 of 19)"
+        capture(window, "updates-checking.png")
+        with patch.object(window.service, "cancel") as cancel:
+            page.working_cancel.emit("clicked")
+            cancel.assert_called_once()
+        assert not page.working_cancel.get_sensitive()
+        assert page.working_page.get_description() == "Cancelling…"
+        window._end_operation()
+        assert page.stack.get_visible_child_name() == "list"
 
     def check_updates_wide():
         capture(window, "updates-wide.png")
@@ -1975,9 +2317,21 @@ def activate(app):
         assert "1 app requires its own updater." in page.details
         page.checked(UpdateReport(()))
         assert page.empty.get_title() == "You're Up to Date"
+
+    def capture_updates_current():
+        page = window.updates_page
+        # Without updates, the status page alone tells when the last check ran and offers
+        # another; the list's summary and update buttons are hidden.
+        assert page.stack.get_visible_child_name() == "empty"
+        assert not page.summary.get_visible() and not page.footer_bin.get_visible()
+        assert page.empty.get_description() == page.last_checked.get_label()
+        assert page.empty.get_description().startswith("Last checked: ")
+        assert page.check_button.get_mapped() and page.check_button.get_sensitive()
+        assert not page.empty_details.get_visible()
+        capture(window, "updates-current.png")
         window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
         assert window.navigation.get_visible_page() is window.overview_page
-        assert window.updates_sidebar.get_selected_row() is None
+        assert window.pages_sidebar.get_selected_row() is None
 
     def check_update_inventory_boundaries(items, records):
         page = window.updates_page
@@ -2088,65 +2442,141 @@ def activate(app):
         )
         # Shared CI runners have no stable latency budget; correctness is asserted above.
 
-    progress_window = {}
+    page_progress = {}
 
-    def start_progress_window():
-        assert window._begin_operation(None, "update")
-        window._show_task("Checking for Updates", deferred_cancel=True)
-        assert window.cancel_button.get_sensitive()
-        progress_window["sensitivity"] = []
-        window.cancel_button.connect(
+    def open_page_progress():
+        boxes = next(app for app in window.records if app.name == "Boxes")
+        window.show_details(boxes)
+
+    def start_page_progress():
+        app = window.detail_app
+        progress = window.detail_progress
+        assert app is not None and not progress.get_visible()
+        page_progress["windows"] = list(Gtk.Window.get_toplevels())
+        assert window._begin_operation(app, "update")
+        window._start_task(f"Checking Updates for {app.name}", deferred_cancel=True)
+        # The app's own page shows its progress; the window stays usable.
+        assert progress.get_visible() and progress.cancel.get_sensitive()
+        assert progress.label.get_label() == "Waiting for the application manager"
+        page_progress["sensitivity"] = []
+        progress.cancel.connect(
             "notify::sensitive",
-            lambda button, _: progress_window["sensitivity"].append(button.get_sensitive()),
+            lambda button, _: page_progress["sensitivity"].append(button.get_sensitive()),
         )
         for can_cancel in (False, True, False, True, False):
             window._progress("Checking backend phases", 0.0, can_cancel)
-            assert window.cancel_button.get_sensitive()
-        assert progress_window["sensitivity"] == []
+            assert progress.cancel.get_sensitive()
+        assert page_progress["sensitivity"] == []
         window._progress("Checking A (1 of 3)", 0.0, True)
-        progress_window["dialog"] = window.task_dialog
-        progress_window["bar"] = window.task_progress
 
     def grow_progress_message():
-        dialog = window.task_dialog
-        progress_window["size"] = (dialog.get_width(), dialog.get_height())
+        progress = window.detail_progress
+        page_progress["width"] = progress.get_width()
         window._progress(
-            "Checking an application with a very long name (2 of 3)\n"
-            + "Resolving configured software sources and package information " * 8,
+            "Checking an application with a very long name and many words (2 of 3) " * 4
+            + "\nResolving configured software sources and package information",
             1 / 3,
             True,
         )
 
     def shrink_progress_message():
-        dialog = window.task_dialog
-        assert dialog is progress_window["dialog"]
-        assert (dialog.get_width(), dialog.get_height()) == progress_window["size"]
-        assert window.task_progress is progress_window["bar"]
-        assert window.task_progress.get_fraction() == 1 / 3
-        assert "Resolving configured software sources" in window.task_detail_label.get_label()
-        assert window.task_label.get_tooltip_text().startswith(window.task_label.get_label())
-        capture(dialog, "update-check-progress.png")
+        progress = window.detail_progress
+        # A long message is ellipsized instead of widening the page.
+        assert progress.get_width() == page_progress["width"]
+        assert progress.label.get_label().startswith("Checking an application")
+        assert "Resolving" not in progress.label.get_label()
+        title = f"Checking Updates for {window.detail_app.name}"
+        assert progress.label.get_tooltip_text() == title
+        assert list(Gtk.Window.get_toplevels()) == page_progress["windows"]
+        capture(window, "page-progress.png")
         window._progress("Checked 3 of 3 applications", 1.0, False)
 
-    def finish_progress_window():
-        dialog = window.task_dialog
-        assert dialog is progress_window["dialog"]
-        assert (dialog.get_width(), dialog.get_height()) == progress_window["size"]
-        assert window.task_progress.get_fraction() == 1.0
-        assert window.cancel_button.get_sensitive()
-        assert progress_window["sensitivity"] == []
+    def finish_page_progress():
+        progress = window.detail_progress
+        assert progress.get_width() == page_progress["width"]
+        assert progress.cancel.get_sensitive()
+        assert page_progress["sensitivity"] == []
         requests = []
         original_cancel = window.service.cancel
         window.service.cancel = lambda: requests.append(True)
-        window.cancel_button.emit("clicked")
+        progress.cancel.emit("clicked")
         for can_cancel in (True, False, True):
             window._progress("Waiting for cancellation", 1.0, can_cancel)
-        assert not window.cancel_button.get_sensitive()
-        assert progress_window["sensitivity"] == [False]
-        window.cancel_button.emit("clicked")
+        assert not progress.cancel.get_sensitive()
+        assert progress.label.get_label() == "Cancelling…"
+        assert page_progress["sensitivity"] == [False]
+        progress.cancel.emit("clicked")
         assert requests == [True]
         window.service.cancel = original_cancel
         window._end_operation()
+        assert not progress.get_visible()
+        window.detail_app = None
+        window.navigation.pop_to_tag("overview")
+
+    activity = {}
+
+    def start_activity():
+        button = window.activity_button
+        assert button.get_parent() is not None and button.get_child() is button.icon
+        # Flat like the header's other icon buttons, not a raised button.
+        assert button.get_first_child().has_css_class("flat")
+        assert button.empty.get_visible() or window.activities.recent
+        window.activities.clear()
+        assert button.empty.get_visible() and not button.running.get_visible()
+        boxes = next(app for app in window.records if app.name == "Boxes")
+        assert window._begin_operation(boxes, "remove")
+        window._start_task("Removing Boxes")
+        # The button spins while anything runs, and the popover follows its progress.
+        assert button.get_child() is button.spinner
+        row = button.running.get_row_at_index(0)
+        assert not row.cancel.get_sensitive()
+        window._progress("Removing files\nfrom /usr/share/boxes", 0.25, True)
+        assert row.title.get_label() == "Removing Boxes" and row.cancel.get_sensitive()
+        assert row.detail.get_label() == "Removing files" and row.bar.get_fraction() == 0.25
+        window._progress("Removing files", 0.5, True)
+        assert button.running.get_row_at_index(0) is row and row.bar.get_fraction() == 0.5
+        # The window is narrow here; the button lives in the sidebar.
+        window.split.set_show_sidebar(True)
+
+    def open_activity():
+        button = window.activity_button
+        # Clicking focuses the button, which GTK expects when a popover opens.
+        assert button.grab_focus()
+        button.popup()
+        activity["popover"] = button.get_popover()
+
+    def finish_activity():
+        button, popover = window.activity_button, activity["popover"]
+        capture(popover, "activity-running.png")
+        capture(window, "activity-button.png")
+        button.popdown()
+        with patch.object(window, "message"), patch.object(window, "refresh"):
+            window._operation_finished(OperationResult(Outcome.SUCCESS, "Boxes was removed."))
+        assert button.get_child() is button.icon and not button.running.get_visible()
+        done = window.activities.recent[0]
+        assert (done.title, done.subject, done.outcome) == (
+            "Removal Complete",
+            "Boxes",
+            Outcome.SUCCESS,
+        )
+        # Declining a confirmation is not an activity worth keeping.
+        assert window._begin_operation(None, "update")
+        window._end_operation()
+        assert window.activities.recent == [done]
+        row = button.recent.get_row_at_index(0)
+        assert row.get_title() == "Removal Complete"
+        assert row.get_subtitle() == "Boxes · Just now"
+        assert row.get_tooltip_text() == "Boxes was removed."
+        assert button.grab_focus()
+        button.popup()
+
+    def clear_activity():
+        button = window.activity_button
+        capture(button.get_popover(), "activity-recent.png")
+        button.clear_button.emit("clicked")
+        assert not button.recent.get_visible() and button.empty.get_visible()
+        button.popdown()
+        window.split.set_show_sidebar(False)
 
     def finish():
         print(f"GTK smoke completed in {time.monotonic() - started:.2f}s; screenshots: {output}")
@@ -2277,6 +2707,24 @@ def activate(app):
                 with patch.object(window, "refresh"):
                     change.call_args.args[2](None)
             assert ("flatpak", user.context, "new-source") in page.rows
+        # A .flatpakrepo opened on Install Apps asks which installation takes it.
+        page.import_file("/tmp/example.flatpakrepo")
+        assert "example.flatpakrepo" in page.status.get_title()
+        dialog = page.add_source(state[2])
+        location = next(
+            w
+            for w in descendants(dialog.get_extra_child())
+            if isinstance(w, Adw.EntryRow) and w.get_title() == "Source URL or File"
+        )
+        assert location.get_text() == "/tmp/example.flatpakrepo" and not page.pending_import
+        dialog.response("cancel")
+        # With only one installation able to take it, its review opens directly.
+        snapshot, page.snapshot = page.snapshot, (state[0], state[1])
+        with patch.object(page, "add_source") as add:
+            page.import_file("/tmp/example.flatpakrepo")
+            add.assert_called_once_with(state[1])
+        page.snapshot, page.pending_import = snapshot, ""
+        page._status("")
         preferences.set_default_size(360, 640)
         sources_fixture.update(preferences=preferences, page=page)
 
@@ -2295,10 +2743,17 @@ def activate(app):
         [
             check_software_sources,
             finish_software_sources,
+            check_install_opened,
             check_install_search,
             check_install_selected,
+            start_install_details,
+            check_install_details,
             check_install_web,
             check_install_appimage,
+            check_install_files,
+            check_install_file_requests,
+            check_install_installed,
+            check_install_installed_capture,
             check_scan_interactions,
             start_sorting,
             check_size_sorting,
@@ -2341,25 +2796,39 @@ def activate(app):
             capture_update_preferences,
             check_updates_page,
             check_updates_narrow,
+            check_updates_working,
             check_updates_wide,
             check_updates_batch,
+            capture_updates_current,
             start_icon_change,
             verify_icon_change,
             verify_icon_reset,
-            start_progress_window,
+            open_page_progress,
+            start_page_progress,
             grow_progress_message,
             shrink_progress_message,
-            finish_progress_window,
+            finish_page_progress,
+            start_activity,
+            open_activity,
+            finish_activity,
+            clear_activity,
             check_performance,
             finish,
         ]
     )
     if os.environ.get("HOUSEKEEPER_SMOKE_INSTALL_ONLY") == "1":
         steps[:] = [
+            check_install_opened,
             check_install_search,
             check_install_selected,
+            start_install_details,
+            check_install_details,
             check_install_web,
             check_install_appimage,
+            check_install_files,
+            check_install_file_requests,
+            check_install_installed,
+            check_install_installed_capture,
             finish,
         ]
     if os.environ.get("HOUSEKEEPER_SMOKE_SOURCES_ONLY") == "1":
@@ -2384,7 +2853,7 @@ def activate(app):
 
 application.connect("activate", activate)
 GLib.timeout_add_seconds(
-    50, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
+    60, lambda: (failed.append("UI smoke timed out"), application.quit(), False)[2]
 )
 application.run([sys.argv[0]])
 raise SystemExit(bool(failed))

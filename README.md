@@ -23,7 +23,9 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 - Browse a searchable list or grid, filter by source, and sort by name, size, or Last Updated.
 - Open search with Ctrl+F and Preferences with Ctrl+comma; choose automatic or manual list refresh.
 - Keep browsing, launching, and managing apps while the inventory refreshes in the background.
-- Install apps from any page with the header's + button and shared type selector; refresh the app list from the sidebar menu.
+- Keep working while apps install, update or uninstall: progress shows on the page you started from and in the Activity button, which also lists this session's recent results.
+- See which search results are already installed, and open their details from the install page.
+- Install apps from the sidebar's Install Apps page: one search covers Flatpak, native packages and Snap, picking a source when several offer an app; enter a website to add a web app, or open a downloaded AppImage, RPM/DEB, `.flatpakref` or `.flatpak` file. Refresh the app list from the sidebar menu.
 - Search native and Flatpak apps by name or keyword, review their source and scope, and install the selected app with its dependencies.
 - Add Chrome or Chromium website launchers and import AppImages, with automatic or custom desktop icons.
 - Manage system and Flatpak software sources in Preferences; enable or disable sources and import Flatpak repository files or HTTPS links.

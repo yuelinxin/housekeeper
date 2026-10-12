@@ -33,6 +33,18 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.0" date="2026-10-12" type="stable">
+      <description>
+        <p>Install apps from one search and keep working while they install.</p>
+        <ul>
+          <li>Find apps on the new Install Apps page: one search covers Flatpak, native packages and Snap, offers your preferred source first and marks apps that are already installed.</li>
+          <li>Add a website as a web app, or open a downloaded AppImage, RPM, DEB, Flatpak reference or Flatpak bundle to review and install it.</li>
+          <li>Follow installs, updates and removals on the page you started them from and in the new Activity button, which also lists this session's recent results. Nothing blocks the window while they run.</li>
+          <li>See only what matters on the Updates page: when everything is current, it shows when updates were last checked and a Check for Updates button.</li>
+          <li>See sharper app icons when installing.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-10-08" type="stable">
       <description>
         <p>Use custom application icons everywhere GNOME shows an app.</p>

@@ -118,8 +118,44 @@ after it closes.
 
 ## Adding applications
 
-Every inventory page opens the same Install Application dialog with a type selector,
-initially set to the host's native package type regardless of the current page.
+Installation lives on the Install Apps page, listed above Updates in the sidebar. One
+search box covers Flatpak, the native package type and, where snapd runs, Snap. The
+service searches them in turn on the search worker and reports each source as it
+finishes, so a slow PackageKit query does not hold back Flatpak results. A source that
+fails is named under the results rather than failing the search. Copies of one app are
+merged by AppStream ID (Flatpak app IDs and snapd's `common-ids` included, `.desktop`
+suffixes ignored) into one row. Rows sort by named match, then the best rank any
+source gave them. Native packages outside the AppStream catalogue are collapsed under
+More Packages. Text that reads as a web address (a scheme, `www.`, or a lowercase
+host; capitalized reverse-DNS IDs do not count) adds a web app row instead.
+Installed apps stay in the results with an Installed badge: native and Flatpak search
+flag them, and the inventory marks the rest (such as Snaps) by source and package
+name, or by Flatpak ref and installation. An installed copy leads its app's sources,
+so its page opens on it with View Details, which opens the installed app's own page
+over the install page; another source can still be chosen and installed. An installed
+copy the inventory does not list (a package without a desktop entry) shows Installed
+and offers nothing. The installer refuses a candidate flagged installed.
+Install from File… (on the empty search page) and dropping a file onto the page accept AppImages, native
+packages (`.rpm` or `.deb`, matching the host), `.flatpakref` files and `.flatpak`
+bundles; a `.flatpakrepo` opens Software Sources, which asks which installation takes it
+when more than one can. Package and Flatpak files are read on the search worker before
+anything is offered: PackageKit's local details give a package's name, version and
+summary, and a bundle's own AppStream data and icon give its name. A `.flatpakref` is
+read once (at most 1 MB) and installed from exactly those reviewed bytes; any other
+file is refused if its device, inode, size or modification time changed after review.
+
+Every choice opens the same install page: icon, name and summary, then the options for
+that kind of app, then Install. For a search result, Install From lists every source
+offering the app, each Flatpak installation and remote separately, ordered by the
+Preferred Source setting (Flatpak by default). Web apps take a URL, name, browser and
+icon; AppImages a file, name and icon. Package files are installed with
+`ONLY_TRUSTED` unless Allow Unverified Package is on, which PackageKit authorizes
+separately; a signature rejection names that switch. Flatpak files choose an
+installation (the user's first) and may add the source they name, or one for their
+runtime, which the page discloses beforehand alongside missing signing keys and
+bundles without an update source. A failed or cancelled installation keeps the
+page; success returns to an empty search. Showing the search page, including on return
+from an install page, focuses its search field.
 Inventory refresh lives in the sidebar menu; the Updates page
 retains its own refresh action. Package searches debounce for 400 ms on a separate
 single worker, cancel obsolete requests, and discard callbacks after input changes
@@ -135,20 +171,24 @@ catalogue (`LOAD_OS_CATALOG` only; loaded once on the search worker and dropped 
 the remote catalogues), so app names, summaries and keywords match while libraries,
 plugins and `-devel` packages never appear. Apps whose name contains the query come
 first, then AppStream's relevance order; rows show the catalogue name and icon. Their
-package names are resolved to exact available PackageKit IDs. When the catalogue is
-missing or nothing it matches is installable, as for many third-party repositories,
+package names are resolved to exact PackageKit IDs, the installed one for an installed
+package. When the catalogue is missing or nothing it matches is installable, as for
+many third-party repositories,
 search falls back to PackageKit name search with the GUI filter (packages with
 `application()` provides, i.e. a desktop file), ordered by exact name, prefix,
 substring and simple spelling similarity, with at most one shorter-prefix retry of
-at least three characters. Both paths drop installed names through an explicit
-`INSTALLED` resolve: the Fedora 44 DNF5 backend's `NOT_INSTALLED` filter still returns
-an installed build that a repository also carries.
+at least three characters; installed catalogue matches are kept ahead of its results,
+and a separate `INSTALLED` name search lists installed apps no repository carries now.
+Both paths mark installed names through an explicit `INSTALLED` resolve: the Fedora 44
+DNF5 backend's `NOT_INSTALLED` filter still returns an installed build that a
+repository also carries. An installed package's `installed:<repo>` data shows as its
+repository.
 
 Flatpak search reads each enabled remote's own AppStream catalogue, the
 `appstream.xml.gz` Flatpak keeps in the remote's AppStream directory, and never
 downloads one; Flatpak refreshes it when the remote is updated. A parsed catalogue
 is reused until its resolved directory, size or modification time changes. Desktop
-applications whose Flatpak bundle is an uninstalled app ref of that remote match by
+applications whose Flatpak bundle is an app ref of that remote match by
 name, summary and keywords, named apps first and then relevance across all remotes;
 addons and runtimes are excluded. Without any catalogue match, for example after a
 typo, app IDs are ranked as before. Either way, the shown rows use the catalogue's
@@ -161,13 +201,15 @@ Selecting a result is required before installation.
 PackageKit installs the selected native package ID and its dependencies with
 ONLY_TRUSTED and desktop Polkit interaction. It only operates on the host's package
 family; OSTree and bootc hosts retain external management. Flatpak searches
-configured user and system remotes, excludes installed refs, runtimes and foreign
-architectures, and installs into the selected source's installation. It permits
+configured user and system remotes, marks refs installed from that remote, leaves out
+another remote's copy of an installed ref (it cannot be installed beside it), excludes
+runtimes and foreign architectures, and installs into the selected source's installation. It permits
 dependencies from configured remotes but does not add new remotes automatically.
 Transactions include the default system installations as dependency sources, so
 user applications can reuse installed system runtimes without duplicating them.
 Snap uses snapd's read-only search endpoint and hands the selected name to the
-Snap Store; a host without snapd reports the missing service rather than a socket error. Steam opens its library for installation and shortcut creation.
+Snap Store; a host without snapd is not searched, and a direct search there reports
+the missing service rather than a socket error.
 
 Web integration creates a per-user desktop file using the selected Chrome or
 Chromium executable with `--app=<http(s) URL>`. This is a website launcher, not an
@@ -215,8 +257,8 @@ Invalid custom images prevent launcher creation, and AppImage rollback
 also removes the new application copy if saving its icon fails.
 
 Installations reuse the serialized management worker, progress, cancellation,
-close protection and post-operation inventory refresh. External store/Steam
-handoffs are not reported as completed installations. Package-manager cancellation
+close protection and post-operation inventory refresh. Snap Store handoffs are not
+reported as completed installations. Package-manager cancellation
 does not promise rollback of dependencies already installed; Flatpak reports
 completed operations separately if a later operation fails.
 PackageKit's search snapshot can briefly lag a completed transaction even with the
@@ -279,6 +321,27 @@ retried rather than left for five minutes. Manual refresh bypasses both and canc
 pending automatic request. A pending refresh runs after an operation completes. Closing
 during an active operation keeps the window alive and explains that the task must
 finish or be safely cancelled.
+
+Progress never blocks the window. The Activity button at the top left of the
+sidebar spins while anything runs. Its popover lists running work, the window's one
+operation and any inventory refresh, with the latest progress line, a bar that pulses
+while the fraction is unknown, and Cancel, updated in place rather than rebuilt per
+callback. The page an operation started from shows a spinner with the latest
+progress line and Cancel: an install's replaces its Install button, an app's removal,
+update or icon change shows under that app's actions, and on Updates a check or batch
+update replaces the status icon and list, as Install Apps' search does. They follow
+the activity only while their page is on screen and catch up when it returns. A running operation still blocks other operations and window closing.
+Cancel is dimmed rather than hidden while a phase cannot be interrupted, so it does
+not flash, and reads "Cancelling…" once requested. Successful and cancelled results
+are toasts naming what finished, with Details for the full message; partial and
+failed results still open a dialog. Below the running work, Recent lists the last
+ten results of this session, newest first, with the result's heading, the app or
+count it concerned, a relative time and the result message as a tooltip; Clear
+empties it.
+An operation that ends without an outcome, such as a declined confirmation, is not
+kept; inventory refreshes are kept only when they fail. Software source changes stay
+in Preferences and are not listed. `housekeeper.activity.ActivityLog` holds this
+state without GTK.
 
 Settings cover window geometry, view mode, sort order, hidden-entry visibility,
 and update-check mode, interval and participating sources.
@@ -479,14 +542,18 @@ The Updates navigation row stays below the scrollable source list. In the defaul
 on-entry mode, activation requests a check after inventory scanning finishes when no
 saved result exists or the last successful check is at least one day old. Preferences
 can extend this interval to one week, or select manual-only checks. Manual mode also
-cancels a pending entry check waiting for inventory. The page refresh action can request
-checks regardless of the selected interval or mode. Filesystem/focus refreshes only read inventory and invalidate changed
+cancels a pending entry check waiting for inventory. Check for Updates, and Check
+Again beside the update count, request checks regardless of the selected interval or
+mode. Filesystem/focus refreshes only read inventory and invalidate changed
 rows. They never initiate a background update check. Selection and source filters are
 independent. The page uses GTK 4/libadwaita widgets and wraps actions at narrow widths.
 Action buttons keep their natural width at the bottom right, with selection status
-at the bottom left. This footer stays visible while the application list scrolls. The header
-shows the update count and last check time; Details contains separate-updater guidance
-and check errors, and the timestamp tooltip explains the selected check policy.
+at the bottom left. This footer stays visible while the application list scrolls. Above
+the list, the update count with Check Again and the last check time; Details contains
+separate-updater guidance and check errors, and the timestamp tooltip explains the
+selected check policy. Without updates, that summary and the footer are hidden and the
+status page alone shows the state, the last check time (or why a check is needed),
+Details when there is something to read, and a large Check for Updates button.
 
 RPM and Flatpak source switches apply to Updates-page checks. Disabled providers
 are skipped before grouping and do not increase the unsupported-app count; providers
@@ -494,7 +561,7 @@ still receive the full inventory for ownership and dependency validation. Indivi
 checks in app details and application discovery are unchanged. Changing sources clears
 results and their timestamp, requests cancellation of an active page check, and rejects
 its late completion using a revision counter. No settings change starts a network check.
-With both sources disabled, the page explains how to enable a source and disables refresh.
+With both sources disabled, the page explains how to enable a source and disables checking.
 
 `UpdateCache` saves successful reports, including empty reports, in the XDG cache
 directory using a bounded JSON file and atomic replacement. Failures and cancelled
@@ -540,9 +607,8 @@ instead of presenting that incomplete snapshot. A brief toast acknowledges cance
 Checks use one determinate progress bar based on completed installation groups.
 Backend phase percentages and unknown estimates cannot reset it or switch it to
 pulse mode. Failed checks count as attempted groups; cancellation never reports
-full completion. The status area reserves separate single lines for the application
-and backend status, and ellipsizes longer messages
-with a full tooltip so source changes do not resize the progress window.
+full completion. Progress shows the application line on one line, ellipsized with the
+operation as its tooltip, so source changes do not resize the page's progress.
 During update checks, Cancel stays enabled independently of the current backend's
 ability to interrupt immediately. A click requests cooperative cancellation and
 disables the button once; a non-interruptible read can finish before cancellation

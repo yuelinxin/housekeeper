@@ -30,10 +30,10 @@ Polkit rules provide test authorization; no packages are downloaded or installed
 
 `test_installations.py` covers URL validation and desktop Exec escaping, browser
 selection, AppImage import/rollback/duplicate handling, AppStream-first native search
-(packaged desktop apps only, named apps first, installed builds dropped, a real
+(packaged desktop apps only, named apps first, installed builds marked, a real
 libappstream fixture catalogue), the GUI-filtered name fallback, per-remote Flatpak
-AppStream catalogues (names, cached icons, excluded addons, unlisted and installed
-apps, reuse until replaced), phrase queries (whole phrase for AppStream, longest word
+AppStream catalogues (names, the largest cached icon, excluded addons, unlisted apps,
+installed apps marked and other remotes' copies of them left out, reuse until replaced), phrase queries (whole phrase for AppStream, longest word
 for name search), fuzzy package ranking,
 exact PackageKit IDs, trusted flags, and Flatpak scope/remote/ref preservation and
 partial results, and a runtime offered by several remotes. Service tests cover queued
@@ -41,11 +41,21 @@ installation cancellation and obsolete
 search cancellation. Icon installation regressions cover both local app types,
 durable PNG copies, restoring defaults, duplicate launchers, invalid/oversized images
 and rollback, including removal of icons a failed or cancelled install added. GTK smoke checks icon selection, preview, reset, invalid images and
-file-picker callbacks arriving after a type change. It also checks shared installation
-entry points, stale search responses,
-selection-before-install, URL errors, automatic AppImage names, Steam handoff,
-installation results and inventory refresh. Set `HOUSEKEEPER_SMOKE_INSTALL_ONLY=1`
-to run just these UI flows and capture their dialogs.
+file-picker callbacks arriving after the window closes. It also checks the Install Apps
+entry points, per-source results arriving in turn, stale search responses, merged
+sources and the Install From picker, the preferred-source order, website detection,
+URL errors, automatic AppImage names, file drops, the Snap Store handoff, installed
+results (badge, View Details opening the installed app over the install page and back,
+choosing another source, an installed package without an app), installation
+results and inventory refresh. Service tests cover a failing source not stopping the
+others, a rejected query failing once, and file reads that a newer search replaces.
+File installation tests cover type detection, `.flatpakref` review (signing key,
+suggested source, runtimes refused), installing the reviewed bytes, refusing a file
+changed after review, PackageKit local details, wrong-format packages, and requiring
+the explicit switch for unverified packages. GTK smoke checks file dispatch, the
+`.flatpakrepo` hand-off to Software Sources, read failures, the package and Flatpak
+pages, and the requests they send. Set `HOUSEKEEPER_SMOKE_INSTALL_ONLY=1`
+to run just these UI flows and capture the Install Apps page.
 `test_website_icons.py` checks redirects, relative/base URLs, size preference, invalid
 images, bounded downloads, disallowed URL schemes, cancellation, timeout fallback and
 an actual HTTP download from a local fixture server. Installation tests verify that
@@ -259,6 +269,18 @@ stacked narrow layout, keyboard focus, current/cancelled checks, confirmation de
 stale callbacks, deferred refresh, and update progress. Its additional screenshots
 are `details-narrow.png` and `update-preview.png`.
 
+`test_activity.py` covers the activity log: in-place progress, results moving to
+Recent, outcome-less work dropped, the ten-result limit, Clear, relative times, page
+keys, cancellability and listener removal. GTK smoke checks the Activity button's
+spinner, live progress rows and their Cancel, a finished removal in Recent, a declined
+operation left out, and Clear. It checks in-page spinners without any new window: an
+install's replacing Install and a toast on success, an app's update check on its
+details page with a stable width under long messages, Cancel staying enabled across
+backend phases and dimming once with "Cancelling…", and the Updates page's status
+spinner during a check and after cancelling. Its screenshots are
+`activity-button.png`, `activity-running.png`, `activity-recent.png`,
+`install-progress.png`, `page-progress.png` and `updates-checking.png`.
+
 ## Disposable Fedora environments
 
 Local build outputs use the following directories:
@@ -417,6 +439,8 @@ stopping a batch after partial completion. Service tests cover batch task exclus
 and cancellation before submission completes. Synthetic GTK smoke exercises the bottom
 sidebar row, per-app checkboxes, Update Selected/Update All confirmation, narrow layout,
 partial results, and navigation back to the inventory without executing package updates.
+The up-to-date state hides the summary and footer and shows the last check time and
+Check for Updates on the status page (`updates-current.png`).
 
 The offline Flatpak integration fixture publishes two applications sharing a runtime.
 Both previews include that runtime; the batch must update it once, reconcile the second

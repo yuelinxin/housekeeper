@@ -25,6 +25,11 @@
     </key>
     <key name="update-source-rpm" type="b"><default>true</default><summary>Check RPM updates on the Updates page</summary></key>
     <key name="update-source-flatpak" type="b"><default>true</default><summary>Check Flatpak updates on the Updates page</summary></key>
+    <key name="install-source-preference" type="s">
+      <choices><choice value="flatpak"/><choice value="native"/><choice value="snap"/></choices>
+      <default>'flatpak'</default>
+      <summary>Preferred source when several offer an app to install</summary>
+    </key>
     <key name="window-width" type="i"><range min="360" max="10000"/><default>1040</default><summary>Window width</summary></key>
     <key name="window-height" type="i"><range min="420" max="10000"/><default>720</default><summary>Window height</summary></key>
     <key name="maximized" type="b"><default>false</default><summary>Whether the window is maximized</summary></key>

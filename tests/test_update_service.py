@@ -357,22 +357,94 @@ def test_new_install_search_cancels_previous_and_close_cancels_pending(service, 
     value, _provider = service
     value.search_executor.shutdown()
     value.search_executor = Executor()
-    searched, completed = [], []
+    searched, found = [], []
     monkeypatch.setattr(
-        Installer, "search", lambda _self, _source, query: searched.append(query) or (query,)
+        Installer,
+        "search",
+        lambda _self, source, query: searched.append((source, query)) or (query,),
     )
-    value.search_install("rpm", "old", completed.append, pytest.fail)
+
+    def search(query, sources=("rpm",)):
+        value.search_apps(
+            query,
+            sources,
+            lambda *args: found.append(args),
+            lambda: found.append("done"),
+            pytest.fail,
+        )
+
+    search("old")
     old, future = value.install_search
-    value.search_install("rpm", "new", completed.append, pytest.fail)
+    search("new", ("flatpak", "rpm"))
     assert old.cancel.is_cancelled() and future.cancelled()
     value.search_executor.finish()
     value.search_executor.finish()
-    assert searched == ["new"] and completed == [("new",)]
+    assert searched == [("flatpak", "new"), ("rpm", "new")]
+    assert found == [("flatpak", ("new",), None), ("rpm", ("new",), None), "done"]
     assert not value.busy
-    value.search_install("rpm", "closing", completed.append, pytest.fail)
+    search("closing")
     pending, future = value.install_search
     value.close()
     assert pending.cancel.is_cancelled() and future.cancelled()
+
+
+def test_an_unavailable_source_does_not_stop_the_others(service, monkeypatch):
+    from housekeeper.installations import Installer
+
+    value, _provider = service
+    value.search_executor.shutdown()
+    value.search_executor = Executor()
+
+    def search(_self, source, query):
+        if source == "snap":
+            raise ManagementError("Snap is not available on this system.")
+        return (source,)
+
+    monkeypatch.setattr(Installer, "search", search)
+    found, errors = [], []
+    value.search_apps(
+        "notes",
+        ("snap", "flatpak"),
+        lambda *args: found.append(args),
+        lambda: found.append("done"),
+        errors.append,
+    )
+    value.search_executor.finish()
+    assert found == [
+        ("snap", (), "Snap is not available on this system."),
+        ("flatpak", ("flatpak",), None),
+        "done",
+    ]
+    # A query that no source accepts is one failure, not one per source.
+    value.search_apps("x", ("snap", "flatpak"), pytest.fail, pytest.fail, errors.append)
+    value.search_executor.finish()
+    assert errors == ["Enter at least two characters of an app name."]
+
+
+def test_reading_an_install_file_uses_the_search_worker(service, monkeypatch):
+    from housekeeper.installations import Installer
+
+    value, _provider = service
+    value.search_executor.shutdown()
+    value.search_executor = Executor()
+    monkeypatch.setattr(Installer, "inspect", lambda _self, path: ("read", path))
+    read, errors = [], []
+    value.inspect_install_file("/tmp/notes.rpm", read.append, errors.append)
+    # A search started meanwhile replaces the read, whose result is then dropped.
+    worker, future = value.install_search
+    value.search_apps("notes", (), pytest.fail, lambda: read.append("searched"), errors.append)
+    assert worker.cancel.is_cancelled() and future.cancelled()
+    value.search_executor.finish()
+    value.search_executor.finish()
+    value.inspect_install_file("/tmp/notes.rpm", read.append, errors.append)
+    value.search_executor.finish()
+    assert read == ["searched", ("read", "/tmp/notes.rpm")] and not errors
+    monkeypatch.setattr(
+        Installer, "inspect", lambda *_args: (_ for _ in ()).throw(ManagementError("Unreadable"))
+    )
+    value.inspect_install_file("/tmp/notes.rpm", pytest.fail, errors.append)
+    value.search_executor.finish()
+    assert errors == ["Unreadable"]
 
 
 def test_a_search_finishing_on_its_thread_never_touches_a_newer_search(monkeypatch):
@@ -386,23 +458,34 @@ def test_a_search_finishing_on_its_thread_never_touches_a_newer_search(monkeypat
     value.search_executor.shutdown()
     value.search_executor = Executor()
     monkeypatch.setattr(Installer, "search", lambda _self, _source, query: (query,))
-    completed = []
-    value.search_install("rpm", "one", completed.append, pytest.fail)
+    found = []
+
+    def search(query):
+        value.search_apps(
+            query,
+            ("rpm",),
+            lambda *args: found.append(args),
+            lambda: found.append("done"),
+            pytest.fail,
+        )
+
+    search("one")
     first = value.install_search
     worker = threading.Thread(target=value.search_executor.finish)
     worker.start()
     worker.join()
     assert value.install_search == first  # The search thread changed nothing.
-    value.search_install("rpm", "two", completed.append, pytest.fail)
+    search("two")
     second = value.install_search
     while queued:
         fn, args = queued.pop(0)
         fn(*args)
-    assert value.install_search == second and completed == []
+    assert value.install_search == second and found == []
     value.search_executor.finish()
-    fn, args = queued.pop(0)
-    fn(*args)
-    assert completed == [("two",)] and value.install_search is None
+    while queued:
+        fn, args = queued.pop(0)
+        fn(*args)
+    assert found == [("rpm", ("two",), None), "done"] and value.install_search is None
     value.close()
 
 
@@ -427,7 +510,7 @@ def test_source_change_cancels_search_and_invalidates_catalogue_in_order(
             raise ManagementError("Authorization denied")
 
     monkeypatch.setattr(RepositoryManager, "set_enabled", change)
-    value.search_install("flatpak", "old", pytest.fail, pytest.fail)
+    value.search_apps("old", ("flatpak",), pytest.fail, pytest.fail, pytest.fail)
     worker, future = value.install_search
     value.change_software_source("source", False, completed.append, errors.append)
     assert worker.cancel.is_cancelled() and future.cancelled()

@@ -5,6 +5,13 @@
   color: @accent_color;
   font-size: 0.85em;
 }
+.installed-badge {
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: alpha(@success_bg_color, 0.12);
+  color: @success_color;
+  font-size: 0.85em;
+}
 .app-row { padding: 12px; }
 /* Inset 3px from the theme's 9px grid child corners. */
 .app-tile { padding: 18px 10px; border-radius: 6px; }
@@ -44,6 +51,12 @@
 .detail-actions > flowboxchild {
   background: transparent;
   box-shadow: none;
+}
+/* Page search fields share one taller style across Apps and Install Apps. */
+.page-search { min-height: 40px; }
+/* One status page size for every page: between Adwaita's 128px default and 96px compact. */
+statuspage.page-status > scrolledwindow > viewport > box > clamp > box > .icon {
+  -gtk-icon-size: 112px;
 }
 .update-badge {
   border-radius: 999px;

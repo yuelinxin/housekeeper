@@ -4,5 +4,7 @@
     <file preprocess="xml-stripblanks">window.ui</file>
     <file>style.css</file>
     <file>icons/scalable/actions/flatpak-symbolic.svg</file>
+    <file>icons/scalable/actions/install-apps-symbolic.svg</file>
+    <file>icons/scalable/actions/activity-symbolic.svg</file>
   </gresource>
 </gresources>

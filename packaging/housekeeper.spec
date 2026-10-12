@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.2.1
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -73,6 +73,13 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Mon Oct 12 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.0-1
+- Add an Install Apps page searching Flatpak, native packages and Snap in one list.
+- Install downloaded AppImage, RPM, DEB, .flatpakref and .flatpak files; add web apps.
+- Mark installed search results and show sharper icons on install pages.
+- Show progress in pages and an Activity button instead of a blocking window.
+- Simplify the Updates page and announce successful results with toasts.
+
 * Thu Oct 08 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.2.1-1
 - Apply custom icons to all launchers and unique named icons used by docks and panels.
 - Keep the user's icon theme through an inherited layer; fall back to launchers only.

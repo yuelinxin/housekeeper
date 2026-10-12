@@ -1,4 +1,20 @@
-# v0.2.1 validation
+# v0.3.0 validation
+
+## v0.3.0 release checks — October 12, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.3.0 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata validates.
+- On a Fedora 44 desktop, 741 tests pass with one dpkg test skipped, and GTK smoke
+  passes under headless mutter, including the Install Apps page, installed search
+  results, file installs, in-page progress spinners, the Activity button and the
+  simplified Updates page.
+- GTK smoke also passes with libadwaita's spinner widgets hidden, exercising the
+  GTK spinner fallback used before libadwaita 1.6 (the Ubuntu 24.04 floor).
+- On the real system, catalogue searches mark installed RPMs, and a Flatpak
+  installed from Fedora Flatpaks is marked only for that remote.
+- Ruff lint and formatting, strict mypy for the seven configured modules, and
+  diff checks pass. Fedora 43/44 container builds, the isolated transaction suite,
+  the Ubuntu 24.04 runtime floor and COPR builds run in CI for the release tag.
 
 ## v0.2.1 release checks — October 8, 2026
 

@@ -1,3 +1,4 @@
+src/housekeeper/activity.py
 src/housekeeper/batch_updates.py
 src/housekeeper/appearance.py
 src/housekeeper/platforms.py
@@ -7,6 +8,7 @@ src/housekeeper/repositories.py
 src/housekeeper/ui/repositories.py
 src/housekeeper/providers/install.py
 src/housekeeper/providers/web.py
+src/housekeeper/ui/activity.py
 src/housekeeper/ui/install.py
 src/housekeeper/ui/appearance.py
 src/housekeeper/ui/disclosure.py
