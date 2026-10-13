@@ -52,6 +52,18 @@
   background: transparent;
   box-shadow: none;
 }
+/* An update row's checkbox fills the row so all of it is clickable. */
+checkbutton.update-check { padding: 15px; }
+/* Install Apps results match the Updates rows' 15px padding. */
+row.install-result > box.header > box.title {
+  margin-top: 15px;
+  margin-bottom: 15px;
+  border-spacing: 4px;
+}
+/* Checked updates take a light accent tint, fainter than an inventory selection. */
+.boxed-list > row.update-selected { background: alpha(@accent_bg_color, 0.12); }
+/* Short enough to leave an update's name and versions room on narrow windows. */
+progressbar.update-progress > trough { min-width: 96px; }
 /* Page search fields share one taller style across Apps and Install Apps. */
 .page-search { min-height: 40px; }
 /* One status page size for every page: between Adwaita's 128px default and 96px compact. */

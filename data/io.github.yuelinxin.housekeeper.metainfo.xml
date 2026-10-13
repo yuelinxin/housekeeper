@@ -33,6 +33,16 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.2" date="2026-10-13" type="stable">
+      <description>
+        <p>Keep using the Updates page while apps update.</p>
+        <ul>
+          <li>Each app being updated shows its progress on its own row, and leaves the list as soon as its update finishes. Cancel is at the bottom of the page.</li>
+          <li>Click anywhere on an update to select it; selected updates are highlighted.</li>
+          <li>Install Apps search results have more room and larger icons.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-10-12" type="stable">
       <description>
         <p>Keep Housekeeper itself up to date.</p>

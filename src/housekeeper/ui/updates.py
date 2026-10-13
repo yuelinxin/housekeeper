@@ -8,7 +8,7 @@ from gi.repository import Adw, GLib, GObject, Gtk
 from housekeeper.batch_updates import UPDATE_PROVIDERS, installation_key
 from housekeeper.i18n import _, ngettext
 from housekeeper.models import OperationCancelled, Outcome
-from housekeeper.ui.activity import ActivityFollower, StatusSpinner, cancel_pill
+from housekeeper.ui.activity import ActivityFollower, ProgressBar, StatusSpinner, cancel_pill
 from housekeeper.ui.icons import icon_image
 from housekeeper.ui.update_confirmation import configure_update_confirmation, version_change
 from housekeeper.update_cache import UpdateCache, cache_expired
@@ -29,6 +29,13 @@ class UpdatesPage(Adw.NavigationPage):
         self.window = window
         self.items = ()
         self.checks = []
+        self.bars = {}
+        # An update batch shows on its rows instead of covering the list. `batch` maps
+        # each confirmed item still to be updated to its fraction, None while unknown.
+        self.executing = False
+        self.batch = {}
+        self.batch_current = None
+        self.batch_total = 0
         self.visited = False
         self.check_when_ready = False
         self.inventory_pending = False
@@ -89,7 +96,9 @@ class UpdatesPage(Adw.NavigationPage):
         self.all_button.add_css_class("suggested-action")
         self.selected_button.connect("clicked", lambda _b: self.confirm(self.selected()))
         self.all_button.connect("clicked", lambda _b: self.confirm(self.items))
-        for button in (self.selected_button, self.all_button):
+        self.cancel_button = Gtk.Button(label=_("Cancel"), visible=False)
+        self.cancel_button.connect("clicked", lambda _b: window.cancel_operation())
+        for button in (self.selected_button, self.all_button, self.cancel_button):
             self.actions.append(button)
         self.selection_label = Gtk.Label(
             label=_("No apps selected"), xalign=0, wrap=True, hexpand=True
@@ -148,7 +157,7 @@ class UpdatesPage(Adw.NavigationPage):
             margin_start=12,
             margin_end=12,
             margin_top=12,
-            margin_bottom=16,
+            margin_bottom=12,
         )
         self.footer.append(self.selection_label)
         self.footer.append(self.actions)
@@ -359,9 +368,29 @@ class UpdatesPage(Adw.NavigationPage):
     def selected(self):
         return tuple(item for item, check in self.checks if check.get_active())
 
+    @staticmethod
+    def _row_toggled(check, row):
+        if check.get_active():
+            row.add_css_class("update-selected")
+        else:
+            row.remove_css_class("update-selected")
+
     def _selection_changed(self, *_args):
         count = len(self.selected())
-        self.selection_label.set_label(_("%d selected") % count if count else _("No apps selected"))
+        updating = bool(self.batch)
+        if updating:
+            # The first item still in the batch is the one being updated.
+            index = self.batch_total - len(self.batch) + 1
+            self.selection_label.set_label(
+                _("Updating %(index)d of %(total)d") % {"index": index, "total": self.batch_total}
+            )
+        else:
+            self.selection_label.set_label(
+                _("%d selected") % count if count else _("No apps selected")
+            )
+        self.selected_button.set_visible(not updating)
+        self.all_button.set_visible(not updating)
+        self.cancel_button.set_visible(updating)
         active = self.window.operation_active
         self.selected_button.set_sensitive(bool(count) and not active)
         self.all_button.set_sensitive(bool(self.items) and not active)
@@ -471,13 +500,17 @@ class UpdatesPage(Adw.NavigationPage):
         selected = {item.app.key for item in self.selected()}
         self.items = tuple(items)
         self.checks = []
+        self.bars = {}
         while child := self.list.get_first_child():
             self.list.remove(child)
         for item in items:
             app = item.app
             row = Gtk.ListBoxRow(activatable=False)
-            check = Gtk.CheckButton(margin_start=12, margin_end=12, margin_top=12, margin_bottom=12)
-            box = Gtk.Box(spacing=12)
+            # Padded rather than inset, so the whole row toggles it.
+            check = Gtk.CheckButton(hexpand=True)
+            check.add_css_class("update-check")
+            # Leave the checkbox as much room as the icon leaves its text.
+            box = Gtk.Box(spacing=12, margin_start=8)
             box.append(icon_image(app.icon, 40))
             text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, hexpand=True)
             name = Gtk.Label(label=", ".join(item.names), xalign=0, wrap=True)
@@ -493,17 +526,56 @@ class UpdatesPage(Adw.NavigationPage):
             box.append(text)
             check.set_child(box)
             check.update_property([Gtk.AccessibleProperty.LABEL], [", ".join(item.names)])
+            check.connect("toggled", self._row_toggled, row)
             check.set_active(app.key in selected)
             check.connect("toggled", self._selection_changed)
-            row.set_child(check)
+            content = Gtk.Box()
+            content.append(check)
+            # Outside the checkbox, so it is not dimmed with the checkbox while updating.
+            bar = ProgressBar(valign=Gtk.Align.CENTER, margin_end=12, visible=False)
+            bar.add_css_class("update-progress")
+            bar.update_property(
+                [Gtk.AccessibleProperty.LABEL], [_("Updating %s") % ", ".join(item.names)]
+            )
+            content.append(bar)
+            row.set_child(content)
             self.list.append(row)
             self.checks.append((item, check))
+            self.bars[app.key] = bar
+        self._show_batch()
         self._show_stack()
         self.window.updates_count.set_label(str(len(items)) if items else "")
         self.window._refresh_update_badge()
         self._selection_changed()
 
+    def _show_batch(self):
+        for key, bar in self.bars.items():
+            bar.set_visible(key in self.batch)
+            if key not in self.batch:
+                continue
+            # Items waiting their turn stay empty and faint until it comes.
+            current = key == self.batch_current
+            bar.set_opacity(1.0 if current else 0.5)
+            bar.show_fraction(self.batch[key] if current else 0.0)
+
+    def _item_progress(self, key, fraction):
+        if key not in self.batch:
+            return
+        self.batch_current = key
+        self.batch[key] = fraction
+        self._show_batch()
+        self._selection_changed()
+
+    def _item_completed(self, keys):
+        for key in keys:
+            self.batch.pop(key, None)
+        self.updates_completed(keys)
+
     def _working(self, activity):
+        if activity is not None and self.executing:
+            # An update batch shows on its rows; only a check takes over the page.
+            self.cancel_button.set_sensitive(activity.cancellable)
+            activity = None
         self.working = activity is not None
         if activity is not None:
             self.working_page.set_title(GLib.markup_escape_text(activity.title))
@@ -522,7 +594,12 @@ class UpdatesPage(Adw.NavigationPage):
     def confirm(self, items):
         items = tuple(items)
         subject = ngettext("%d app", "%d apps", len(items)) % len(items)
-        if not items or not self.window._begin_operation(None, "update", subject=subject):
+        if not items:
+            return
+        # Set first: starting the operation is what would show the check's spinner.
+        self.executing = True
+        if not self.window._begin_operation(None, "update", subject=subject):
+            self.executing = False
             return
         self._selection_changed()
         dialog = Adw.MessageDialog(
@@ -540,21 +617,35 @@ class UpdatesPage(Adw.NavigationPage):
         def response(_dialog, choice):
             self.window.confirm_dialog = None
             if choice != "update":
+                self.executing = False
                 self.window._end_operation()
                 self._selection_changed()
                 return
-            self.window._start_task(_("Updating Applications"))
             # Confirm the running programs the dialog showed last, not those at preview time.
+            confirmed = shown()
+            self.batch = {item.app.key: None for item in confirmed}
+            self.batch_current = None
+            self.batch_total = len(confirmed)
+            self._show_batch()
+            self._selection_changed()
+            self.window._start_task(_("Updating Applications"))
+            guard = self.window._guard
             self.window.service.execute_updates(
-                shown(),
-                self.window._guard(self.window._progress),
-                self.window._guard(self.finished),
+                confirmed,
+                guard(self.window._progress),
+                guard(self.finished),
+                item_progress=guard(self._item_progress),
+                item_completed=guard(self._item_completed),
             )
 
         dialog.connect("response", self.window._guard(response))
         dialog.present()
 
     def finished(self, result):
+        self.executing = False
+        self.batch = {}
+        self.batch_current = None
+        self._show_batch()
         # Record the completed updates before releasing the page, so a scan that finished
         # mid-batch is reconciled against them instead of marking the list stale.
         self.updates_completed(result.completed_app_keys)

@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.3.1
+Version:        0.3.2
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -74,6 +74,12 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Tue Oct 13 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.2-1
+- Show each app's progress on its Updates row instead of covering the page.
+- Remove updated apps from the Updates list as soon as each one finishes.
+- Make the whole Updates row toggle its checkbox and tint checked rows.
+- Give Install Apps results the same spacing and icon size as Updates rows.
+
 * Mon Oct 12 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.1-1
 - Check for Housekeeper's own update with the other apps and offer it in the sidebar.
 - Install Housekeeper's RPM update in the app and restart into the new version.

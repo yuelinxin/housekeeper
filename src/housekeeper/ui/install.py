@@ -134,7 +134,8 @@ class InstallPage(Adw.NavigationPage):
         self.website_row = Adw.ActionRow(
             subtitle=_("Opens in its own browser window"), activatable=True
         )
-        self.website_row.add_prefix(icon_image("web-browser", 32))
+        self.website_row.add_css_class("install-result")
+        self.website_row.add_prefix(icon_image("web-browser", 40))
         self.website_row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
         self.website_row.connect("activated", lambda _r: self.open_website(self.query))
         self.website_list.append(self.website_row)
@@ -336,6 +337,7 @@ class InstallPage(Adw.NavigationPage):
             subtitle=GLib.markup_escape_text(choice.summary),
             activatable=True,
         )
+        row.add_css_class("install-result")
         row.set_title_lines(1)
         row.set_subtitle_lines(2)
         if choice.icon:
@@ -344,7 +346,7 @@ class InstallPage(Adw.NavigationPage):
             icon = Gtk.Image(
                 icon_name="application-x-executable" if choice.is_app else "package-x-generic"
             )
-        icon.set_pixel_size(32)
+        icon.set_pixel_size(40)
         row.add_prefix(icon)
         if choice.installed:
             installed = Gtk.Label(label=_("Installed"), valign=Gtk.Align.CENTER)

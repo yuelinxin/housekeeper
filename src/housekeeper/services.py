@@ -268,14 +268,19 @@ class InventoryService:
             worker=batch,
         )
 
-    def execute_updates(self, items, progress, completed):
+    def execute_updates(self, items, progress, completed, item_progress=None, item_completed=None):
         from housekeeper.batch_updates import UpdateBatch
 
         batch = UpdateBatch(self._provider, ())
 
+        def relay(callback):
+            return (lambda *args: self.dispatch(callback, *args)) if callback else None
+
         def run(worker):
             worker.inventory = list(self.inventory)
-            return worker.execute(items, lambda *args: self.dispatch(progress, *args))
+            return worker.execute(
+                items, relay(progress), relay(item_progress), relay(item_completed)
+            )
 
         self._submit(
             None,

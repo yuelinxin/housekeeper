@@ -450,11 +450,14 @@ The live page and restored cache must agree even when an unrelated change is obs
 before the completion callback.
 
 `test_batch_updates.py` covers duplicate installation grouping, separate installations,
-incomplete checks, cancellation, shared dependencies, changed sources or targets, and
-stopping a batch after partial completion. Service tests cover batch task exclusivity
+incomplete checks, cancellation, shared dependencies, changed sources or targets,
+stopping a batch after partial completion, and reporting each item's progress and
+completion as it happens. Service tests cover batch task exclusivity
 and cancellation before submission completes. Synthetic GTK smoke exercises the bottom
 sidebar row, per-app checkboxes, Update Selected/Update All confirmation, narrow layout,
 partial results, and navigation back to the inventory without executing package updates.
+While a batch runs, the list stays in place with a progress bar on each confirmed row
+and Cancel in the footer; finished rows leave the list at once.
 The up-to-date state hides the summary and footer and shows the last check time and
 Check for Updates on the status page (`updates-current.png`).
 

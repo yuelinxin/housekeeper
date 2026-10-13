@@ -292,30 +292,53 @@ class UpdateBatch:
             )
         return fresh
 
-    def execute(self, items, progress):
+    def execute(self, items, progress, item_progress=None, item_completed=None):
+        """Update `items` in order, stopping at the first failure.
+
+        `item_progress(key, fraction)` follows the item being updated, with no fraction
+        while its plan is rechecked or the manager is estimating. `item_completed(keys)`
+        names the records each finished update covers, as soon as it finishes.
+        """
         completed, errors, hints, verified = [], [], [], {}
         completed_app_keys = []
         outcome = Outcome.SUCCESS
+        total = len(items)
         for index, item in enumerate(items):
             app, original = item.app, item.plan
+
+            def preparing(message, _fraction, can_cancel, index=index):
+                # Recheck percentages restart per phase; they are not the update's.
+                progress(message, index / total, can_cancel)
+
+            def updating(message, fraction, can_cancel, index=index, key=app.key):
+                progress(message, (index + (fraction or 0)) / total, can_cancel)
+                if item_progress:
+                    item_progress(key, fraction)
+
+            def finish(app=app):
+                keys = tuple(
+                    a.key for a in self.inventory if installation_key(a) == installation_key(app)
+                )
+                completed_app_keys.extend(keys)
+                if item_completed:
+                    item_completed(keys)
+
             try:
                 provider = self._activate(app)
                 progress(
                     _("Updating %(name)s (%(index)d of %(total)d)")
-                    % {"name": app.name, "index": index + 1, "total": len(items)},
-                    index / len(items),
+                    % {"name": app.name, "index": index + 1, "total": total},
+                    index / total,
                     True,
                 )
+                if item_progress:
+                    item_progress(app.key, None)
                 if all(verified.get(change_key(original, c)) == c for c in original.changes):
                     completed.extend(item.names)
-                    completed_app_keys.extend(
-                        a.key
-                        for a in self.inventory
-                        if installation_key(a) == installation_key(app)
-                    )
+                    finish()
                     continue
                 kwargs = {"refresh": False} if app.provider == "rpm" else {}
-                check = provider.prepare_update(app, self.inventory, progress, **kwargs)
+                check = provider.prepare_update(app, self.inventory, preparing, **kwargs)
                 if check.state != UpdateState.AVAILABLE or check.plan is None:
                     raise ManagementError(
                         _("The update plan changed. Check again and review a new preview.")
@@ -323,7 +346,7 @@ class UpdateBatch:
                 plan = self._remaining_plan(original, check.plan, verified)
                 if self.cancelled:
                     raise OperationCancelled(_("The update operation was cancelled."))
-                result = provider.execute_update(app, plan, progress)
+                result = provider.execute_update(app, plan, updating)
                 if result.restart_hint:
                     hints.append(result.restart_hint)
                 if result.outcome != Outcome.SUCCESS:
@@ -340,10 +363,8 @@ class UpdateBatch:
                     outcome = result.outcome
                     break
                 completed.extend(item.names)
-                completed_app_keys.extend(
-                    a.key for a in self.inventory if installation_key(a) == installation_key(app)
-                )
                 verified.update((change_key(plan, c), c) for c in plan.changes)
+                finish()
             except Exception as error:
                 LOG.warning(
                     "Update execution failed for %s (%s, %s): %s",

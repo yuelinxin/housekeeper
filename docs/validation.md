@@ -1,4 +1,18 @@
-# v0.3.1 validation
+# v0.3.2 validation
+
+## v0.3.2 release checks — October 13, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.3.2 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata validates.
+- On a Fedora 44 desktop, 766 tests pass with one dpkg test skipped, including the
+  batch's per-item progress and completion. The Fedora 44 test container passes its
+  clean build, GTK smoke, and RPM install, replacement and uninstall. GTK smoke checks
+  that an update batch keeps the list in place with a progress bar on each confirmed
+  row and Cancel in the footer, removes each finished row at once, and that the whole
+  row toggles its checkbox.
+- Ruff lint and formatting pass. Fedora 43/44 container builds, the isolated
+  transaction suite, the Ubuntu 24.04 runtime floor, strict mypy and COPR builds run
+  in CI for the release tag.
 
 ## v0.3.1 release checks — October 12, 2026
 

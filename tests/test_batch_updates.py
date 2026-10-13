@@ -471,3 +471,55 @@ def test_completed_keys_include_plans_satisfied_by_preceding_update():
     assert result.outcome == Outcome.SUCCESS
     assert result.completed_app_keys == (a.key, b.key)
     assert executed == [a.key]
+
+
+def test_batch_reports_each_item_as_it_progresses_and_completes():
+    records = [app(), app("b"), app("c")]
+    events, overall = [], []
+
+    def factory(record):
+        def prepare(_record, _inventory, progress, **_kwargs):
+            # Recheck percentages are not the update's own progress.
+            progress("Resolving", 0.9, True)
+            return UpdateCheckResult(UpdateState.AVAILABLE, plan(record))
+
+        def execute(_record, _plan, progress):
+            progress("Installing", 0.5, False)
+            if record.key == "b":
+                return OperationResult(Outcome.FAILED, "Broken")
+            return OperationResult(Outcome.SUCCESS, "Done")
+
+        return NS(prepare_update=prepare, execute_update=execute)
+
+    result = UpdateBatch(factory, records).execute(
+        [UpdateItem(a, plan(a), (a.name,)) for a in records],
+        lambda _message, fraction, _cancel: overall.append(fraction),
+        lambda key, fraction: events.append(("progress", key, fraction)),
+        lambda keys: events.append(("completed", keys)),
+    )
+    assert result.outcome == Outcome.PARTIAL
+    # The failed item never completes, and nothing after it starts.
+    assert events == [
+        ("progress", "a", None),
+        ("progress", "a", 0.5),
+        ("completed", ("a",)),
+        ("progress", "b", None),
+        ("progress", "b", 0.5),
+    ]
+    assert overall == sorted(overall) and overall[-1] == 0.5
+
+
+def test_batch_completes_items_a_preceding_update_satisfied():
+    a, b = app(), app("b")
+    first = plan(a, (change("a"), change("b")))
+    completed = []
+    provider = NS(
+        prepare_update=lambda *_args, **_kwargs: UpdateCheckResult(UpdateState.AVAILABLE, first),
+        execute_update=lambda *_: OperationResult(Outcome.SUCCESS, "Done"),
+    )
+    UpdateBatch(lambda _record: provider, [a, b]).execute(
+        [UpdateItem(a, first, (a.name,)), UpdateItem(b, plan(b), (b.name,))],
+        lambda *_: None,
+        item_completed=completed.append,
+    )
+    assert completed == [(a.key,), (b.key,)]

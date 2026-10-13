@@ -1815,6 +1815,11 @@ def activate(app):
         page.checks[0][1].set_active(True)
         page.checks[0][1].grab_focus()
         assert page.selected_button.get_sensitive() and len(page.selected()) == 1
+        assert page.checks[0][1].get_ancestor(Gtk.ListBoxRow).has_css_class("update-selected")
+        assert not page.checks[1][1].get_ancestor(Gtk.ListBoxRow).has_css_class("update-selected")
+        # Without a running update, the checkbox covers the whole row.
+        row = page.checks[0][1].get_ancestor(Gtk.ListBoxRow)
+        assert page.checks[0][1].get_width() == row.get_width()
         for _ in range(3):
             window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
             window.pages_sidebar.emit("row-activated", window.updates_row)
@@ -2210,22 +2215,42 @@ def activate(app):
         original = page.items
         checked_at = page.checked_at
         page.checks[1][1].set_active(True)
-        window.service.execute_updates = lambda items, _p, done: (
-            calls.append(items),
+
+        def execute_updates(items, _progress, done, *, item_progress, item_completed):
+            calls.append(items)
+            first, second = (item.app.key for item in items[:2])
+            # The batch shows on its rows; the list stays in place, not a spinner.
+            assert page.stack.get_visible_child_name() == "list"
+            assert all(page.bars[item.app.key].get_visible() for item in items)
+            assert page.cancel_button.get_visible() and not page.all_button.get_visible()
+            assert page.selection_label.get_label() == "Updating 1 of 3"
+            item_progress(first, None)
+            item_progress(first, 0.5)
+            assert page.bars[first].get_fraction() == 0.5
+            assert page.bars[first].get_opacity() == 1 and page.bars[second].get_opacity() < 1
+            # A finished item leaves the list at once, not when the batch ends.
+            item_completed((first,))
+            assert first not in page.bars and window.updates_count.get_label() == "2"
+            assert page.selection_label.get_label() == "Updating 2 of 3"
+            item_progress(second, 0.25)
             done(
                 OperationResult(
                     Outcome.PARTIAL,
                     "Synthetic partial update.",
                     ("Boxes",),
                     ("Cancelled",),
-                    completed_app_keys=(items[0].app.key,),
+                    completed_app_keys=(first,),
                 )
-            ),
-        )
+            )
+
+        window.service.execute_updates = execute_updates
         with patch.object(window, "refresh"):
             page.all_button.emit("clicked")
+            assert page.stack.get_visible_child_name() == "list"
             window.confirm_dialog.response("update")
         assert len(calls[0]) == 3 and not window.operation_active
+        assert not any(bar.get_visible() for bar in page.bars.values())
+        assert page.all_button.get_visible() and not page.cancel_button.get_visible()
         assert page.items == original[1:] and page.selected() == (original[1],)
         assert page.status.get_label() == "2 updates available"
         assert page.stack.get_visible_child_name() == "list"
@@ -2415,7 +2440,10 @@ def activate(app):
         content = page.stack.compute_bounds(window)[1]
         assert actions.get_y() > window.get_height() - 130
         assert actions.get_y() + actions.get_height() <= window.get_height() - 8
-        assert window.get_width() - actions.get_x() - actions.get_width() < 30
+        right = window.get_width() - actions.get_x() - actions.get_width()
+        assert right < 30
+        # The buttons sit as far from the bottom edge as from the right one.
+        assert abs(window.get_height() - actions.get_y() - actions.get_height() - right) <= 1
         assert selection.get_y() >= content.get_y() + content.get_height()
         assert selection.get_x() + selection.get_width() <= actions.get_x()
 
