@@ -236,7 +236,7 @@ class InventoryService:
             preserve_error=True,
         )
 
-    def check_updates(self, progress, completed, failed, *, providers=None):
+    def check_updates(self, progress, completed, failed, *, providers=None, include_self=True):
         from housekeeper.batch_updates import UPDATE_PROVIDERS, UpdateBatch
 
         providers = UPDATE_PROVIDERS if providers is None else tuple(providers)
@@ -245,7 +245,19 @@ class InventoryService:
 
         def run(worker):
             worker.inventory = list(self.inventory)
-            return worker.check(lambda *args: self.dispatch(progress, *args), providers)
+            installation = None
+            if include_self:
+                from housekeeper.self_update import current_installation
+
+                try:
+                    installation = current_installation()
+                except Exception:
+                    LOG.warning("Could not identify Housekeeper's installation", exc_info=True)
+            return worker.check(
+                lambda *args: self.dispatch(progress, *args),
+                providers,
+                installation=installation,
+            )
 
         self._submit(
             None,
@@ -272,6 +284,19 @@ class InventoryService:
             lambda error: completed(self._failure(error)),
             preserve_error=True,
             worker=batch,
+        )
+
+    def execute_self_update(self, item, progress, completed):
+        from housekeeper.self_update import SelfUpdater
+
+        self._submit(
+            None,
+            lambda worker: worker.execute(item, lambda *args: self.dispatch(progress, *args)),
+            completed,
+            lambda error: completed(self._failure(error)),
+            preserve_error=True,
+            worker=SelfUpdater(self._provider),
+            label="Housekeeper update",
         )
 
     def check_running(self, items, completed, failed):

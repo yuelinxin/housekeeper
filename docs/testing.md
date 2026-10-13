@@ -178,6 +178,22 @@ the complete inventory to enabled providers. GTK smoke exercises manual entry,
 manual refresh, deferred-entry cancellation, weekly checks, source switches,
 both sources disabled, late results after a source change, and Preferences controls.
 
+`test_self_update.py` covers install-method detection (Flatpak sandbox ahead of package
+ownership, Snap, source checkouts, RPM on supported and unsupported hosts, DEB, Pacman,
+APK, unowned, ambiguous and unreadable ownership), choosing the host package record,
+refusing sources Housekeeper cannot update and explaining them in the check's report,
+keeping Housekeeper out of the Updates list
+and its unsupported count, reusing RPM discovery, isolating its check failure, caching
+its update, and restart decisions and arguments. `test_updates.py` checks that RPM
+previews and executions accept Housekeeper's package only in self-update mode. GTK
+smoke checks the sidebar row, its confirmation and restart, a cancelled update keeping
+the offer, Updates details for an installation it cannot update, and withdrawing a
+stale offer.
+`tests/manual_self_update.py` opens the checkout with a pretend Housekeeper update for
+trying the card by hand: success and `--partial` restart, `--fail` does not, and
+`--flatpak` shows the guidance in Updates details. Other apps are still checked for
+real; settings stay in memory and update results in a temporary cache.
+
 GTK smoke checks that single and batch update confirmations start with Details
 collapsed, show short summaries, retain complete transaction and authorization
 information (including installation and target) in the expander, and omit launcher
@@ -380,8 +396,8 @@ files before publishing. Publishing a stable GitHub Release triggers
 `.github/workflows/copr.yml`, which downloads and verifies one release SRPM and
 uploads it to `yuelinxin/housekeeper` in COPR. COPR builds all chroots enabled in
 that project. The Actions job waits for the result and fails if COPR reports a
-failed build. Pre-releases are excluded. Housekeeper has no application self-updater;
-users who enable the COPR repository receive packages through normal DNF updates.
+failed build. Pre-releases are excluded. Users who enable the COPR repository receive
+packages through normal DNF updates, which Housekeeper's own update also installs.
 
 ### One-time GitHub and COPR setup
 

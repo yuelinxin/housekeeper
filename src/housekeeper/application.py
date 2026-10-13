@@ -48,6 +48,8 @@ def main(argv=None):
             super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
             self.icon_settings = None
             self.icon_refresh = 0
+            # Set after Housekeeper updated itself; main() then starts the new version.
+            self.restart_requested = False
 
         def _refresh_icons(self):
             from housekeeper.app_icons import IconUpdateBusy, refresh_icon_theme
@@ -90,4 +92,34 @@ def main(argv=None):
                 window = HousekeeperWindow(self, settings)
             window.present()
 
-    return Application().run(argv)
+    application = Application()
+    status = application.run(argv)
+    if application.restart_requested:
+        restart()
+    return status
+
+
+def restart():
+    """Replace this process with the installed launcher, now the updated version."""
+    from housekeeper.self_update import restart_command
+
+    # A new instance finding the name still owned would hand its activation to this
+    # exiting process. The reply means the bus has released it, after any earlier
+    # release GApplication queued on the same connection.
+    try:
+        Gio.bus_get_sync(Gio.BusType.SESSION, None).call_sync(
+            "org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "ReleaseName",
+            GLib.Variant("(s)", (APP_ID,)),
+            GLib.VariantType("(u)"),
+            Gio.DBusCallFlags.NONE,
+            2000,
+            None,
+        )
+    except GLib.Error as error:
+        logging.getLogger(__name__).warning("Could not release the application name: %s", error)
+    executable, args = restart_command(sys.orig_argv, sys.executable)
+    logging.shutdown()
+    os.execv(executable, args)

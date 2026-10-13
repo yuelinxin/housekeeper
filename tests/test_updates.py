@@ -216,6 +216,24 @@ def test_rpm_rejects_incomplete_or_unsafe_preview(rpm_update, preview):
     assert not backend.deployed
 
 
+def test_rpm_offers_housekeeper_only_as_its_own_update(rpm_update):
+    provider, app, backend = rpm_update
+    own = replace(app, metadata={"name": "housekeeper", "arch": "x86_64"})
+    backend.installed = [Package("housekeeper", version="1-1", source="installed")]
+    backend.candidates = backend.preview = [Package("housekeeper")]
+    with pytest.raises(ManagementError, match="sidebar"):
+        provider.prepare_update(own, [own], lambda *_: None)
+    with pytest.raises(ManagementError, match="not Housekeeper"):
+        provider.prepare_update(app, [app], lambda *_: None, allow_self=True)
+    check = provider.prepare_update(own, [own], lambda *_: None, allow_self=True)
+    assert check.state == UpdateState.AVAILABLE
+    assert [c.identity for c in check.plan.changes] == ["housekeeper.x86_64"]
+    with pytest.raises(ManagementError, match="sidebar"):
+        provider.execute_update(own, check.plan, lambda *_: None)
+    result = provider.execute_update(own, check.plan, lambda *_: None, allow_self=True)
+    assert result.outcome == Outcome.SUCCESS and backend.deployed == ("housekeeper.x86_64",)
+
+
 def test_rpm_normal_old_version_replacement_is_allowed(rpm_update):
     provider, app, backend = rpm_update
     backend.preview.append(Package(version="1-1", info="removing", source="installed"))
@@ -729,7 +747,7 @@ def test_update_capability_is_independent_and_local(monkeypatch):
         app, {"rpm": ProviderCapabilities(update_preview=True, update_execute=True)}
     )
     assert app.update_action == UpdateAction.INSTRUCTIONS
-    assert "Housekeeper" in app.update_reason
+    assert "sidebar" in app.update_reason
 
 
 @pytest.mark.parametrize("source", list(Source))

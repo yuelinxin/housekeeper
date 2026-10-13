@@ -33,6 +33,15 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.1" date="2026-10-12" type="stable">
+      <description>
+        <p>Keep Housekeeper itself up to date.</p>
+        <ul>
+          <li>Update checks now include Housekeeper. When a new version is available, it appears at the bottom of the sidebar; choose it to review the update, install it and restart into the new version.</li>
+          <li>When Housekeeper was installed in a way it cannot update itself, such as a Flatpak or a source checkout, Details on the Updates page explains how to update it.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-12" type="stable">
       <description>
         <p>Install apps from one search and keep working while they install.</p>

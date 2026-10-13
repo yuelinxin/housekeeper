@@ -27,7 +27,7 @@
                   </object>
                 </child>
                 <property name="content">
-                  <object class="GtkBox">
+                  <object class="GtkBox" id="sidebar_box">
                     <property name="orientation">vertical</property>
                     <child>
                       <object class="GtkScrolledWindow">
@@ -45,12 +45,12 @@
                       </object>
                     </child>
                     <child>
+                      <!-- Its bottom margin belongs to the self-update section below it. -->
                       <object class="GtkListBox" id="pages_sidebar">
                         <property name="selection-mode">single</property>
                         <property name="margin-start">8</property>
                         <property name="margin-end">8</property>
                         <property name="margin-top">8</property>
-                        <property name="margin-bottom">8</property>
                         <style><class name="navigation-sidebar"/></style>
                         <child>
                           <object class="GtkListBoxRow" id="install_row">

@@ -450,8 +450,8 @@ Only an explicit check refreshes network metadata. PackageKit checks first refre
 configured sources, resolve the exact name and architecture, and compare installed
 versions with a fresh local RPM database. Update simulation must positively report
 the selected target and all dependency operations. New dependencies and upgrades
-are allowed; downgrades, reinstalls, extra removals, and Housekeeper self-updates
-are rejected. Old versions replaced by their own upgrades are not extra removals.
+are allowed; downgrades, reinstalls, extra removals, and updates of Housekeeper's
+own package are rejected; Housekeeper updates only on its own (see below). Old versions replaced by their own upgrades are not extra removals.
 Execution repeats the preview and fingerprints dependency versions and repository
 configuration. PackageKit's trusted-package flag and Polkit remain in effect.
 Preview and execution are separate transactions, not an atomic lock or rollback.
@@ -509,7 +509,38 @@ An inventory that arrives mid-operation does not prune the Updates list or call 
 stale; that reconciliation is replayed against the operation's own result once it
 ends. Results are verified against installed versions or commits; partial changes are
 reported without claiming rollback. Every execution outcome refreshes inventory. No
-automatic restart is performed.
+other application is restarted automatically.
+
+## Updating Housekeeper
+
+`self_update.py` identifies the running copy's source from the code that is running,
+never from the inventory, since a source checkout can run beside an installed package.
+A sandbox's `/.flatpak-info` names a Flatpak and `/snap` a Snap; a `src/housekeeper`
+package beside `meson.build` is a source checkout. Otherwise one owning package of the
+module file names RPM, DEB, Pacman or APK. Several owners, none, or an unreadable
+database leave the source unknown. Detection runs once per process on the worker.
+
+Only an RPM on a host the RPM provider supports updates in the app, through that
+provider's own discovery, preview, fingerprint and PackageKit transaction. Its subject
+is the inventory record for the same host package and architecture; `allow_self` is
+the one difference and admits Housekeeper's package as subject and change, which every
+other check and execution refuses. Other sources would need privileges or a sandbox
+exit Housekeeper does not have (a Flatpak cannot replace its own deployment), so the
+Updates page's Details explains where to update instead, with a command, cached with
+the report. Housekeeper's record is never an Updates-page row or counted as needing its
+own updater. There is no separate check: Housekeeper follows the Updates page's policy.
+
+Updates-page checks also check Housekeeper's package, reusing the RPM provider's
+candidates when RPM apps were checked and otherwise querying once; its failure is logged
+and never makes the applications' check incomplete. A found update is cached with the
+report while the installed package's snapshot is unchanged, and appears as a row below a
+divider at the bottom of the sidebar rather than in the list; activating the row opens
+its confirmation, the update dialog
+with a restart notice. When the transaction verifies that Housekeeper's package changed,
+the window closes and `application.main` replaces the process with the same launcher,
+after synchronously releasing the application's bus name so the new instance becomes
+the primary one. No other work runs first: modules loaded after the update would come
+from the new files. A partial result that changed the package says so before restarting.
 
 ## Updates page and batches
 

@@ -5,6 +5,7 @@ src/housekeeper/platforms.py
 src/housekeeper/identity.py
 src/housekeeper/installations.py
 src/housekeeper/repositories.py
+src/housekeeper/self_update.py
 src/housekeeper/ui/repositories.py
 src/housekeeper/providers/install.py
 src/housekeeper/providers/web.py
@@ -12,6 +13,7 @@ src/housekeeper/ui/activity.py
 src/housekeeper/ui/install.py
 src/housekeeper/ui/appearance.py
 src/housekeeper/ui/disclosure.py
+src/housekeeper/ui/self_update.py
 src/housekeeper/ui/updates.py
 src/housekeeper/ui/update_confirmation.py
 src/housekeeper/ui/window.py

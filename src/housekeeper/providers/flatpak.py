@@ -421,7 +421,7 @@ class FlatpakProvider:
         if os.geteuid() == 0:
             raise ManagementError(_("Run Housekeeper as a regular desktop user."))
         if app.metadata.get("app_id") == APP_ID:
-            raise ManagementError(_("Update Housekeeper using your system package manager."))
+            raise ManagementError(_("Update Housekeeper's Flatpak with your software manager."))
         if app.installation:
             from housekeeper.attribution import revalidate
 

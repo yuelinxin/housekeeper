@@ -33,6 +33,7 @@ from housekeeper.ui.appearance import ICON_REFRESH_NOTICE, AppearanceGroup
 from housekeeper.ui.disclosure import DetailsDisclosure, details_label
 from housekeeper.ui.icons import icon_image, set_icon
 from housekeeper.ui.install import InstallPage
+from housekeeper.ui.self_update import SelfUpdateCard
 from housekeeper.ui.update_confirmation import configure_update_confirmation
 from housekeeper.ui.updates import UpdatesPage
 from housekeeper.updates import update_instructions
@@ -134,6 +135,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     split = Gtk.Template.Child()
     sidebar = Gtk.Template.Child()
     sidebar_header = Gtk.Template.Child()
+    sidebar_box = Gtk.Template.Child()
     search_button = Gtk.Template.Child()
     sidebar_button = Gtk.Template.Child()
     pages_sidebar = Gtk.Template.Child()
@@ -193,6 +195,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.maximize()
         self.section = "apps"
         self._build_overview()
+        # Below the pages: Housekeeper's own update, apart from other apps' updates.
+        self.self_update = SelfUpdateCard(self)
+        self.sidebar_box.append(self.self_update)
         self.install_page = InstallPage(self)
         self.updates_page = UpdatesPage(self)
         self.pages_sidebar.connect("row-activated", self._page_activated)
@@ -674,6 +679,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
                 if self.detail_app != match:
                     self.show_details(match, replace=True)
         self.updates_page.inventory_ready()
+        self.self_update.inventory_ready()
         if self.refresh_pending:
             self.refresh_pending = False
             self._schedule_refresh()
@@ -1213,6 +1219,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             "update": _("Checking for Updates"),
             "icon": _("Saving Application Icon"),
             "sources": _("Saving Software Sources"),
+            "self-update": _("Updating Housekeeper"),
         }
         self.activity_id = self.activities.start(
             kind,
@@ -1224,6 +1231,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self.manage_button.set_sensitive(False)
             self.open_button.set_sensitive(False)
             self.appearance_group.set_actions_sensitive(False)
+        self.self_update.sync_sensitive()
         return True
 
     def _guard(self, callback):
@@ -1249,6 +1257,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         pending = self.updates_page.inventory_pending
         self.confirm_dialog = None
         self.updates_page._selection_changed()
+        self.self_update.sync_sensitive()
         if self.detail_app:
             available = any(app.key == self.detail_app.key for app in self.records)
             self.manage_button.set_sensitive(available)
@@ -1266,6 +1275,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         available = app.update_action == UpdateAction.CHECK and any(
             installation_key(item.app) == installation_key(app) for item in self.updates_page.items
         )
+        own = self.self_update.item
+        available = available or (own is not None and own.app.key == app.key)
         self.update_badge.set_visible(available)
 
     def check_update(self, app):
@@ -1631,6 +1642,17 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             website="https://github.com/yuelinxin/housekeeper",
             issue_url="https://github.com/yuelinxin/housekeeper/issues",
         ).present()
+
+    def restart(self):
+        """Close and start again, so an updated Housekeeper runs its new code."""
+        application = self.get_application()
+        application.restart_requested = True
+        self.close()
+        if self.closed:
+            # Preferences or About must not keep the old version running.
+            application.quit()
+        else:
+            application.restart_requested = False
 
     def _close(self, _window):
         if self.operation_active or self.service.busy:

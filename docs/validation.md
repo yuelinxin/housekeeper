@@ -1,4 +1,21 @@
-# v0.3.0 validation
+# v0.3.1 validation
+
+## v0.3.1 release checks — October 12, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.3.1 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata validates.
+- On a Fedora 44 desktop, 764 tests pass with one dpkg test skipped. GTK smoke passes
+  in the Fedora 44 test container, including the sidebar's Housekeeper update row,
+  its confirmation, restart and cancellation, and Updates details for installations
+  Housekeeper cannot update.
+- On the real system, the installed RPM is detected as updatable and a source
+  checkout as a checkout; a real PackageKit check of the installed package reports it
+  current. In an isolated D-Bus session, the restarted process becomes the primary
+  instance. The pretend update in `tests/manual_self_update.py` ran its success, partial,
+  failed and Flatpak outcomes through the real service, and its success by hand.
+- Ruff lint and formatting and strict mypy for the seven configured modules pass.
+  Fedora 43/44 container builds, the isolated transaction suite, the Ubuntu 24.04
+  runtime floor and COPR builds run in CI for the release tag.
 
 ## v0.3.0 release checks — October 12, 2026
 

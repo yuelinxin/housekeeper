@@ -25,7 +25,11 @@ def assign_update_action(app, capabilities):
     app.update_action = UpdateAction.INSTRUCTIONS
     app.update_reason = ""
     if app.metadata.get("name") == "housekeeper" or app.metadata.get("app_id") == APP_ID:
-        app.update_reason = _("Update Housekeeper itself using your system package manager.")
+        # Offered on its own in the sidebar, since installing it restarts the app.
+        app.update_reason = _(
+            "Updates checks include Housekeeper itself. An available update appears in the "
+            "sidebar, or Details on Updates explains how to update this installation."
+        )
         return
     if app.attribution and app.attribution.state != AttributionState.CONFIRMED:
         app.update_reason = (

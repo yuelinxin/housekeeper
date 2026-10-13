@@ -35,6 +35,7 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 - Preview RPM and Flatpak updates and removal where supported, preserving personal data by default.
 - Choose whether to keep or delete user data when uninstalling a Flatpak app.
 - Choose manual or on-entry update checks, daily or weekly, for RPM and Flatpak.
+- Update Housekeeper itself from the sidebar; it restarts into the new version.
 - Move eligible AppImages and verified Housekeeper website launchers to Trash; use external managers for other web apps and Steam games.
 
 ## Current support
@@ -80,8 +81,9 @@ sudo dnf copr enable yuelinxin/housekeeper
 sudo dnf install housekeeper
 ```
 
-New releases are available through normal system updates, or run
-`sudo dnf upgrade housekeeper` to update Housekeeper directly.
+New releases are available through normal system updates. Update checks on the
+Updates page also look for a new Housekeeper package, which the sidebar then offers
+to install and restart into, or run `sudo dnf upgrade housekeeper`.
 To uninstall Housekeeper, run `sudo dnf remove housekeeper`.
 
 ## Build and run

@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.3.0
+Version:        0.3.1
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -44,7 +44,8 @@ Application details include software sizes, icon themes, custom launcher icons
 and restoration. Read-only attribution covers DEB, Pacman, APK and Snap packages.
 Native source labels follow the distribution; unsupported providers remain manual.
 Sort applications by name, size or last update, and configure update-check timing
-and participating RPM and Flatpak sources in Preferences.
+and participating RPM and Flatpak sources in Preferences. Update checks include
+Housekeeper itself, which installs its update and restarts from the sidebar.
 
 %prep
 %autosetup
@@ -73,6 +74,12 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Mon Oct 12 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.1-1
+- Check for Housekeeper's own update with the other apps and offer it in the sidebar.
+- Install Housekeeper's RPM update in the app and restart into the new version.
+- Explain in Updates details how to update installations Housekeeper cannot update.
+- Refresh the README screenshots.
+
 * Mon Oct 12 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.0-1
 - Add an Install Apps page searching Flatpak, native packages and Snap in one list.
 - Install downloaded AppImage, RPM, DEB, .flatpakref and .flatpak files; add web apps.

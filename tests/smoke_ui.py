@@ -2419,6 +2419,91 @@ def activate(app):
         assert selection.get_y() >= content.get_y() + content.get_height()
         assert selection.get_x() + selection.get_width() <= actions.get_x()
 
+    def self_update_item():
+        own = AppRecord(
+            "housekeeper-self",
+            "Housekeeper",
+            source=Source.RPM,
+            provider="rpm",
+            identity="housekeeper-0.3.0-1.noarch",
+            metadata={"name": "housekeeper", "arch": "noarch"},
+        )
+        target = "housekeeper;0.3.1-1;noarch;copr"
+        change = UpdateChange("housekeeper.noarch", target, "update", "copr", "0.3.0-1", "0.3.1-1")
+        return UpdateItem(
+            own,
+            UpdatePlan(own.key, "rpm", target, "System", "0.3.0-1", (change,), "fp", "Update"),
+            ("Housekeeper",),
+        )
+
+    def show_self_update():
+        close_messages()
+        window.set_size_request(1040, 720)
+        window.set_default_size(1040, 720)
+        card = window.self_update
+        assert not card.get_reveal_child()
+        # Reports that did not look for Housekeeper's update leave the card alone.
+        card.show_report(UpdateReport((), self_update=self_update_item()))
+        assert not card.get_reveal_child()
+        card.show_report(UpdateReport((), self_update=self_update_item(), self_checked=True))
+
+    def check_self_update():
+        capture(window, "self-update-sidebar.png")
+        window.set_size_request(360, 420)
+        card = window.self_update
+        item = card.item
+        own = item.app
+        assert card.get_reveal_child() and card.subtitle.get_label() == "0.3.0 → 0.3.1"
+        assert card.row.get_activatable() and card.get_parent() is window.sidebar_box
+        assert all(entry.app.key != own.key for entry in window.updates_page.items)
+        assert window._begin_operation(None, "update")
+        assert not card.row.get_activatable()
+        window._end_operation()
+        assert card.row.get_activatable()
+        executed, restarts = [], []
+        window.service.execute_self_update = lambda confirmed, _progress, done: (
+            executed.append(confirmed),
+            done(OperationResult(Outcome.SUCCESS, "Updated.", ("housekeeper.noarch",))),
+        )
+        with (
+            patch.object(window, "restart", lambda: restarts.append(True)),
+            patch.object(window.service, "check_running", lambda *_args: None),
+        ):
+            card.list.emit("row-activated", card.row)
+            dialog = window.confirm_dialog
+            assert dialog.get_heading() == "Update Housekeeper?"
+            assert "restarts when the update finishes" in dialog.get_body()
+            dialog.response("update")
+        assert executed == [item] and restarts == [True] and not window.operation_active
+        close_messages()
+        # A cancelled update keeps the offer and does not restart.
+        card.set_item(item)
+        window.service.execute_self_update = lambda _item, _progress, done: done(
+            OperationResult(Outcome.CANCELLED, "Stopped.")
+        )
+        with (
+            patch.object(window, "restart", lambda: restarts.append(True)),
+            patch.object(window, "refresh"),
+            patch.object(window.service, "check_running", lambda *_args: None),
+        ):
+            card.list.emit("row-activated", card.row)
+            window.confirm_dialog.response("update")
+        assert restarts == [True] and card.item is item and card.get_reveal_child()
+        close_messages()
+        # Installations Housekeeper cannot update explain how in the Updates details.
+        page = window.updates_page
+        saved_report = page.report
+        page._show_report(UpdateReport((), self_note="Use Flatpak.\n\nflatpak update example"))
+        assert "Use Flatpak." in page.details and page.empty_details.get_visible()
+        # A report that did not look for Housekeeper leaves the offer alone.
+        assert card.item is item and card.get_reveal_child()
+        if saved_report is not None:
+            page._show_report(saved_report)
+        # An offer whose package changed or disappeared is withdrawn.
+        card.set_item(item)
+        card.inventory_ready()
+        assert card.item is None
+
     def check_performance():
         assert window.source == "all", "Focus restoration changed the selected source"
         records = [
@@ -2812,6 +2897,8 @@ def activate(app):
             open_activity,
             finish_activity,
             clear_activity,
+            show_self_update,
+            check_self_update,
             check_performance,
             finish,
         ]

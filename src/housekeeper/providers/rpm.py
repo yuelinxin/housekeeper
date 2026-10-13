@@ -532,7 +532,9 @@ class RpmProvider:
             if (app.metadata.get("name"), app.metadata.get("arch")) in identities
         }
 
-    def prepare_update(self, app, inventory, progress, *, refresh=True, use_discovery=False):
+    def prepare_update(
+        self, app, inventory, progress, *, refresh=True, use_discovery=False, allow_self=False
+    ):
         self._validate_app(app)
         client, pk, gio, glib = self._client("update")
         self.cancel = gio.Cancellable()
@@ -545,7 +547,14 @@ class RpmProvider:
                     raise ManagementError(_("Check for updates before preparing this preview."))
                 candidates = self._discovered_updates
             return self._prepare_update(
-                app, inventory, progress, client, pk, refresh=refresh, available_updates=candidates
+                app,
+                inventory,
+                progress,
+                client,
+                pk,
+                refresh=refresh,
+                available_updates=candidates,
+                allow_self=allow_self,
             )
         except glib.Error as error:
             if self.cancel.is_cancelled():
@@ -555,10 +564,24 @@ class RpmProvider:
             ) from error
 
     def _prepare_update(
-        self, app, inventory, progress, client, pk, refresh, available_updates=None
+        self,
+        app,
+        inventory,
+        progress,
+        client,
+        pk,
+        refresh,
+        available_updates=None,
+        allow_self=False,
     ):
-        if app.metadata.get("name") == "housekeeper":
-            raise ManagementError(_("Update Housekeeper using your system package manager."))
+        # Housekeeper's own update restarts the app, so it is offered only on its own,
+        # never as an application or a dependency of another update.
+        if (app.metadata.get("name") == "housekeeper") != allow_self:
+            raise ManagementError(
+                _("Update Housekeeper from the sidebar or the main menu.")
+                if not allow_self
+                else _("This package is not Housekeeper.")
+            )
 
         def report(p, _kind, _data):
             self._update_progress(p, progress, _("Checking system package updates"))
@@ -625,9 +648,9 @@ class RpmProvider:
         changes = []
         for key, package in sorted(new.items()):
             previous = installed.get(key)
-            if key[0] == "housekeeper":
+            if key[0] == "housekeeper" and not allow_self:
                 raise ManagementError(
-                    _("This transaction would update Housekeeper. Use your package manager.")
+                    _("This transaction would update Housekeeper. Update Housekeeper first.")
                 )
             if previous and self._compare(package.get_version(), previous.get_version()) <= 0:
                 raise ManagementError(_("This transaction would downgrade or reinstall a package."))
@@ -687,7 +710,7 @@ class RpmProvider:
         )
         return UpdateCheckResult(UpdateState.AVAILABLE, plan)
 
-    def execute_update(self, app, plan, progress):
+    def execute_update(self, app, plan, progress, *, allow_self=False):
         self._validate_app(app)
         check_binding(app, plan)
         if plan.app_key != app.key or plan.provider != "rpm":
@@ -696,7 +719,9 @@ class RpmProvider:
         self.cancel = gio.Cancellable()
         if self.cancel_requested:
             self.cancel.cancel()
-        check = self._prepare_update(app, [app], progress, client, pk, refresh=False)
+        check = self._prepare_update(
+            app, [app], progress, client, pk, refresh=False, allow_self=allow_self
+        )
         if check.plan is None or check.plan.fingerprint != plan.fingerprint:
             raise ManagementError(
                 _("The update plan changed. Check updates and review a new preview.")

@@ -121,15 +121,50 @@ class UpdateCache:
             unsupported = data["unsupported"]
             if type(unsupported) is not int or unsupported < 0:
                 raise ValueError("Invalid unsupported count")
+            own, own_checked = self._load_self(data, current, saved, current_snapshot)
+            note = data.get("self_note", "")
+            if not isinstance(note, str):
+                raise ValueError("Invalid Housekeeper update note")
             stale = saved != current_snapshot
             return CachedUpdates(
-                UpdateReport(tuple(items), unsupported=unsupported), checked_at, stale, saved
+                UpdateReport(
+                    tuple(items),
+                    unsupported=unsupported,
+                    self_update=own,
+                    self_checked=own_checked,
+                    self_note=note,
+                ),
+                checked_at,
+                stale,
+                saved,
             )
         except FileNotFoundError:
             return None
         except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError) as error:
             LOG.warning("Could not load update cache: %s", error)
             return None
+
+    @staticmethod
+    def _load_self(data, current, saved, current_snapshot):
+        """Housekeeper's own update, kept only while its installed package is unchanged."""
+        from housekeeper.self_update import is_housekeeper
+
+        if "self" not in data:
+            return None, False
+        entry = data["self"]
+        if entry is None:
+            return None, True
+        key = entry["key"]
+        app = current.get(key)
+        if app is None or saved.get(key) != current_snapshot[key]:
+            # Installed or changed since the check; nothing is known about it now.
+            return None, False
+        plan = decode_plan(entry["plan"])
+        if plan.app_key != key or plan.provider != app.provider or not is_housekeeper(app):
+            raise ValueError("Invalid cached Housekeeper update")
+        if not has_application_update(app, plan):
+            return None, True
+        return UpdateItem(app, plan, (app.name,)), True
 
     def save(self, report, inventory, checked_at, *, providers=UPDATE_PROVIDERS):
         self._save(
@@ -173,6 +208,19 @@ class UpdateCache:
                         for item in report.items
                     ],
                     "unsupported": report.unsupported,
+                    **(
+                        {
+                            "self": {
+                                "key": report.self_update.app.key,
+                                "plan": asdict(report.self_update.plan),
+                            }
+                            if report.self_update
+                            else None
+                        }
+                        if report.self_checked
+                        else {}
+                    ),
+                    **({"self_note": report.self_note} if report.self_note else {}),
                 }
             ).encode("utf-8")
             if len(payload) > MAX_BYTES:

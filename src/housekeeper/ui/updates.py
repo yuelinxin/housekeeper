@@ -441,11 +441,14 @@ class UpdatesPage(Adw.NavigationPage):
                 )
                 % report.unsupported
             )
+        if report.self_note:
+            details.append(_("Updating Housekeeper") + "\n" + report.self_note)
         self.details = "\n\n".join(details)
         self.errors_button.set_visible(bool(details))
         self.empty_details.set_visible(bool(details))
         self.status.set_label(text)
         self._set_empty(empty_title)
+        self.window.self_update.show_report(report)
 
     def failed(self, error, *, revision=None):
         self.checking = False

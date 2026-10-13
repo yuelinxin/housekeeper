@@ -34,6 +34,12 @@ class UpdateReport:
     errors: tuple[str, ...] = ()
     cancelled: bool = False
     unsupported: int = 0
+    # Housekeeper's own update is offered apart from the list. `self_checked` tells a
+    # successful check finding nothing from one that did not look or failed.
+    self_update: UpdateItem | None = None
+    self_checked: bool = False
+    # How to update a Housekeeper installation it cannot update itself.
+    self_note: str = ""
 
 
 def installation_key(app):
@@ -92,11 +98,16 @@ class UpdateBatch:
             self.provider = provider if provider is not None else self.factory(app)
             return self.provider
 
-    def check(self, progress, providers=UPDATE_PROVIDERS):
+    def check(self, progress, providers=UPDATE_PROVIDERS, *, installation=None):
+        """Check the inventory; with an `installation`, Housekeeper's own update too."""
+        from housekeeper.self_update import installation_record, is_housekeeper
+
         groups, unsupported = {}, 0
         for app in self.inventory:
             if not app.visible:
                 continue
+            if is_housekeeper(app):
+                continue  # Offered on its own, never as a row of the list.
             if app.provider in UPDATE_PROVIDERS and app.provider not in providers:
                 continue
             if app.update_action != UpdateAction.CHECK:
@@ -109,7 +120,8 @@ class UpdateBatch:
         for apps in groups.values():
             source_apps.setdefault(discovery_key(apps[0]), []).append(apps[0])
         refreshed = False
-        total = len(groups)
+        own = installation_record(installation, self.inventory) if installation else None
+        total = len(groups) + (own is not None)
         if self.cancelled:
             return UpdateReport((), (), True, unsupported)
         if not total:
@@ -192,7 +204,54 @@ class UpdateBatch:
                 (index + 1) / total,
                 index + 1 < total,
             )
-        return UpdateReport(tuple(items), tuple(errors), False, unsupported)
+        if own is None:
+            note = ""
+            if installation is not None and not installation.updatable:
+                note = "\n\n".join(
+                    part for part in (installation.reason, installation.command) if part
+                )
+            return UpdateReport(tuple(items), tuple(errors), False, unsupported, self_note=note)
+        try:
+            own_update = self._check_self(
+                own, installation, discoveries, discovery_errors, refreshed, progress, total
+            )
+        except OperationCancelled:
+            return UpdateReport(tuple(items), tuple(errors), True, unsupported)
+        except Exception as error:
+            # Housekeeper's own check never makes the applications' check incomplete.
+            LOG.warning("Housekeeper's own update check failed: %s", error, exc_info=True)
+            return UpdateReport(tuple(items), tuple(errors), self.cancelled, unsupported)
+        progress(_("Checked Housekeeper"), 1.0, False)
+        return UpdateReport(
+            tuple(items), tuple(errors), self.cancelled, unsupported, own_update, True
+        )
+
+    def _check_self(
+        self, app, installation, discoveries, discovery_errors, refreshed, progress, total
+    ):
+        from housekeeper.self_update import SelfUpdater
+
+        label = _("Checking Housekeeper (%(index)d of %(total)d)") % {
+            "index": total,
+            "total": total,
+        }
+        progress(label, (total - 1) / total, True)
+        source = discovery_key(app)
+        if source in discovery_errors:
+            raise ManagementError(discovery_errors[source])
+        # Reuse the candidates the applications' check already fetched from this source.
+        discovery = discoveries.get(source)
+        provider = self._activate(app, discovery[0] if discovery else None)
+        kwargs = (
+            {"refresh": False, "use_discovery": True} if discovery else {"refresh": not refreshed}
+        )
+        return SelfUpdater(self.factory, self.inventory, installation).check(
+            lambda message, _fraction, can_cancel: progress(
+                f"{label}\n{message}" if message else label, (total - 1) / total, can_cancel
+            ),
+            provider=provider,
+            **kwargs,
+        )
 
     @staticmethod
     def _remaining_plan(original, fresh, verified):
