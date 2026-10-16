@@ -95,7 +95,7 @@ def rpm_update(monkeypatch):
     pk = NS(
         FilterEnum=NS(INSTALLED=1),
         ExitEnum=NS(SUCCESS=1, CANCELLED=2),
-        TransactionFlagEnum=NS(SIMULATE=2, ONLY_TRUSTED=1),
+        TransactionFlagEnum=NS(SIMULATE=2, ONLY_TRUSTED=1, ONLY_DOWNLOAD=3),
         InfoEnum=NS(
             UPDATING="updating", INSTALLING="installing", REMOVING="removing", BLOCKED="blocked"
         ),
@@ -109,6 +109,8 @@ def rpm_update(monkeypatch):
         backend.calls.append((flags, ids))
         if flags & (1 << pk.TransactionFlagEnum.SIMULATE):
             return Results(backend.preview)
+        if flags & (1 << pk.TransactionFlagEnum.ONLY_DOWNLOAD):
+            return Results(exit_code=backend.exit_code, error=backend.error)
         backend.deployed = tuple(
             f"{p.name}.{p.arch}" for p in backend.preview if p.info != "removing"
         )
@@ -147,6 +149,20 @@ def test_rpm_check_preview_and_dependency_update(rpm_update):
     assert result.outcome == Outcome.SUCCESS
     assert backend.refreshed == 1
     assert backend.calls[-1] == (2, ["example;2-1;x86_64;updates"])
+
+
+def test_rpm_download_fetches_trusted_targets_without_installing(rpm_update):
+    provider, app, backend = rpm_update
+    check = provider.prepare_update(app, [app], lambda *_: None)
+    provider.download_updates([check.plan, replace(check.plan, target="other")], lambda *_: None)
+    assert backend.calls[-1] == ((1 << 3) | (1 << 1), ["example;2-1;x86_64;updates", "other"])
+    assert not backend.deployed
+    backend.error = NS(get_details=lambda: "Mirror unavailable")
+    with pytest.raises(ManagementError, match="Mirror"):
+        provider.download_updates([check.plan], lambda *_: None)
+    provider.request_cancel()
+    with pytest.raises(OperationCancelled):
+        provider.download_updates([check.plan], lambda *_: None)
 
 
 def test_rpm_batch_queries_updates_once_and_only_previews_matching_desktop_apps(rpm_update):

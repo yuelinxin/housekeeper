@@ -1598,6 +1598,24 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             "notify::selected", lambda row, _pspec: interval.set_sensitive(row.get_selected() == 0)
         )
         page.add(updates)
+        updating = Adw.PreferencesGroup(title=_("Updating Apps"))
+        row = Adw.ComboRow(
+            title=_("Parallel Downloads"),
+            subtitle=_(
+                "System package apps that download at once, then install one at a time. "
+                "Flatpak apps download one at a time."
+            ),
+            model=Gtk.StringList.new(["1", "2", "3"]),
+        )
+        row.set_selected(self.settings.get_int("update-parallel-downloads") - 1)
+        row.connect(
+            "notify::selected",
+            lambda row, _pspec: self.settings.set_int(
+                "update-parallel-downloads", row.get_selected() + 1
+            ),
+        )
+        updating.add(row)
+        page.add(updating)
         installing = Adw.PreferencesGroup(title=_("Installing Apps"))
         preferences = ("flatpak", "native", "snap")
         row = Adw.ComboRow(

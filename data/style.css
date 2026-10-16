@@ -70,6 +70,17 @@ progressbar.update-progress > trough { min-width: 96px; }
 statuspage.page-status > scrolledwindow > viewport > box > clamp > box > .icon {
   -gtk-icon-size: 112px;
 }
+/* libadwaita tightens a status page and shrinks its title while it shows a spinner.
+   Keep that spacing always, with a title between its 181% and 136%, so the page
+   doesn't change around a search or update. */
+statuspage.page-status > scrolledwindow > viewport > box { margin: 24px 12px; border-spacing: 24px; }
+statuspage.page-status > scrolledwindow > viewport > box > clamp > box > .icon:not(:last-child) {
+  margin-bottom: 12px;
+}
+statuspage.page-status > scrolledwindow > viewport > box > clamp > box > .title {
+  font-weight: 800;
+  font-size: 158%;
+}
 .update-badge {
   border-radius: 999px;
   padding: 4px;

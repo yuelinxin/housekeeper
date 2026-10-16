@@ -215,7 +215,7 @@ class InstallPage(Adw.NavigationPage):
                 "install-apps-symbolic",
                 _("Search for an app, enter a website, or open a downloaded file."),
             ),
-            "searching": ("", None, ""),
+            "searching": (_("Searching for Apps"), None, ""),
             "empty": (
                 _("No Results Found"),
                 "edit-find-symbolic",
@@ -224,8 +224,9 @@ class InstallPage(Adw.NavigationPage):
             "error": (_("Search Failed"), "dialog-warning-symbolic", detail),
         }[state]
         self.placeholder.set_title(title)
-        self.placeholder.set_icon_name(icon)
+        # Clear the spinner first: libadwaita keeps its spinner style otherwise.
         self.spinner.set_active(searching)
+        self.placeholder.set_icon_name(icon)
         self.placeholder.set_description(GLib.markup_escape_text(description))
         self.placeholder.set_visible(True)
 

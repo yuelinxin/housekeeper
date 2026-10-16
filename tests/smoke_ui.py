@@ -225,7 +225,7 @@ def activate(app):
             # Snap is searched only where snapd runs.
             with patch("housekeeper.providers.snap.SNAP_SOCKET", Path("/nonexistent/snapd")):
                 page.search.set_text("fire")
-            assert not page.placeholder.get_title()
+            assert page.placeholder.get_title() == "Searching for Apps"
             assert page.spinner.active
             timers.pop()()
             text, order, found, finished, failed = searches[-1]
@@ -235,6 +235,8 @@ def activate(app):
                 found(source, (), None)
             finished()
             assert page.placeholder.get_title() == "No Results Found"
+            # The spinner's smaller status page style leaves with the spinner.
+            assert not page.placeholder.has_css_class("spinner")
             failed("Catalogue unavailable")
             assert page.placeholder.get_title() == "Search Failed"
             assert page.placeholder.get_description() == "Catalogue unavailable"
@@ -1757,6 +1759,10 @@ def activate(app):
         rows["Check Interval"].set_selected(1)
         assert Gio.Settings.new(APP_ID).get_string("update-check-interval") == "weekly"
         rows["Check Interval"].set_selected(0)
+        assert rows["Parallel Downloads"].get_selected() == 2  # 3 by default
+        rows["Parallel Downloads"].set_selected(0)
+        assert settings.get_int("update-parallel-downloads") == 1
+        rows["Parallel Downloads"].set_selected(2)
         source_rows = {
             widget.get_title(): widget
             for widget in descendants(preferences.sources_page)
@@ -2216,7 +2222,9 @@ def activate(app):
         checked_at = page.checked_at
         page.checks[1][1].set_active(True)
 
-        def execute_updates(items, _progress, done, *, item_progress, item_completed):
+        def execute_updates(items, _progress, done, *, item_progress, item_completed, downloads):
+            # The Preferences default: three package updates download at once.
+            assert downloads == 3
             calls.append(items)
             first, second = (item.app.key for item in items[:2])
             # The batch shows on its rows; the list stays in place, not a spinner.

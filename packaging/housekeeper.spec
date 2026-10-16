@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.3.2
+Version:        0.3.3
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -74,6 +74,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Thu Oct 15 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.3-1
+- Download up to three system package updates at once, set in Preferences.
+- Keep status page headings one size before and after a search or update.
+- Title the Install Apps search spinner "Searching for Apps".
+
 * Tue Oct 13 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.2-1
 - Show each app's progress on its Updates row instead of covering the page.
 - Remove updated apps from the Updates list as soon as each one finishes.

@@ -523,3 +523,67 @@ def test_batch_completes_items_a_preceding_update_satisfied():
         item_completed=completed.append,
     )
     assert completed == [(a.key,), (b.key,)]
+
+
+def download_batch(kinds, *, downloads, download=None):
+    """Run a batch of `kinds` (provider per item), recording the provider calls in order."""
+    records = [replace(app(f"{kind}{index}"), provider=kind) for index, kind in enumerate(kinds)]
+    calls = []
+
+    def default_download(plans, _progress):
+        calls.append(("download", tuple(p.app_key for p in plans)))
+
+    provider = NS(
+        download_updates=download or default_download,
+        prepare_update=lambda record, *_args, **_kwargs: UpdateCheckResult(
+            UpdateState.AVAILABLE, plan(record)
+        ),
+        execute_update=lambda record, *_: (
+            calls.append(("install", record.key)) or OperationResult(Outcome.SUCCESS, "Done")
+        ),
+    )
+    result = UpdateBatch(lambda _record: provider, records).execute(
+        [UpdateItem(r, plan(r), (r.name,)) for r in records], lambda *_: None, downloads=downloads
+    )
+    return result, calls
+
+
+def test_package_updates_download_in_groups_before_each_installs_in_turn():
+    result, calls = download_batch(
+        ["rpm", "flatpak", "rpm", "rpm", "rpm", "rpm", "rpm", "rpm"], downloads=3
+    )
+    assert result.outcome == Outcome.SUCCESS
+    assert calls == [
+        ("download", ("rpm0", "rpm2", "rpm3")),
+        ("install", "rpm0"),
+        ("install", "flatpak1"),
+        ("install", "rpm2"),
+        ("install", "rpm3"),
+        ("download", ("rpm4", "rpm5", "rpm6")),
+        ("install", "rpm4"),
+        ("install", "rpm5"),
+        ("install", "rpm6"),
+        # A last update alone gains nothing from downloading first.
+        ("install", "rpm7"),
+    ]
+
+
+def test_one_parallel_download_keeps_each_update_fetching_its_own():
+    _result, calls = download_batch(["rpm", "rpm", "rpm"], downloads=1)
+    assert [call[0] for call in calls] == ["install"] * 3
+
+
+def test_failed_group_download_lets_each_update_fetch_its_own():
+    def fail(*_args):
+        raise ManagementError("Mirror unavailable")
+
+    result, calls = download_batch(["rpm", "rpm", "rpm"], downloads=2, download=fail)
+    assert result.outcome == Outcome.SUCCESS and len(calls) == 3
+
+
+def test_cancelled_group_download_installs_nothing():
+    def cancel(*_args):
+        raise OperationCancelled("Cancelled")
+
+    result, calls = download_batch(["rpm", "rpm"], downloads=2, download=cancel)
+    assert result.outcome == Outcome.CANCELLED and not calls

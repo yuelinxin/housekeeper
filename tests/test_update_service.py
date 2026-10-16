@@ -162,7 +162,7 @@ def test_confirmed_update_waits_for_scan_without_being_rejected(service, monkeyp
     provider.execute_update = execute
     if batch:
 
-        def execute_batch(worker, *_args):
+        def execute_batch(worker, *_args, **_kwargs):
             assert worker.inventory == [app]
             return execute()
 

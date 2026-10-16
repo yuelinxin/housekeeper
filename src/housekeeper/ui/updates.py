@@ -636,6 +636,7 @@ class UpdatesPage(Adw.NavigationPage):
                 guard(self.finished),
                 item_progress=guard(self._item_progress),
                 item_completed=guard(self._item_completed),
+                downloads=self.window.settings.get_int("update-parallel-downloads"),
             )
 
         dialog.connect("response", self.window._guard(response))

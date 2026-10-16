@@ -1,4 +1,22 @@
-# v0.3.2 validation
+# v0.3.3 validation
+
+## v0.3.3 release checks — October 15, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.3.3 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata validates.
+- In the Fedora 44 test container, 762 tests pass with 10 optional tests skipped,
+  including RPM updates downloading in Parallel Downloads groups, a failed group
+  falling back to each update's own download, and a cancelled group installing
+  nothing. The container passes its clean build, GTK smoke, RPM install,
+  replacement and uninstall, and the isolated transaction suite. GTK smoke checks
+  the Parallel Downloads preference, its default of 3 reaching the update batch,
+  the Install Apps "Searching for Apps" title, and that the spinner's smaller status
+  page style leaves with the spinner.
+- On the Fedora 44 desktop's PackageKit dnf5 backend, an `ONLY_DOWNLOAD` update
+  fetched the package and its dependencies into the cache without installing them,
+  and repeating it reused the cached files.
+- Ruff lint and formatting and strict mypy pass. Fedora 43/44 container builds, the
+  Ubuntu 24.04 runtime floor and COPR builds run in CI for the release tag.
 
 ## v0.3.2 release checks — October 13, 2026
 

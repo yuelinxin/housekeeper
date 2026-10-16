@@ -451,8 +451,9 @@ before the completion callback.
 
 `test_batch_updates.py` covers duplicate installation grouping, separate installations,
 incomplete checks, cancellation, shared dependencies, changed sources or targets,
-stopping a batch after partial completion, and reporting each item's progress and
-completion as it happens. Service tests cover batch task exclusivity
+stopping a batch after partial completion, reporting each item's progress and
+completion as it happens, and downloading RPM updates in groups of the Parallel
+Downloads preference, falling back to each update's own download when a group fails. Service tests cover batch task exclusivity
 and cancellation before submission completes. Synthetic GTK smoke exercises the bottom
 sidebar row, per-app checkboxes, Update Selected/Update All confirmation, narrow layout,
 partial results, and navigation back to the inventory without executing package updates.

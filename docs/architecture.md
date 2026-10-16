@@ -660,3 +660,11 @@ confirmed changes may disappear from a later plan; the target, current applicati
 remaining operations, and source-configuration digest must still match. Providers then
 perform their own final validation. Unrelated external changes require a new check and
 confirmation. This is a series of transactions, without a batch-wide lock or rollback.
+
+The Parallel Downloads preference (1–3, default 3) lets RPM updates download
+together. Before an RPM update's re-preview, one PackageKit `ONLY_DOWNLOAD`
+transaction fetches it and the next RPM updates in the batch into PackageKit's
+cache, installing nothing; each update then rechecks, installs and verifies on its
+own, reusing those packages. A lone remaining update skips this step, and a failed
+group download is only logged, leaving each update to fetch its own. Flatpak updates
+download one at a time.

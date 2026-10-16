@@ -33,6 +33,16 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.3" date="2026-10-15" type="stable">
+      <description>
+        <p>Update several apps faster.</p>
+        <ul>
+          <li>System package updates download up to three at a time, then install one by one. Choose how many in Preferences.</li>
+          <li>Page headings no longer change size after a search or update.</li>
+          <li>Install Apps says when it is searching.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-10-13" type="stable">
       <description>
         <p>Keep using the Updates page while apps update.</p>

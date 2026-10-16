@@ -710,6 +710,34 @@ class RpmProvider:
         )
         return UpdateCheckResult(UpdateState.AVAILABLE, plan)
 
+    def download_updates(self, plans, progress):
+        """Download several confirmed updates together into PackageKit's cache.
+
+        Nothing is installed. Each update still rechecks, installs and verifies on its
+        own; its transaction then reuses the packages fetched here."""
+        client, pk, gio, glib = self._client("update")
+        self.cancel = gio.Cancellable()
+        if self.cancel_requested:
+            raise OperationCancelled(_("The update operation was cancelled."))
+
+        def report(p, _kind, _data):
+            self._update_progress(p, progress, _("Downloading system packages"))
+
+        flags = (1 << int(pk.TransactionFlagEnum.ONLY_DOWNLOAD)) | (
+            1 << int(pk.TransactionFlagEnum.ONLY_TRUSTED)
+        )
+        try:
+            result = client.update_packages(
+                flags, [plan.target for plan in plans], self.cancel, report, None
+            )
+        except glib.Error as error:
+            if self.cancel.is_cancelled():
+                raise OperationCancelled(_("The update operation was cancelled.")) from error
+            raise ManagementError(
+                _("PackageKit could not download these updates: ") + error.message
+            ) from error
+        self._check_update(result, pk)
+
     def execute_update(self, app, plan, progress, *, allow_self=False):
         self._validate_app(app)
         check_binding(app, plan)

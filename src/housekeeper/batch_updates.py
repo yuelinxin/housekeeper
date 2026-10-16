@@ -254,6 +254,26 @@ class UpdateBatch:
         )
 
     @staticmethod
+    def _download(provider, items, start, limit, downloaded, progress):
+        """Download the next `limit` system package updates together, from `start`'s.
+
+        Only an optimization: a failed download leaves each update to fetch its own."""
+        group = [
+            index
+            for index in range(start, len(items))
+            if items[index].app.provider == "rpm" and index not in downloaded
+        ][:limit]
+        downloaded.update(group)
+        if len(group) < 2:
+            return
+        try:
+            provider.download_updates([items[index].plan for index in group], progress)
+        except OperationCancelled:
+            raise
+        except Exception as error:
+            LOG.warning("Downloading %d updates together failed: %s", len(group), error)
+
+    @staticmethod
     def _remaining_plan(original, fresh, verified):
         # A preceding successful transaction may have updated a shared dependency.
         # Accept only its exact disappearance, with the original source configuration.
@@ -292,15 +312,17 @@ class UpdateBatch:
             )
         return fresh
 
-    def execute(self, items, progress, item_progress=None, item_completed=None):
+    def execute(self, items, progress, item_progress=None, item_completed=None, downloads=1):
         """Update `items` in order, stopping at the first failure.
 
         `item_progress(key, fraction)` follows the item being updated, with no fraction
         while its plan is rechecked or the manager is estimating. `item_completed(keys)`
-        names the records each finished update covers, as soon as it finishes.
+        names the records each finished update covers, as soon as it finishes. With
+        `downloads` above 1, that many system package updates download together before
+        the first of them installs.
         """
         completed, errors, hints, verified = [], [], [], {}
-        completed_app_keys = []
+        completed_app_keys, downloaded = [], set()
         outcome = Outcome.SUCCESS
         total = len(items)
         for index, item in enumerate(items):
@@ -337,6 +359,8 @@ class UpdateBatch:
                     completed.extend(item.names)
                     finish()
                     continue
+                if downloads > 1 and app.provider == "rpm" and index not in downloaded:
+                    self._download(provider, items, index, downloads, downloaded, preparing)
                 kwargs = {"refresh": False} if app.provider == "rpm" else {}
                 check = provider.prepare_update(app, self.inventory, preparing, **kwargs)
                 if check.state != UpdateState.AVAILABLE or check.plan is None:
