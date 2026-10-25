@@ -1084,7 +1084,12 @@ def test_a_flatpakref_installs_the_reviewed_bytes_and_may_add_its_source(monkeyp
 def package_file_backend(monkeypatch, native="rpm"):
     pk = NS(
         TransactionFlagEnum=NS(ONLY_TRUSTED=1),
-        ErrorEnum=NS(BAD_GPG_SIGNATURE=10, MISSING_GPG_SIGNATURE=11, GPG_FAILURE=12),
+        ErrorEnum=NS(
+            BAD_GPG_SIGNATURE=10,
+            MISSING_GPG_SIGNATURE=11,
+            GPG_FAILURE=12,
+            CANNOT_INSTALL_REPO_UNSIGNED=13,
+        ),
         client_error_quark=lambda: GLib.quark_from_string("pk-client-error-quark"),
     )
     client = Mock()
@@ -1124,8 +1129,88 @@ def test_an_unverified_package_file_needs_explicit_consent(monkeypatch, tmp_path
     with pytest.raises(ManagementError, match="Allow Unverified Package"):
         Installer().install(InstallRequest("file", package=package), lambda *_: None)
     assert client.install_files.call_args.args[0] == 1 << 1  # Only trusted packages.
+    # PackageKit's dnf5 backend refuses any local file under ONLY_TRUSTED with its own code.
+    client.install_files.side_effect = GLib.Error.new_literal(
+        pk.client_error_quark(),
+        "The following packages cannot be authenticated:\nnotes-0:2.0-1.x86_64",
+        0xFF + 13,
+    )
+    with pytest.raises(ManagementError, match="Allow Unverified Package"):
+        Installer().install(InstallRequest("file", package=package), lambda *_: None)
     client.install_files.side_effect = None
     result = Installer().install(
         InstallRequest("file", package=package, untrusted=True), lambda *_: None
     )
     assert result.outcome == Outcome.SUCCESS and client.install_files.call_args.args[0] == 0
+
+
+def test_an_installed_package_file_is_moved_to_the_trash_only_when_asked(monkeypatch, tmp_path):
+    from housekeeper.installations import file_fingerprint
+
+    client, _pk = package_file_backend(monkeypatch)
+    trashed = []
+    monkeypatch.setattr("housekeeper.installations.trash_file", trashed.append)
+    path = tmp_path / "notes.rpm"
+    path.write_bytes(b"rpm")
+    package = LocalPackage("rpm", str(path), "notes", "notes", fingerprint=file_fingerprint(path))
+    Installer().install(InstallRequest("file", package=package), lambda *_: None)
+    assert not trashed
+    request = InstallRequest("file", package=package, trash_file=True)
+    result = Installer().install(request, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS and trashed == [str(path)]
+    assert "moved to the Trash" in result.message
+    # A failed install keeps the file.
+    trashed.clear()
+    client.install_files.side_effect = GLib.Error.new_literal(
+        GLib.quark_from_string("other"), "No space", 1
+    )
+    with pytest.raises(GLib.Error):
+        Installer().install(request, lambda *_: None)
+    assert not trashed
+
+
+def test_a_trash_failure_or_changed_file_keeps_the_installation(monkeypatch, tmp_path):
+    from housekeeper.installations import file_fingerprint
+
+    package_file_backend(monkeypatch)
+    path = tmp_path / "notes.rpm"
+    path.write_bytes(b"rpm")
+    package = LocalPackage("rpm", str(path), "notes", "notes", fingerprint=file_fingerprint(path))
+    request = InstallRequest("file", package=package, trash_file=True)
+
+    def refuse(_path):
+        raise GLib.Error.new_literal(Gio.io_error_quark(), "No trash here", 15)
+
+    monkeypatch.setattr("housekeeper.installations.trash_file", refuse)
+    result = Installer().install(request, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS and "No trash here" in result.message
+    trashed = []
+    monkeypatch.setattr("housekeeper.installations.trash_file", trashed.append)
+    # The file was replaced after it was installed (here, during the install).
+    real = backend.install_package_file
+
+    def replaced(*args):
+        outcome = real(*args)
+        path.write_bytes(b"different rpm")
+        return outcome
+
+    monkeypatch.setattr(backend, "install_package_file", replaced)
+    result = Installer().install(request, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS and not trashed and path.exists()
+    assert "so it was kept" in result.message
+
+
+def test_an_installed_appimage_source_is_moved_to_the_trash(local_install, monkeypatch):
+    root, installer = local_install
+    trashed = []
+    monkeypatch.setattr("housekeeper.installations.trash_file", trashed.append)
+    image = root / "Notes_x86_64.AppImage"
+    image.write_bytes(image_bytes())
+    request = InstallRequest("appimage", str(image), trash_file=True)
+    result = installer.install(request, lambda *_: None)
+    assert result.outcome == Outcome.SUCCESS and trashed == [str(image)]
+    # Web apps have no file to remove.
+    result = installer.install(
+        InstallRequest("web", "example.org/notes", trash_file=True), lambda *_: None
+    )
+    assert result.outcome == Outcome.SUCCESS and trashed == [str(image)]

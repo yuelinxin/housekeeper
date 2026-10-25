@@ -1633,6 +1633,24 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             ),
         )
         installing.add(row)
+        row = Adw.SwitchRow(
+            title=_("Allow Unverified Packages"),
+            subtitle=_(
+                "Start package files with Allow Unverified Package on. Each install still "
+                "asks for administrator authorization."
+            ),
+        )
+        self.settings.bind("install-allow-unverified", row, "active", Gio.SettingsBindFlags.DEFAULT)
+        installing.add(row)
+        row = Adw.SwitchRow(
+            title=_("Move Installed Files to Trash"),
+            subtitle=_(
+                "After a package, Flatpak or AppImage file installs, move the file you "
+                "opened to the Trash."
+            ),
+        )
+        self.settings.bind("install-trash-file", row, "active", Gio.SettingsBindFlags.DEFAULT)
+        installing.add(row)
         page.add(installing)
         window.add(page)
         window.sources_page = SoftwareSourcesPage(self, window)

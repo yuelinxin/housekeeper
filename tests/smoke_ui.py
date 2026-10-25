@@ -694,6 +694,22 @@ def activate(app):
             version="2.0-1 · x86_64",
             fingerprint=(1,),
         )
+        # The preference starts each package file with the switch on.
+        window.settings.set_boolean("install-allow-unverified", True)
+        with patch.object(window.service, "inspect_install_file") as inspect:
+            page.open_file(path)
+            inspect.call_args.args[1](package)
+            row = window.navigation.get_visible_page().untrusted_row
+            assert row.get_active()
+        # The open page follows the preference, but its own switch is not saved.
+        window.settings.set_boolean("install-allow-unverified", False)
+        assert not row.get_active()
+        window.settings.set_boolean("install-allow-unverified", True)
+        assert row.get_active()
+        row.set_active(False)
+        assert window.settings.get_boolean("install-allow-unverified")
+        window.settings.reset("install-allow-unverified")
+        window.navigation.pop()
         with patch.object(window.service, "inspect_install_file") as inspect:
             page.open_file(path)
             details = window.navigation.get_visible_page()
@@ -711,12 +727,14 @@ def activate(app):
             details.install_button.emit("clicked")
             request = install.call_args.args[0]
             assert request.source == "file" and request.package == install_fixture["package"]
-            assert not request.untrusted
+            assert not request.untrusted and not request.trash_file
             with patch.object(window, "message"), patch.object(window, "refresh"):
                 install.call_args.args[2](OperationResult(Outcome.FAILED, "Untrusted"))
             details.untrusted_row.set_active(True)
+            window.settings.set_boolean("install-trash-file", True)
             details.install_button.emit("clicked")
-            assert install.call_args.args[0].untrusted
+            assert install.call_args.args[0].untrusted and install.call_args.args[0].trash_file
+            window.settings.reset("install-trash-file")
             with patch.object(window, "message"), patch.object(window, "refresh"):
                 install.call_args.args[2](OperationResult(Outcome.CANCELLED, "Cancelled"))
         window.navigation.pop()

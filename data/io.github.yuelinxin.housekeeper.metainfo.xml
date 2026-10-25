@@ -33,6 +33,16 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.4" date="2026-10-25" type="stable">
+      <description>
+        <p>Install downloaded files more easily.</p>
+        <ul>
+          <li>When a downloaded RPM file is refused as unverified, Housekeeper explains how to install it instead of showing the package manager's error.</li>
+          <li>A new preference turns on Allow Unverified Package for every package file. Each install still asks for administrator authorization.</li>
+          <li>A new preference moves package, Flatpak and AppImage files to the Trash after they install. It is off by default.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-10-15" type="stable">
       <description>
         <p>Update several apps faster.</p>

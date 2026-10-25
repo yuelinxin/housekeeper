@@ -1,4 +1,24 @@
-# v0.3.3 validation
+# v0.3.4 validation
+
+## v0.3.4 release checks — October 25, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.3.4 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata validates.
+- On a Fedora 44 desktop, 774 tests pass with one dpkg test skipped, including the
+  dnf5 backend's `CANNOT_INSTALL_REPO_UNSIGNED` naming Allow Unverified Package, and
+  Move Installed Files to Trash for package files and AppImages: only after success,
+  never for a file changed during installation, and noting a Trash failure without
+  failing the install.
+- On the Fedora 44 desktop's PackageKit 1.4.0 dnf5 backend, `InstallFiles` with
+  `ONLY_TRUSTED` refused a local RPM whose signing key was not imported as
+  `CANNOT_INSTALL_REPO_UNSIGNED`; a simulated install without it succeeded.
+- The Fedora 44 test container passes its clean build, GTK smoke, RPM install,
+  replacement and uninstall, and the isolated transaction suite. GTK smoke checks
+  that Allow Unverified Packages starts the per-file switch on and follows the
+  preference while the page is open without saving the per-file choice, and that
+  Move Installed Files to Trash reaches the install request.
+- Ruff lint and formatting and strict mypy pass. Fedora 43/44 container builds, the
+  Ubuntu 24.04 runtime floor and COPR builds run in CI for the release tag.
 
 ## v0.3.3 release checks — October 15, 2026
 

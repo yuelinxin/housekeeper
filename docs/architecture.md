@@ -150,7 +150,12 @@ offering the app, each Flatpak installation and remote separately, ordered by th
 Preferred Source setting (Flatpak by default). Web apps take a URL, name, browser and
 icon; AppImages a file, name and icon. Package files are installed with
 `ONLY_TRUSTED` unless Allow Unverified Package is on, which PackageKit authorizes
-separately; a signature rejection names that switch. Flatpak files choose an
+separately; the Allow Unverified Packages preference starts that switch on. A
+signature rejection names the switch and the preference; PackageKit's dnf5 backend
+rejects every local file under `ONLY_TRUSTED` as `CANNOT_INSTALL_REPO_UNSIGNED`.
+With Move Installed Files to Trash on, a package, Flatpak or AppImage file that
+installed successfully is moved to the Trash if its fingerprint still matches; a
+changed file is kept, and a Trash failure is noted without failing the install. Flatpak files choose an
 installation (the user's first) and may add the source they name, or one for their
 runtime, which the page discloses beforehand alongside missing signing keys and
 bundles without an update source. A failed or cancelled installation keeps the

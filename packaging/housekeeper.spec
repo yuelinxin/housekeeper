@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.3.3
+Version:        0.3.4
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -74,6 +74,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Sun Oct 25 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.4-1
+- Explain how to install a package file the dnf5 backend refuses as unauthenticated.
+- Add an Allow Unverified Packages preference for package files.
+- Add an optional Move Installed Files to Trash preference.
+
 * Thu Oct 15 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.3-1
 - Download up to three system package updates at once, set in Preferences.
 - Keep status page headings one size before and after a search or update.

@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -77,6 +77,10 @@ def file_fingerprint(path):
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
 
 
+def trash_file(path):
+    Gio.File.new_for_path(path).trash(None)
+
+
 def read_small_file(path, limit=MAX_REF_SIZE):
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC), "rb") as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
@@ -124,6 +128,8 @@ class InstallRequest:
     context: str = ""
     # Let PackageKit install a package file not signed by a trusted key.
     untrusted: bool = False
+    # Move the opened package, Flatpak or AppImage file to the Trash after it installs.
+    trash_file: bool = False
 
 
 @dataclass(frozen=True)
@@ -384,8 +390,10 @@ class Installer:
             if not unchanged:
                 raise ManagementError(_("The file changed after it was opened. Open it again."))
             if package.kind in {"rpm", "deb"}:
-                return install_package_file(self, request, progress)
-            return install_flatpak_file(self, request, progress)
+                result = install_package_file(self, request, progress)
+            else:
+                result = install_flatpak_file(self, request, progress)
+            return self._trashed(request, result, package.path, package.fingerprint)
         if request.source not in {"web", "appimage"}:
             candidate = request.candidate
             if candidate is None or candidate.source != request.source:
@@ -395,6 +403,12 @@ class Installer:
             if request.source == "flatpak":
                 return install_flatpak(self, candidate, progress)
             return install_package(self, candidate, progress)
+        fingerprint = None
+        if request.source == "appimage" and request.trash_file:
+            try:
+                fingerprint = file_fingerprint(request.value)
+            except (OSError, ManagementError):
+                pass
         created = []
         try:
             add = self._web if request.source == "web" else self._appimage
@@ -404,9 +418,32 @@ class Installer:
             for icon in created:
                 icon.unlink(missing_ok=True)
             raise
-        return OperationResult(
+        result = OperationResult(
             Outcome.SUCCESS, _("The application was added to your app menu."), (str(target),)
         )
+        if request.source == "appimage":
+            return self._trashed(request, result, request.value, fingerprint)
+        return result
+
+    def _trashed(self, request, result, path, fingerprint):
+        """Move the installed file to the Trash, only if it is still the file installed."""
+        if not request.trash_file or result.outcome != Outcome.SUCCESS:
+            return result
+        try:
+            unchanged = fingerprint is not None and file_fingerprint(path) == fingerprint
+            if unchanged:
+                trash_file(path)
+        except (OSError, GLib.Error, ManagementError) as error:
+            note = _("The installed file could not be moved to the Trash: %s") % (
+                getattr(error, "message", None) or error
+            )
+        else:
+            note = (
+                _("The installed file was moved to the Trash.")
+                if unchanged
+                else _("The file changed during installation, so it was kept.")
+            )
+        return replace(result, message=result.message + " " + note)
 
     def _web(self, request, progress, created):
         # Report at once, like every other source, so Cancel is offered while this runs.

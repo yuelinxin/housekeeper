@@ -680,7 +680,14 @@ def install_flatpak_file(worker, request, progress):
     return run_flatpak(worker, installation, add, package.title, progress, new_remotes=True)
 
 
-SIGNATURE_ERRORS = ("BAD_GPG_SIGNATURE", "MISSING_GPG_SIGNATURE", "GPG_FAILURE")
+# The dnf5 backend rejects every package from a local file under ONLY_TRUSTED, signed or
+# not, as CANNOT_INSTALL_REPO_UNSIGNED.
+SIGNATURE_ERRORS = (
+    "BAD_GPG_SIGNATURE",
+    "MISSING_GPG_SIGNATURE",
+    "GPG_FAILURE",
+    "CANNOT_INSTALL_REPO_UNSIGNED",
+)
 
 
 def signature_rejected(pk, code):
@@ -731,7 +738,8 @@ def install_package_file(worker, request, progress):
 
     untrusted = _(
         "The package is not signed by a key this system trusts. To install it anyway, "
-        "turn on Allow Unverified Package."
+        "turn on Allow Unverified Package, or Allow Unverified Packages in Preferences "
+        "→ Installing Apps."
     )
     progress(_("Installing %s") % package.name, None, True)
     worker.check_cancelled()

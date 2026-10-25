@@ -722,6 +722,14 @@ class InstallDetailsPage(Adw.NavigationPage):
                     "Asks for administrator authorization."
                 ),
             )
+            # Follow the preference, even when it changes while this page is open, without
+            # saving a choice made for this one file.
+            self.owner.settings.bind(
+                "install-allow-unverified",
+                self.untrusted_row,
+                "active",
+                Gio.SettingsBindFlags.GET,
+            )
             self.group.add(self.untrusted_row)
         self._show_file_warning(package)
         self.group.set_description(_("Required dependencies are installed automatically."))
@@ -876,7 +884,11 @@ class InstallDetailsPage(Adw.NavigationPage):
             )
         elif self.kind == "appimage":
             request = InstallRequest(
-                "appimage", self.file, self.name.get_text(), icon=self.icon_file
+                "appimage",
+                self.file,
+                self.name.get_text(),
+                icon=self.icon_file,
+                trash_file=self.owner.settings.get_boolean("install-trash-file"),
             )
         elif self.kind == "file":
             package = self.package
@@ -888,6 +900,7 @@ class InstallDetailsPage(Adw.NavigationPage):
                 if flatpak
                 else "",
                 untrusted=not flatpak and self.untrusted_row.get_active(),
+                trash_file=self.owner.settings.get_boolean("install-trash-file"),
             )
         else:
             request = InstallRequest(candidate.source, candidate=candidate)

@@ -35,6 +35,8 @@
       <default>'flatpak'</default>
       <summary>Preferred source when several offer an app to install</summary>
     </key>
+    <key name="install-trash-file" type="b"><default>false</default><summary>Move an installed package, Flatpak or AppImage file to the Trash</summary></key>
+    <key name="install-allow-unverified" type="b"><default>false</default><summary>Turn on Allow Unverified Package for every package file</summary></key>
     <key name="window-width" type="i"><range min="360" max="10000"/><default>1040</default><summary>Window width</summary></key>
     <key name="window-height" type="i"><range min="420" max="10000"/><default>720</default><summary>Window height</summary></key>
     <key name="maximized" type="b"><default>false</default><summary>Whether the window is maximized</summary></key>
