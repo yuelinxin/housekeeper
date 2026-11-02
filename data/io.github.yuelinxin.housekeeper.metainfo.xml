@@ -33,6 +33,16 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.5" date="2026-11-01" type="stable">
+      <description>
+        <p>Open downloaded files with Housekeeper.</p>
+        <ul>
+          <li>Package, Flatpak and AppImage files can be opened with Housekeeper from a file manager.</li>
+          <li>Dragging a file over Install Apps shows where to drop it.</li>
+          <li>Installing, updating and removing an app shows a progress bar instead of a spinner.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.4" date="2026-10-25" type="stable">
       <description>
         <p>Install downloaded files more easily.</p>

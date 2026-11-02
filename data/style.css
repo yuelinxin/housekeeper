@@ -81,6 +81,16 @@ statuspage.page-status > scrolledwindow > viewport > box > clamp > box > .title 
   font-weight: 800;
   font-size: 158%;
 }
+/* Install Apps covers its content while a file is dragged over it. */
+.drop-overlay { background: @window_bg_color; }
+.drop-zone {
+  margin: 12px;
+  border: 2px dashed alpha(@accent_color, 0.6);
+  border-radius: 12px;
+  background: alpha(@accent_bg_color, 0.08);
+}
+.drop-zone .icon,
+.drop-zone .title { color: @accent_color; }
 .update-badge {
   border-radius: 999px;
   padding: 4px;

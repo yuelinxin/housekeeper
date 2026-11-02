@@ -341,6 +341,7 @@ def activate(app):
         assert details.progress.get_visible() and not details.install_button.get_visible()
         assert details.progress.label.get_label() == "Downloading packages"
         assert details.progress.label.get_tooltip_text() == "Installing Firefox"
+        assert details.progress.bar.get_fraction() == 0.4
         assert details.progress.cancel.get_sensitive()
         assert list(Gtk.Window.get_toplevels()) == windows
         install_fixture["install"] = install
@@ -637,6 +638,10 @@ def activate(app):
         # Several pages open and close within this step; skip their transitions.
         window.navigation.set_animate_transitions(False)
         window.navigation.pop()
+        # Dragging a file over the page shows where to drop it, ahead of the search field.
+        drop = next(c for c in page.observe_controllers() if isinstance(c, Gtk.DropTarget))
+        assert drop.get_propagation_phase() == Gtk.PropagationPhase.CAPTURE
+        assert not page.drop_overlay.get_visible()
         # Dropping a file other than an AppImage opens nothing.
         assert not page._dropped(None, Gio.File.new_for_path("/tmp/notes.txt"), 0, 0)
         assert window.navigation.get_visible_page() is page
@@ -677,6 +682,15 @@ def activate(app):
                 "software-sources", import_file="/tmp/example.flatpakrepo"
             )
         path = str(Path(cache_directory.name) / "notes-2.0-1.x86_64.rpm")
+        # A file opened with Housekeeper from elsewhere shows on Install Apps.
+        window._source_activated(window.sidebar, window.sidebar.get_row_at_index(0))
+        with patch.object(window.service, "inspect_install_file") as inspect:
+            window.open_install_file(path)
+            assert window.section == "install"
+            assert window.navigation.get_navigation_stack()[0] is page
+            assert window.navigation.get_visible_page().kind == "file"
+            assert inspect.call_args.args[0] == path
+        window.navigation.pop()
         with patch.object(window.service, "inspect_install_file") as inspect:
             assert page.open_file(path)
             details = window.navigation.get_visible_page()

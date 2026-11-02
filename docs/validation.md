@@ -1,4 +1,19 @@
-# v0.3.4 validation
+# v0.3.5 validation
+
+## v0.3.5 release checks — November 1, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.3.5 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata and the desktop file
+  validate, and every MIME type the desktop file lists is in shared-mime-info.
+- In the Fedora 44 test container, 774 tests pass with one dpkg test skipped, and GTK
+  smoke passes. It checks that install progress shows the activity's fraction on a
+  progress bar, that the file drop target runs ahead of the search field with its
+  drop area hidden until a drag, and that a file opened with Housekeeper shows its
+  install page over Install Apps.
+- Launching `housekeeper` with an AppImage path as a regular user opened Install Apps
+  with that AppImage's install page.
+- Ruff lint and formatting pass. Fedora 43/44 container builds, the Ubuntu 24.04
+  runtime floor, strict mypy and COPR builds run in CI for the release tag.
 
 ## v0.3.4 release checks — October 25, 2026
 

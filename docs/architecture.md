@@ -135,7 +135,8 @@ so its page opens on it with View Details, which opens the installed app's own p
 over the install page; another source can still be chosen and installed. An installed
 copy the inventory does not list (a package without a desktop entry) shows Installed
 and offers nothing. The installer refuses a candidate flagged installed.
-Install from File… (on the empty search page) and dropping a file onto the page accept AppImages, native
+Install from File… (on the empty search page), dropping a file onto the page and opening a
+file with Housekeeper (from a file manager's Open With) accept AppImages, native
 packages (`.rpm` or `.deb`, matching the host), `.flatpakref` files and `.flatpak`
 bundles; a `.flatpakrepo` opens Software Sources, which asks which installation takes it
 when more than one can. Package and Flatpak files are read on the search worker before

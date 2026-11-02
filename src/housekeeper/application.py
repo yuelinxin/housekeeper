@@ -45,7 +45,8 @@ def main(argv=None):
 
     class Application(Adw.Application):
         def __init__(self):
-            super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+            # Files opened with Housekeeper, such as a package from the file manager.
+            super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
             self.icon_settings = None
             self.icon_refresh = 0
             # Set after Housekeeper updated itself; main() then starts the new version.
@@ -91,6 +92,12 @@ def main(argv=None):
                     theme.set_search_path([icon_dir, *theme.get_search_path()])
                 window = HousekeeperWindow(self, settings)
             window.present()
+
+        def do_open(self, files, _count, _hint):
+            self.activate()
+            # Each file's page reads it on the one search worker, so later files would
+            # cancel earlier ones; open only the first.
+            self.get_active_window().open_install_file(files[0].get_path())
 
     application = Application()
     status = application.run(argv)

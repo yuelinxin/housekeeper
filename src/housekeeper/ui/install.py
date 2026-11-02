@@ -121,7 +121,22 @@ class InstallPage(Adw.NavigationPage):
         # including on return from an install page.
         self.connect("shown", lambda _page: self.search.grab_focus())
         scroll, content = list_body()
-        toolbar.set_content(scroll)
+        # A file dragged over the page covers it with where to drop it.
+        overlay = Gtk.Overlay(child=scroll)
+        toolbar.set_content(overlay)
+        self.drop_zone = Adw.StatusPage(
+            icon_name="install-apps-symbolic",
+            title=_("Drop to Install"),
+            description=_("AppImages, packages and Flatpak files"),
+            hexpand=True,
+            vexpand=True,
+        )
+        self.drop_zone.add_css_class("page-status")
+        self.drop_zone.add_css_class("drop-zone")
+        self.drop_overlay = Gtk.Box(visible=False)
+        self.drop_overlay.add_css_class("drop-overlay")
+        self.drop_overlay.append(self.drop_zone)
+        overlay.add_overlay(self.drop_overlay)
         self.search = Gtk.SearchEntry(
             placeholder_text=_("Search apps, or enter a website address"), hexpand=True
         )
@@ -171,7 +186,13 @@ class InstallPage(Adw.NavigationPage):
         self.placeholder.set_child(placeholder_box)
         content.append(self.placeholder)
         drop = Gtk.DropTarget.new(Gio.File, Gdk.DragAction.COPY)
+        # Ahead of the search field, which would take the file's path as text.
+        drop.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         drop.connect("drop", self._dropped)
+        drop.connect(
+            "notify::current-drop",
+            lambda target, _p: self.drop_overlay.set_visible(target.get_current_drop() is not None),
+        )
         self.add_controller(drop)
         window.settings.connect(
             "changed::install-source-preference", lambda *_: self._query_changed(self.search)
@@ -213,7 +234,7 @@ class InstallPage(Adw.NavigationPage):
             "idle": (
                 _("Find Apps to Install"),
                 "install-apps-symbolic",
-                _("Search for an app, enter a website, or open a downloaded file."),
+                _("Search for an app, enter a website, or open or drop a downloaded file."),
             ),
             "searching": (_("Searching for Apps"), None, ""),
             "empty": (

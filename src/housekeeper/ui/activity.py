@@ -255,12 +255,15 @@ def cancel_pill(cancel):
 
 
 class ActivityProgress(Gtk.Box):
-    """A spinner for the running activity a page started; it never blocks the page."""
+    """A progress bar for the running activity a page started; it never blocks the page."""
 
     def __init__(self, log, cancel, match, page, **kwargs):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12, visible=False, **kwargs)
-        self.spinner = spinner(width_request=48, height_request=48, halign=Gtk.Align.CENTER)
-        self.append(self.spinner)
+        # The Updates page's bar, so progress looks the same wherever it shows.
+        # Narrower than the message under it, about as wide as the buttons it replaces.
+        self.bar = ProgressBar(margin_top=12, width_request=200, halign=Gtk.Align.CENTER)
+        self.bar.add_css_class("update-progress")
+        self.append(self.bar)
         # Long messages are cut short instead of widening the page.
         self.label = Gtk.Label(ellipsize=Pango.EllipsizeMode.END, max_width_chars=1)
         self.label.add_css_class("dim-label")
@@ -271,6 +274,8 @@ class ActivityProgress(Gtk.Box):
 
     def _show(self, activity):
         if activity is not None:
+            self.bar.show_fraction(activity.fraction)
+            self.bar.update_property([Gtk.AccessibleProperty.LABEL], [activity.title])
             self.label.set_label(activity.detail or activity.title)
             self.label.set_tooltip_text(activity.title)
             # Unavailable phases dim Cancel rather than hide it, so it does not flash.

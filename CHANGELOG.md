@@ -1,13 +1,10 @@
 # Changelog
 
-## 0.3.4 — 2026-10-25
+## 0.3.5 — 2026-11-01
 
-- Explain how to install an RPM file that PackageKit's dnf5 backend refuses as
-  unauthenticated, instead of showing the backend's raw error. That backend refuses
-  every local package file unless Allow Unverified Package is on.
-- Add an Allow Unverified Packages preference, under Installing Apps, that starts the
-  Allow Unverified Package switch on for every package file (off by default). Each
-  install still asks for administrator authorization.
-- Add a Move Installed Files to Trash preference, under Installing Apps (off by
-  default). After a package, Flatpak or AppImage file installs successfully, the file
-  you opened goes to the Trash, unless it changed during installation.
+- Open package, Flatpak and AppImage files with Housekeeper from a file manager's
+  Open With. The file opens on Install Apps, as with Install from File….
+- Show a drop area while a file is dragged over Install Apps, and take the drop ahead
+  of the search field, which inserted the file's path as text.
+- Show the progress of installing an app, and of updating or removing one from its
+  page, as a progress bar like the Updates page's, instead of a spinner.

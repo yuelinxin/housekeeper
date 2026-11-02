@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.3.4
+Version:        0.3.5
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -74,6 +74,11 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Sun Nov 01 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.5-1
+- Open package, Flatpak and AppImage files with Housekeeper from a file manager.
+- Show a drop area when a file is dragged over Install Apps.
+- Show install and app progress as a progress bar.
+
 * Sun Oct 25 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.4-1
 - Explain how to install a package file the dnf5 backend refuses as unauthenticated.
 - Add an Allow Unverified Packages preference for package files.

@@ -44,7 +44,7 @@ and rollback, including removal of icons a failed or cancelled install added. GT
 file-picker callbacks arriving after the window closes. It also checks the Install Apps
 entry points, per-source results arriving in turn, stale search responses, merged
 sources and the Install From picker, the preferred-source order, website detection,
-URL errors, automatic AppImage names, file drops, the Snap Store handoff, installed
+URL errors, automatic AppImage names, file drops and files opened with Housekeeper, the Snap Store handoff, installed
 results (badge, View Details opening the installed app over the install page and back,
 choosing another source, an installed package without an app), installation
 results and inventory refresh. Service tests cover a failing source not stopping the

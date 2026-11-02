@@ -1532,6 +1532,14 @@ class HousekeeperWindow(Adw.ApplicationWindow):
     def toast(self, text):
         self.toast_overlay.add_toast(Adw.Toast(title=text, timeout=5))
 
+    def open_install_file(self, path):
+        """Show the install page for a file opened with Housekeeper."""
+        self._page_activated(self.pages_sidebar, self.install_row)
+        if not path:
+            self.toast(_("Choose a local file."))
+            return
+        self.install_page.open_file(path)
+
     def announce(self, outcome, title, body, subject=""):
         """Report finished work; only results that need attention interrupt with a dialog."""
         if outcome in {Outcome.FAILED, Outcome.PARTIAL}:
