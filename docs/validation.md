@@ -1,4 +1,21 @@
-# v0.3.5 validation
+# v0.3.6 validation
+
+## v0.3.6 release checks — November 10, 2026
+
+- Python, Meson, RPM and AppStream metadata agree on 0.3.6 / RPM release 1.
+  CHANGELOG contains only this version; AppStream metadata validates.
+- On a Fedora 45 desktop (PackageKit 1.4.0, dnf5 backend), the RPM provider reports
+  update and removal support, and a real refresh and update check through PackageKit
+  succeeded. Before the change the same check failed with the Fedora 43/44 limit.
+- In the Fedora 45 test container (RPM 6.1), 774 tests pass with one dpkg test
+  skipped. The clean build, GTK smoke, RPM install, replacement and uninstall, the
+  isolated integration suite and `integration_repositories.py` pass.
+- Fedora 45 sets `%_pkgverify_level all`, so the unsigned local builds and fixtures are
+  installed with `--nosignature`, and ships its repositories in
+  `/usr/share/dnf5/repos.d`, which the update and repository tests now disable too.
+- Ruff lint and formatting and strict mypy pass. Fedora 43/44/45 container builds, the
+  Ubuntu 24.04 runtime floor and COPR builds for Fedora 43/44/45 on x86_64 and
+  aarch64 run for the release tag.
 
 ## v0.3.5 release checks — November 1, 2026
 

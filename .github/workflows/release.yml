@@ -10,7 +10,7 @@ jobs:
   packages:
     strategy:
       matrix:
-        fedora: [43, 44]
+        fedora: [43, 44, 45]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

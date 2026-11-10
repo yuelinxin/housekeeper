@@ -48,8 +48,8 @@ def host_support(os_release=None, markers=None):
         )
     if markers:
         return False, "System packages are managed by this immutable or declarative system."
-    if os_release.get("ID") != "fedora" or os_release.get("VERSION_ID") not in {"43", "44"}:
-        return False, "Direct RPM management is currently supported on Fedora 43 and 44."
+    if os_release.get("ID") != "fedora" or os_release.get("VERSION_ID") not in {"43", "44", "45"}:
+        return False, "Direct RPM management is currently supported on Fedora 43, 44 and 45."
     return True, ""
 
 
@@ -854,7 +854,18 @@ class RpmProvider:
     @staticmethod
     def _repository_state():
         paths = [Path("/etc/dnf/dnf.conf"), Path("/etc/yum.conf")]
-        paths.extend(Path("/etc/yum.repos.d").glob("*.repo"))
-        for directory in ("/etc/dnf/vars", "/etc/yum/vars"):
+        # dnf5 also reads distribution repositories from /usr (Fedora 45 moved them there)
+        # and applies repository overrides and configuration drop-ins on top.
+        for directory in (
+            "/etc/yum.repos.d",
+            "/etc/distro.repos.d",
+            "/usr/share/dnf5/repos.d",
+            "/etc/dnf/repos.override.d",
+            "/usr/share/dnf5/repos.override.d",
+        ):
+            paths.extend(Path(directory).glob("*.repo"))
+        for directory in ("/etc/dnf/libdnf5.conf.d", "/usr/share/dnf5/libdnf.conf.d"):
+            paths.extend(Path(directory).glob("*.conf"))
+        for directory in ("/etc/dnf/vars", "/etc/yum/vars", "/usr/share/dnf5/vars.d"):
             paths.extend(p for p in Path(directory).glob("*") if p.is_file())
         return tuple((str(p), digest(p.read_bytes())) for p in sorted(paths) if p.exists())

@@ -61,7 +61,8 @@ for name, dependency in (
     )
     run("rpmbuild", "-bb", "--define", f"_topdir {top}", str(spec))
 packages = [str(p) for p in (top / "RPMS/noarch").glob("*.rpm")]
-run("rpm", "-i", *packages)
+# Fedora 45 rejects unsigned packages by default; these local fixtures are unsigned.
+run("rpm", "-i", "--nosignature", *packages)
 run(
     "/usr/bin/python3",
     str(root / "tests/integration_rpm_update.py"),
@@ -125,7 +126,12 @@ run("rpm", "-e", "housekeeper-fixture-dependent")
 as_user("integration_rpm.py", "remove")
 if Path("/home/hk-test/native-removal-result").read_text() == "removed":
     # Exercise denial independently of a previously accepted request.
-    run("rpm", "-i", str(next((top / "RPMS/noarch").glob("housekeeper-fixture-1-*.rpm"))))
+    run(
+        "rpm",
+        "-i",
+        "--nosignature",
+        str(next((top / "RPMS/noarch").glob("housekeeper-fixture-1-*.rpm"))),
+    )
     rules.write_text(
         "polkit.addRule(function(action, subject) {\n"
         '  if (subject.user == "hk-test" && action.id == '

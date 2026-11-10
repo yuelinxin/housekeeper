@@ -8,7 +8,7 @@ uses XDG and freedesktop conventions rather than GNOME Shell internals.
 
 | Environment | Inventory | Native package removal |
 | --- | --- | --- |
-| Fedora Workstation 43 / 44 | Supported | Implemented; tested backends currently require manual guidance |
+| Fedora Workstation 43 / 44 / 45 | Supported | Implemented; tested backends currently require manual guidance |
 | Other ordinary RPM distributions | RPM metadata when bindings are available | Manual in v0.1 |
 | Ubuntu / Debian | DEB ownership, versions and software sizes through local dpkg-query; optional integrations | External system package manager |
 | Arch / Manjaro | Pacman ownership, versions and software sizes; optional integrations | External system package manager |

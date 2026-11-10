@@ -12,7 +12,8 @@ def test_immutable_and_unvalidated_hosts_are_read_only():
     assert host_support({"ID": "fedora", "VERSION_ID": "44"}, False)[0]
     assert not host_support({"ID": "fedora", "VERSION_ID": "44"}, True)[0]
     assert not host_support({"ID": "arch"}, False)[0]
-    assert not host_support({"ID": "fedora", "VERSION_ID": "45"}, False)[0]
+    assert host_support({"ID": "fedora", "VERSION_ID": "45"}, False)[0]
+    assert not host_support({"ID": "fedora", "VERSION_ID": "46"}, False)[0]
 
 
 class Package:

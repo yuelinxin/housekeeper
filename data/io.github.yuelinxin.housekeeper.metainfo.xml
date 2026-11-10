@@ -33,6 +33,15 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.3.6" date="2026-11-10" type="stable">
+      <description>
+        <p>Support Fedora 45.</p>
+        <ul>
+          <li>Checking for, installing and removing system packages works on Fedora 45.</li>
+          <li>Changing software sources after reviewing a system update asks for a new review on Fedora 45.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.5" date="2026-11-01" type="stable">
       <description>
         <p>Open downloaded files with Housekeeper.</p>

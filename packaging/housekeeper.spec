@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.3.5
+Version:        0.3.6
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT
@@ -74,6 +74,10 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Tue Nov 10 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.6-1
+- Support system package management on Fedora 45.
+- Notice dnf5 software source changes between an update preview and the update.
+
 * Sun Nov 01 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.5-1
 - Open package, Flatpak and AppImage files with Housekeeper from a file manager.
 - Show a drop area when a file is dragged over Install Apps.

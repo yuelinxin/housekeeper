@@ -45,8 +45,10 @@ if os.geteuid() != 0:
 
 # This setup never runs on the host. No packages are downloaded or installed.
 run("useradd", "--create-home", "hk-test")
-for path in Path("/etc/yum.repos.d").glob("*.repo"):
-    path.rename(path.with_suffix(".disabled"))
+# Fedora 45 ships its repositories in /usr/share/dnf5/repos.d instead of /etc.
+for directory in ("/etc/yum.repos.d", "/usr/share/dnf5/repos.d"):
+    for path in Path(directory).glob("*.repo"):
+        path.rename(path.with_suffix(".disabled"))
 Path("/tmp/hk-empty-repository").mkdir()
 Path("/etc/yum.repos.d/hk-fixture.repo").write_text(
     "".join(

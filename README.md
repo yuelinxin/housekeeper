@@ -73,7 +73,7 @@ Fedora backends; Housekeeper provides guidance instead. See
 
 ## Install on Fedora
 
-On Fedora 43 or 44, enable the [COPR repository](https://copr.fedorainfracloud.org/coprs/yuelinxin/housekeeper/)
+On Fedora 43, 44 or 45, enable the [COPR repository](https://copr.fedorainfracloud.org/coprs/yuelinxin/housekeeper/)
 and install Housekeeper:
 
 ```sh

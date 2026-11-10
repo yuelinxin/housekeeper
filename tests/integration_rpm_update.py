@@ -178,8 +178,10 @@ def setup():
     run("rpm", "-i", packages[dependency, 1], packages[name, 1])
     run("createrepo_c", str(top / "repository"))
     # Keep all repository changes confined to this throwaway container.
-    for path in Path("/etc/yum.repos.d").glob("*.repo"):
-        path.rename(path.with_suffix(".disabled"))
+    # Fedora 45 ships its repositories in /usr/share/dnf5/repos.d instead of /etc.
+    for directory in ("/etc/yum.repos.d", "/usr/share/dnf5/repos.d"):
+        for path in Path(directory).glob("*.repo"):
+            path.rename(path.with_suffix(".disabled"))
     Path("/etc/yum.repos.d/housekeeper-fixture.repo").write_text(
         f"[housekeeper-update-fixture]\nname=Housekeeper local update fixture\nbaseurl=file://{top}/repository\n"
         f"enabled=1\ngpgcheck=1\nrepo_gpgcheck=0\ngpgkey=file://{public_key}\n"

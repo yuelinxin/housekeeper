@@ -23,11 +23,12 @@ GTK_A11Y=none GIO_USE_VFS=local GSK_RENDERER=cairo \
 cp "/source/dist/sources/housekeeper-${housekeeper_version}.tar.gz" /tmp/housekeeper-rpm/SOURCES/
 rpmbuild -ba --define '_topdir /tmp/housekeeper-rpm' packaging/housekeeper.spec
 package=$(find /tmp/housekeeper-rpm/RPMS -name 'housekeeper-*.rpm' -print -quit)
-rpm -i "$package"
+# Fedora 45 rejects unsigned packages by default; this local build is unsigned.
+rpm -i --nosignature "$package"
 cd /tmp
 housekeeper --version
 # Replacing the same version exercises installation scripts and retained preferences.
-rpm -U --replacepkgs "$package"
+rpm -U --nosignature --replacepkgs "$package"
 housekeeper --version
 rpm -e housekeeper
 test ! -e /usr/bin/housekeeper
