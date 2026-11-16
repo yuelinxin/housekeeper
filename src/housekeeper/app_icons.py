@@ -8,6 +8,7 @@ The small theme inherits the user's theme; installed themes are never modified.
 import fcntl
 import hashlib
 import json
+import os
 import re
 import shutil
 import stat
@@ -60,6 +61,11 @@ class IconUpdateBusy(ManagementError):
 
 
 def _settings():
+    # Installed schemas do not identify the running desktop. In particular, Plasma
+    # can have GNOME schemas without using GNOME's icon-theme setting.
+    desktops = os.environ.get("XDG_CURRENT_DESKTOP", "").upper().split(":")
+    if "GNOME" not in desktops:
+        return None
     source = Gio.SettingsSchemaSource.get_default()
     schema = source.lookup("org.gnome.desktop.interface", True) if source else None
     return Gio.Settings.new_full(schema, None, None) if schema else None

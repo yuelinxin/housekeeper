@@ -3,8 +3,46 @@
   <gresource prefix="/io/github/yuelinxin/housekeeper">
     <file preprocess="xml-stripblanks">window.ui</file>
     <file>style.css</file>
-    <file>icons/scalable/actions/flatpak-symbolic.svg</file>
-    <file>icons/scalable/actions/install-apps-symbolic.svg</file>
-    <file>icons/scalable/actions/activity-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-activity-symbolic.svg">icons/scalable/actions/activity-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-application-x-addon-symbolic.svg">icons/adwaita/application-x-addon-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-application-x-executable-symbolic.svg">icons/adwaita/application-x-executable-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-applications-games-symbolic.svg">icons/adwaita/applications-games-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-dialog-error-symbolic.svg">icons/adwaita/dialog-error-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-dialog-warning-symbolic.svg">icons/adwaita/dialog-warning-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-document-edit-symbolic.svg">icons/adwaita/document-edit-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-edit-copy-symbolic.svg">icons/adwaita/edit-copy-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-edit-find-symbolic.svg">icons/adwaita/edit-find-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-edit-undo-symbolic.svg">icons/adwaita/edit-undo-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-edit-undo-symbolic-rtl.svg">icons/adwaita/edit-undo-symbolic-rtl.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-flatpak-symbolic.svg">icons/scalable/actions/flatpak-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-folder-open-symbolic.svg">icons/adwaita/folder-open-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-folder-symbolic.svg">icons/adwaita/folder-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-go-next-symbolic.svg">icons/adwaita/go-next-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-go-next-symbolic-rtl.svg">icons/adwaita/go-next-symbolic-rtl.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-install-apps-symbolic.svg">icons/scalable/actions/install-apps-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-list-add-symbolic.svg">icons/adwaita/list-add-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-network-server-symbolic.svg">icons/adwaita/network-server-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-object-select-symbolic.svg">icons/adwaita/object-select-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-open-menu-symbolic.svg">icons/adwaita/open-menu-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-package-x-generic-symbolic.svg">icons/adwaita/package-x-generic-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-pan-down-symbolic.svg">icons/adwaita/pan-down-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-pan-end-symbolic.svg">icons/adwaita/pan-end-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-pan-end-symbolic-rtl.svg">icons/adwaita/pan-end-symbolic-rtl.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-pan-up-symbolic.svg">icons/adwaita/pan-up-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-preferences-system-symbolic.svg">icons/adwaita/preferences-system-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-process-stop-symbolic.svg">icons/adwaita/process-stop-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-sidebar-show-symbolic.svg">icons/adwaita/sidebar-show-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-sidebar-show-symbolic-rtl.svg">icons/adwaita/sidebar-show-symbolic-rtl.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-software-update-available-symbolic.svg">icons/adwaita/software-update-available-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-system-search-symbolic.svg">icons/adwaita/system-search-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-view-app-grid-symbolic.svg">icons/adwaita/view-app-grid-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-view-grid-symbolic.svg">icons/adwaita/view-grid-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-view-list-symbolic.svg">icons/adwaita/view-list-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-view-list-symbolic-rtl.svg">icons/adwaita/view-list-symbolic-rtl.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-view-refresh-symbolic.svg">icons/adwaita/view-refresh-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-view-sort-ascending-symbolic.svg">icons/adwaita/view-sort-ascending-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-view-sort-ascending-symbolic-rtl.svg">icons/adwaita/view-sort-ascending-symbolic-rtl.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-web-browser-symbolic.svg">icons/adwaita/web-browser-symbolic.svg</file>
+    <file alias="icons/scalable/actions/housekeeper-window-close-symbolic.svg">icons/adwaita/window-close-symbolic.svg</file>
   </gresource>
 </gresources>

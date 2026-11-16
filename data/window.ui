@@ -61,7 +61,7 @@
                                 <property name="margin-bottom">9</property>
                                 <property name="margin-start">6</property>
                                 <property name="margin-end">6</property>
-                                <child><object class="GtkImage"><property name="icon-name">install-apps-symbolic</property></object></child>
+                                <child><object class="GtkImage"><property name="icon-name">housekeeper-install-apps-symbolic</property></object></child>
                                 <child><object class="GtkLabel"><property name="label" translatable="yes">Install Apps</property><property name="xalign">0</property><property name="hexpand">true</property></object></child>
                               </object>
                             </property>
@@ -76,7 +76,7 @@
                                 <property name="margin-bottom">9</property>
                                 <property name="margin-start">6</property>
                                 <property name="margin-end">6</property>
-                                <child><object class="GtkImage"><property name="icon-name">software-update-available-symbolic</property></object></child>
+                                <child><object class="GtkImage"><property name="icon-name">housekeeper-software-update-available-symbolic</property></object></child>
                                 <child><object class="GtkLabel"><property name="label" translatable="yes">Updates</property><property name="xalign">0</property><property name="hexpand">true</property></object></child>
                                 <child><object class="GtkLabel" id="updates_count"><style><class name="dim-label"/></style></object></child>
                               </object>
@@ -102,14 +102,14 @@
                             <property name="show-start-title-buttons">false</property>
                             <child type="start">
                               <object class="GtkButton" id="sidebar_button">
-                                <property name="icon-name">sidebar-show-symbolic</property>
+                                <property name="icon-name">housekeeper-sidebar-show-symbolic</property>
                                 <property name="tooltip-text" translatable="yes">Show Sources</property>
                                 <property name="visible">false</property>
                               </object>
                             </child>
                             <child type="start">
                               <object class="GtkToggleButton" id="search_button">
-                                <property name="icon-name">system-search-symbolic</property>
+                                <property name="icon-name">housekeeper-system-search-symbolic</property>
                                 <property name="tooltip-text" translatable="yes">Search Applications</property>
                               </object>
                             </child>

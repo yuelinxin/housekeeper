@@ -4,7 +4,7 @@
 [![COPR](https://img.shields.io/badge/COPR-yuelinxin%2Fhousekeeper-blue?logo=fedora)](https://copr.fedorainfracloud.org/coprs/yuelinxin/housekeeper/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-A simple, unified app manager for the GNOME desktop. Discover, install, and manage
+A simple, unified app manager for Linux desktops. Discover, install, and manage
 applications from different sources in one clean interface.
 
 Install native packages and Flatpak apps, add website launchers, import AppImages,
@@ -31,11 +31,11 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 - Manage system and Flatpak software sources in Preferences; enable or disable sources and import Flatpak repository files or HTTPS links.
 - Inspect versions, file locations, installation scope, and hidden entries.
 - Open apps from their details page and see available updates beside their names.
-- Customize application icons across GNOME's app grid, docks and task panels, and restore the originals.
+- Customize desktop launcher icons and restore the originals; GNOME also supports matching icons in docks and task panels.
 - Preview RPM and Flatpak updates and removal where supported, preserving personal data by default.
 - Choose whether to keep or delete user data when uninstalling a Flatpak app.
 - Choose manual or on-entry update checks, daily or weekly, for RPM and Flatpak.
-- Update Housekeeper itself from the sidebar; it restarts into the new version.
+- Update supported RPM installations of Housekeeper from the sidebar; it restarts into the new version. Other installations show update instructions.
 - Move eligible AppImages and verified Housekeeper website launchers to Trash; use external managers for other web apps and Steam games.
 
 ## Current support
@@ -43,7 +43,9 @@ independent AppImages, Chrome and Chromium web apps, PWAsForFirefox, and Steam g
 Housekeeper can install native packages through PackageKit and apps from configured
 Flatpak sources. AppStream catalogues provide app names, descriptions and icons;
 search falls back to package names or Flatpak IDs when catalogue matches are unavailable.
-Native installation requires a working PackageKit backend for the host distribution;
+Native installation requires a working PackageKit backend for the host distribution.
+Pacman installations remain external: ALPM installation can also upgrade unrelated
+system packages, which Housekeeper's single-app confirmation does not cover;
 immutable systems retain external package management. Housekeeper does not perform
 system upgrades. Flatpak removal can delete the current user's app data and permissions
 when explicitly selected. Software sizes exclude shared runtimes and dependencies;
@@ -86,6 +88,68 @@ Updates page also look for a new Housekeeper package, which the sidebar then off
 to install and restart into, or run `sudo dnf upgrade housekeeper`.
 To uninstall Housekeeper, run `sudo dnf remove housekeeper`.
 
+## Install on Ubuntu or Debian
+
+Native DEB build targets are Ubuntu 24.04 and Debian 13. Install the matching
+distribution's `housekeeper_*_all.deb` release or CI artifact with APT so its
+dependencies are installed too:
+
+```sh
+sudo apt install ./housekeeper_*_all.deb
+```
+
+Keep only the intended package in the current directory when using this wildcard.
+To update, install a newer DEB the same way. These standalone packages do not add
+an APT repository or provide automatic Housekeeper updates. Remove Housekeeper
+with `sudo apt remove housekeeper`.
+
+The recommended dependencies enable PackageKit, Flatpak and AppStream integration.
+DEB apps have ownership, version and size information; native updates and removal
+remain in the system package manager. GTK checks cover GNOME and KDE session
+identities; actual Plasma panels and graphical authorization still require the
+[desktop acceptance checks](docs/desktop-acceptance.md).
+
+Ubuntu 22.04 and Debian 12's default libraries are below the supported runtime
+floor. See [compatibility](docs/compatibility.md) for operation-specific support.
+
+## Install on Arch Linux
+
+Current Arch Linux has native `PKGBUILD` packaging and an isolated build/runtime
+test target. A local or CI build produces `housekeeper-0.3.6-1-any.pkg.tar.zst`.
+Bring the system up to date, then install the package:
+
+```sh
+sudo pacman -Syu
+sudo pacman -U ./housekeeper-0.3.6-1-any.pkg.tar.zst
+```
+
+To build from this checkout, install the build tools and let `makepkg` resolve
+the remaining dependencies:
+
+```sh
+sudo pacman -Syu --needed base-devel git python
+python3 build-aux/source_archive.py
+python3 build-aux/arch_package.py
+cd dist/arch
+makepkg -si
+```
+
+The generated PKGBUILD includes the exact source archive checksum. These standalone
+packages do not register a repository: install a newer package the same way to
+update Housekeeper, and use `sudo pacman -R housekeeper` to remove it. No AUR
+submission is provided by this change.
+
+Pacman inventory includes package ownership, version, installed size and installation
+date, including AUR-built packages already installed with pacman. Optional `flatpak`
+enables Flatpak management; `packagekit`, `appstream` and `archlinux-appstream-data`
+enable native app search. Native installation, updates and removal use the external
+system package manager. Arch requires full system upgrades; do not use `pacman -Sy`
+alone before installing packages. See [Arch's maintenance guidance](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported).
+
+Tests cover current Arch x86_64 containers and GTK with GNOME/KDE session identities.
+A real Arch Plasma/GNOME session, Arch Linux ARM and derivatives such as Manjaro
+remain separate acceptance targets.
+
 ## Build and run
 
 On Fedora:
@@ -98,7 +162,15 @@ meson compile -C build
 ./build/housekeeper-dev
 ```
 
-The second command enables optional integrations. The development launcher rebuilds
+The second command enables optional integrations. On Ubuntu 24.04 or Debian 13,
+the equivalent dependencies are:
+
+```sh
+sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 librsvg2-common adwaita-icon-theme meson ninja-build libglib2.0-dev gettext
+sudo apt install packagekit gir1.2-packagekitglib-1.0 flatpak gir1.2-flatpak-1.0 appstream gir1.2-appstream-1.0 squashfs-tools
+```
+
+Then use the same Meson commands above. The development launcher rebuilds
 changed resources before starting. Use `GSETTINGS_BACKEND=memory` to try it without
 saving preferences.
 
@@ -127,5 +199,7 @@ The interface is currently English-only, with gettext support for future transla
 
 ## License
 
-[MIT](LICENSE). AppStream metadata is CC0-1.0. Screenshots use synthetic application
-inventories; third-party icons retain their original licenses.
+Code is [MIT](LICENSE). AppStream metadata and the bundled Flatpak symbol are
+CC0-1.0; bundled Adwaita UI icons are LGPL-3.0-only. See
+[icon attribution and licenses](data/icons/README.md). Application artwork keeps
+its original license.

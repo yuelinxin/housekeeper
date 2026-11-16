@@ -1,0 +1,8 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with python3 --buildsystem=meson --builddirectory=build-deb
+
+execute_after_dh_auto_test:
+	desktop-file-validate data/io.github.yuelinxin.housekeeper.desktop
+	appstreamcli validate --no-net data/io.github.yuelinxin.housekeeper.metainfo.xml

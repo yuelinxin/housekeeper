@@ -91,8 +91,12 @@ def pacman_packages(*, strict=False):
             continue
         try:
             fields = sections(directory / "desc")
-            file_sections = sections(directory / "files")
-            if strict and "%FILES%" not in file_sections:
+            file_list = directory / "files"
+            file_sections = sections(file_list)
+            # ALPM writes an empty file and omits SIZE for fileless metapackages
+            # (for example Arch's base). A nonempty package still needs FILES.
+            empty_package = file_list.stat().st_size == 0 and fields.get("%SIZE%", ["0"]) == ["0"]
+            if strict and "%FILES%" not in file_sections and not empty_package:
                 raise ValueError("Pacman file list is incomplete")
             files = file_sections.get("%FILES%", [])
             name, version, arch = (fields[key] for key in ("%NAME%", "%VERSION%", "%ARCH%"))

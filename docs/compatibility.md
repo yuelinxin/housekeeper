@@ -9,13 +9,18 @@ uses XDG and freedesktop conventions rather than GNOME Shell internals.
 | Environment | Inventory | Native package removal |
 | --- | --- | --- |
 | Fedora Workstation 43 / 44 / 45 | Supported | Implemented; tested backends currently require manual guidance |
-| Other ordinary RPM distributions | RPM metadata when bindings are available | Manual in v0.1 |
-| Ubuntu / Debian | DEB ownership, versions and software sizes through local dpkg-query; optional integrations | External system package manager |
-| Arch / Manjaro | Pacman ownership, versions and software sizes; optional integrations | External system package manager |
+| Other ordinary RPM distributions | RPM metadata when bindings are available | External system package manager |
+| Ubuntu 24.04 / Debian 13 | Native DEB packaging; ownership, versions and sizes through dpkg-query | External system package manager |
+| Arch Linux (rolling, x86_64) | Native pacman packaging; ownership, versions, sizes and installation dates | External system package manager |
+| Manjaro / other Arch derivatives | Existing Pacman inventory adapter; not independently validated | External system package manager |
 | Alpine | APK ownership, versions and software sizes; optional integrations | External system package manager |
 | openSUSE | RPM metadata when bindings are available; optional integrations | External system package manager |
 | OSTree / bootc / NixOS | Available desktop entries and optional integrations | Host changes remain manual |
 | Missing optional provider | Other providers remain usable | Affected operation is unavailable |
+
+Ubuntu 24.04 and Debian 13 have DEB build and runtime CI in addition to the Fedora
+matrix. Current Arch has a separate rolling build/runtime CI target. Ubuntu 22.04 and Debian 12's default GTK libraries do not meet the runtime
+floor. Other releases are not implicitly validated by sharing a package family.
 
 This table describes intended behavior; the independently recorded checks in
 [validation](validation.md) distinguish tested environments from future targets.
@@ -24,6 +29,22 @@ The sidebar's second category is named for the host's native package family,
 even when that provider is not yet implemented. Unsupported categories explain
 the limitation and do not relabel unknown or RPM-owned applications as DEB,
 Pacman, or another native format. Only verified inventory populates source filters.
+
+| Native operation | Fedora 43/44/45 | Ubuntu 24.04 / Debian 13 | Arch Linux | Other distributions |
+| --- | --- | --- | --- | --- |
+| Ownership, version and size | RPM bindings | dpkg-query | Installed ALPM database; real pacman package tested | Existing read-only adapters where available |
+| Search and repository installation | PackageKit fixtures | Signed APT/PackageKit fixture with dependencies | AppStream/ALPM search tested; installation external | Backend-dependent; not validated |
+| Open local package file | Fedora fixtures | Desktop acceptance pending | External pacman; `.pkg.tar.zst` import not implemented | Backend-dependent; not validated |
+| Update installed applications | RPM/PackageKit | External package manager | External package manager | External package manager |
+| Remove installed applications | Conservative preview; tested fallbacks | External package manager | External package manager | External package manager |
+| Toggle native repositories | Fedora fixture | Desktop acceptance pending | Backend-dependent; not validated | Backend-dependent; not validated |
+| Update Housekeeper itself | Supported RPM installations | Install a newer DEB externally | Install a newer package externally | External installation method |
+
+Flatpak operations are a separate integration and do not gain cross-distribution
+acceptance from these native package tests. A [real Ubuntu/Plasma VM](plasma-vm-validation.md)
+also passes X11 repository installation with KDE Polkit, launcher icon changes,
+and native Wayland startup/rendering. Remaining panel and cross-desktop coverage
+is tracked in the [desktop checks](desktop-acceptance.md).
 
 The tested Fedora 43 PackageKit/DNF backend rejects `allow_deps=false`. The tested
 Fedora 44 PackageKit/DNF5 backend reports success with an empty removal preview for
@@ -41,6 +62,9 @@ of a successful real RPM removal or graphical Polkit authentication.
   default and disclose an explicit disabled setting before confirmation.
 - Pacman reads installed ALPM `desc`/`files` records, including AUR builds installed
   through Pacman. `pacman-conf` supplies custom database and installation roots.
+  Fileless metapackages are valid; missing file lists for nonempty packages still
+  prevent a negative ownership answer. AUR search/build and local `.pkg.tar.zst`
+  installation are not implemented.
 - APK reads `/lib/apk/db/installed`; downloaded repository indexes and package archive
   sizes are not used. Broken package records are excluded.
 - Snap reads active app revisions through snapd's local `/v2/snaps` endpoint. The
@@ -84,6 +108,15 @@ in the Fedora 44 integration fixture. Other native backends and desktop authoriz
 acceptance still need testing; synthetic tests cover target selection,
 trusted-package flags, errors and cancellation.
 
+Pacman is an explicit exception: search is available, but installation remains
+external. PackageKit 1.4.0's [ALPM install implementation](https://github.com/PackageKit/PackageKit/blob/v1.4.0/backends/alpm/pk-alpm-sync.c)
+queues all available upgrades even for a single requested package. An offline
+fixture reproduces an unrelated upgrade in the simulation; Housekeeper refuses
+the actual installation before contacting PackageKit. Its details page explains
+the external path and still permits choosing a Flatpak source. Supporting this
+transaction would require a system-upgrade preview and authorization flow.
+Arch [does not support partial upgrades](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported).
+
 Flatpak installation needs libflatpak and at least one configured remote. Search
 results show the remote, installation scope and branch; dependencies come from
 configured remotes. The offline integration fixture verifies a real user-scope app
@@ -112,8 +145,10 @@ and installed again to receive this integration; their browser data is kept.
 
 Application icon changes are independent of installation source: native packages,
 Flatpak, Snap, web apps, AppImages and other desktop apps use the same all-launcher
-and named-icon override path. Named overrides need a writable GNOME `icon-theme`
-setting; without one (locked or no schema), only the launchers change.
+and named-icon override path. Named overrides need a GNOME session (identified by
+`XDG_CURRENT_DESKTOP`) and a writable GNOME `icon-theme` setting. In KDE Plasma,
+Xfce, Cinnamon, MATE and unknown sessions, only launchers change, even if GNOME
+schemas are installed. Locked or missing GNOME settings use the same fallback.
 The generated theme inherits the current theme and never changes installed icons.
 Shared and generic names are deliberately excluded. Changing themes while Housekeeper
 is closed suspends named overrides until its next launch; desktop-file overrides
@@ -154,13 +189,23 @@ Steam games, and Housekeeper itself provide update instructions.
 
 ## Expansion policy
 
-First add DEB ownership and validate PackageKit on Ubuntu and Debian. Then add
-Arch and openSUSE native adapters. Immutable and declarative environments need their
+DEB ownership and native packaging are implemented. The signed offline APT fixture
+tests repository installation with dependencies and denied authorization on Ubuntu
+24.04 and Debian 13. It does not validate local `.deb` installation, repository
+toggles or graphical Polkit dialogs on those platforms. Native DEB update/removal
+remain external. A separate [Plasma VM run](plasma-vm-validation.md) covers real
+X11 graphical authentication and native Wayland startup on Ubuntu 24.04.5.
+See [desktop acceptance](desktop-acceptance.md) for the remaining GNOME and Plasma
+checks; the container KDE session-identity smoke test is not a Plasma session.
+
+Arch native packaging and installed-package metadata now have a container validation
+target; real Arch desktop acceptance remains pending. openSUSE needs independent
+packaging and backend validation. Immutable and declarative environments need their
 own host-layer semantics. Capability checks and fixture-based removal tests are
 required before enabling an operation on a new platform.
 
 A future Flatpak distribution of Housekeeper needs a separate host-access design
-and review. The v0.1 RPM build is not a sandboxed frontend. Older GNOME installations
+and review. The native packages are not sandboxed frontends. Older GNOME installations
 below the runtime floor require a suitable bundled runtime or a later compatibility
 project; supporting GNOME does not imply every historical library version is supported.
 

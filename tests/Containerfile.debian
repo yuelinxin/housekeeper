@@ -1,0 +1,24 @@
+ARG BASE_IMAGE=docker.io/library/ubuntu:24.04
+FROM ${BASE_IMAGE} AS build
+ENV DEBIAN_FRONTEND=noninteractive
+COPY debian /tmp/housekeeper/debian
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential devscripts equivs \
+    && mk-build-deps --install --remove --tool 'apt-get -y --no-install-recommends' /tmp/housekeeper/debian/control \
+    && apt-get install -y --no-install-recommends \
+        xvfb xauth dbus-daemon libgtk-4-bin gsettings-desktop-schemas \
+        packagekit gir1.2-packagekitglib-1.0 polkitd \
+        flatpak gir1.2-flatpak-1.0 gir1.2-appstream-1.0 squashfs-tools \
+        gnupg apt-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Deliberately install without Recommends or build tools to catch undeclared
+# runtime dependencies. Build this target only after the package check succeeds.
+FROM ${BASE_IMAGE} AS runtime
+ENV DEBIAN_FRONTEND=noninteractive
+COPY artifacts/*.deb /tmp/packages/
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/packages/*.deb \
+    && rm -rf /var/lib/apt/lists/*
+COPY tests/integration_deb_runtime.py /tmp/integration_deb_runtime.py
+CMD ["python3", "/tmp/integration_deb_runtime.py"]

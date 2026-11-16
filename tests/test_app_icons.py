@@ -231,6 +231,40 @@ def test_unavailable_theme_setting_still_changes_launchers(
     assert not (root / "applications/example.desktop").exists()
 
 
+@pytest.mark.parametrize("desktop_name", ["KDE", "XFCE", "X-Cinnamon", "MATE", ""])
+def test_other_desktops_do_not_change_installed_gnome_settings(
+    desktop, setup_icons, monkeypatch, desktop_name
+):
+    from housekeeper import app_icons
+
+    root, image, settings = setup_icons
+    path = desktop(Icon="original")
+    app = app_for([path])
+
+    # Make the GNOME schema available even on minimal test systems. Its presence
+    # must not cause another desktop to change the saved GNOME theme.
+    class SchemaSource:
+        def lookup(self, *_args):
+            return object()
+
+    monkeypatch.setattr(app_icons.Gio.SettingsSchemaSource, "get_default", SchemaSource)
+    monkeypatch.setattr(app_icons.Gio.Settings, "new_full", lambda *_args: settings)
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME")
+    save_app_icon(app, image, [app])
+    state = (root / "housekeeper/app-icons.json").read_bytes()
+    saved_theme = settings.theme
+
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", desktop_name)
+    refresh_icon_theme()
+    changed = reread(app, root)
+    save_app_icon(changed, None, [changed])
+    assert not (root / "applications/example.desktop").exists()
+    save_app_icon(app, image, [app])
+    assert can_reset_icon(reread(app, root).entries[0])
+    assert settings.theme == saved_theme
+    assert (root / "housekeeper/app-icons.json").read_bytes() == state
+
+
 def test_corrupt_state_leaves_launchers_unchanged(desktop, setup_icons):
     root, image, settings = setup_icons
     path = desktop(Icon="original")

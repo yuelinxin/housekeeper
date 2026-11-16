@@ -1,0 +1,54 @@
+Source: housekeeper
+Section: admin
+Priority: optional
+Maintainer: Yuelin Xin <yuelinxin@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ meson (>= 0.63),
+ ninja-build,
+ gettext,
+ libglib2.0-dev,
+ python3 (>= 3.10),
+ python3-gi,
+ python3-pytest,
+ gir1.2-gtk-4.0 (>= 4.12),
+ gir1.2-adw-1 (>= 1.4),
+ librsvg2-common,
+ desktop-file-utils,
+ appstream,
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/yuelinxin/housekeeper
+Vcs-Git: https://github.com/yuelinxin/housekeeper.git
+Vcs-Browser: https://github.com/yuelinxin/housekeeper
+
+Package: housekeeper
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3 (>= 3.10),
+ python3-gi,
+ gir1.2-gtk-4.0 (>= 4.12),
+ gir1.2-adw-1 (>= 1.4),
+ adwaita-icon-theme,
+ librsvg2-common,
+Recommends:
+ packagekit,
+ gir1.2-packagekitglib-1.0,
+ flatpak,
+ gir1.2-flatpak-1.0,
+ appstream,
+ gir1.2-appstream-1.0,
+ squashfs-tools,
+Description: discover and manage installed desktop applications
+ Housekeeper provides a searchable application inventory with installation
+ sources, versions, software sizes, launcher icons and management actions.
+ It can install applications through PackageKit and Flatpak, import AppImages
+ and create website launchers for native Chrome or Chromium.
+ .
+ DEB ownership is read from dpkg. Native updates and removal remain in the
+ system package manager. Flatpak operations require the optional integration.
+ GNOME Shell is not required; other desktops support launcher icon overrides
+ without changing the GNOME icon theme.

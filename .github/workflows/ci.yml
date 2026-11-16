@@ -49,6 +49,72 @@ jobs:
       - run: ruff format --check src tests build-aux
       - run: mypy
 
+  debian-packages:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:24.04
+            target: ubuntu24.04
+          - image: debian:13
+            target: debian13
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build distribution test environment
+        run: podman build --target build --build-arg BASE_IMAGE=docker.io/library/${{ matrix.image }} -t housekeeper-deb-test -f tests/Containerfile.debian .
+      - name: Build and validate native package
+        run: |
+          python3 build-aux/source_archive.py
+          mkdir -p artifacts
+          podman run --rm --network none \
+            -v "$PWD:/source:ro" -v "$PWD/artifacts:/artifacts" \
+            housekeeper-deb-test bash /source/build-aux/debian_check.sh
+      - name: Test signed APT installation and denied authorization
+        run: |
+          for mode in allow deny; do
+            podman run --rm --network none -v "$PWD:/source:ro" \
+              -e HOUSEKEEPER_DISPOSABLE_TEST=1 -e PYTHONPATH=/source/src \
+              housekeeper-deb-test python3 /source/tests/integration_deb_install.py "$mode"
+          done
+      - name: Validate runtime without recommended integrations
+        run: |
+          podman build --target runtime --build-arg BASE_IMAGE=docker.io/library/${{ matrix.image }} -t housekeeper-deb-runtime -f tests/Containerfile.debian .
+          podman run --rm --network none housekeeper-deb-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-packages
+          path: artifacts/*
+          if-no-files-found: error
+
+  arch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build current Arch environment
+        run: podman build --target build -t housekeeper-arch-test -f tests/Containerfile.arch .
+      - name: Build and validate pacman package
+        run: |
+          python3 build-aux/source_archive.py
+          mkdir -p artifacts
+          podman run --rm --init --network none \
+            -v "$PWD:/source:ro" -v "$PWD/artifacts:/artifacts" \
+            housekeeper-arch-test bash /source/build-aux/arch_check.sh
+      - name: Verify ALPM transaction scope and external installation guidance
+        run: |
+          podman run --rm --init --network none -v "$PWD:/source:ro" \
+            -e HOUSEKEEPER_DISPOSABLE_TEST=1 -e PYTHONPATH=/source/src \
+            housekeeper-arch-test python /source/tests/integration_arch_install.py
+      - name: Validate runtime without optional integrations
+        run: |
+          podman build --target runtime -t housekeeper-arch-runtime -f tests/Containerfile.arch .
+          podman run --rm --init --network none housekeeper-arch-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-packages
+          path: artifacts/*
+          if-no-files-found: error
+
   runtime-floor:
     runs-on: ubuntu-latest
     container: ubuntu:24.04

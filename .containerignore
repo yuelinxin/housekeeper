@@ -1,2 +1,13 @@
 *
 !tests/Containerfile
+!tests/Containerfile.debian
+!tests/Containerfile.arch
+!tests/integration_arch_runtime.py
+!tests/integration_deb_runtime.py
+!debian/
+!debian/**
+!artifacts/
+!artifacts/*.deb
+!artifacts/*.pkg.tar.zst
+!artifacts/arch/
+!artifacts/arch/*.pkg.tar.zst

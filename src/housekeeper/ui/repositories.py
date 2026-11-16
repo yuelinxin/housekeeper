@@ -11,7 +11,7 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
     def __init__(self, owner, preferences):
         super().__init__(
             title=_("Software Sources"),
-            icon_name="network-server-symbolic",
+            icon_name="housekeeper-network-server-symbolic",
             name="software-sources",
         )
         self.owner = owner
@@ -49,7 +49,7 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
             ),
         )
         self.refresh_button = Gtk.Button(
-            icon_name="view-refresh-symbolic",
+            icon_name="housekeeper-view-refresh-symbolic",
             tooltip_text=_("Refresh Software Sources"),
             valign=Gtk.Align.CENTER,
         )
@@ -126,7 +126,7 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
                 )
             if record.can_add:
                 button = Gtk.Button(
-                    icon_name="list-add-symbolic",
+                    icon_name="housekeeper-list-add-symbolic",
                     tooltip_text=_("Add Flatpak Source"),
                     valign=Gtk.Align.CENTER,
                 )
@@ -178,9 +178,9 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
                     activatable=True,
                 )
                 arrow = Gtk.Image(
-                    icon_name="pan-up-symbolic"
+                    icon_name="housekeeper-pan-up-symbolic"
                     if self.native_sources_expanded
-                    else "pan-down-symbolic"
+                    else "housekeeper-pan-down-symbolic"
                 )
                 more.add_suffix(arrow)
                 more.connect("activated", self._toggle_native_sources, hidden_sources, arrow)
@@ -199,7 +199,9 @@ class SoftwareSourcesPage(Adw.PreferencesPage):
             _("Show Fewer Sources") if self.native_sources_expanded else _("Show Disabled Sources")
         )
         arrow.set_from_icon_name(
-            "pan-up-symbolic" if self.native_sources_expanded else "pan-down-symbolic"
+            "housekeeper-pan-up-symbolic"
+            if self.native_sources_expanded
+            else "housekeeper-pan-down-symbolic"
         )
 
     def _toggled(self, row, _pspec, source):

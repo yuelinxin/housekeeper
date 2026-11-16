@@ -2,7 +2,7 @@ Name:           housekeeper
 Version:        0.3.6
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
-License:        MIT
+License:        MIT AND CC0-1.0 AND LGPL-3.0-only
 URL:            https://github.com/yuelinxin/housekeeper
 Source0:        %{url}/releases/download/v%{version}/%{name}-%{version}.tar.gz
 BuildArch:      noarch

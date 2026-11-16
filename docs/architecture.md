@@ -398,6 +398,18 @@ guidance. Nix, Guix, Portage, XBPS and eopkg remain unsupported for attribution 
 
 ## Appearance and launcher icons
 
+Housekeeper's own sidebar, action and status icons are bundled symbolic SVGs with
+private `housekeeper-…-symbolic` names in GResource. GTK can recolor them for the
+current appearance and select RTL variants without relying on the desktop's
+icon set. Application artwork still uses the user's icon theme or explicit file
+path. No global GTK icon-theme setting is changed to standardize the controls.
+See [artwork attribution](../data/icons/README.md) for the bundled Adwaita subset.
+
+The named-icon theme layer is enabled only when `XDG_CURRENT_DESKTOP` contains
+`GNOME` and its icon-theme setting is writable. Installed GNOME schemas alone are
+not evidence of an active GNOME session. Other desktops keep launcher-only icon
+overrides; saved GNOME theme state is left untouched when switching desktops.
+
 Appearance sits last on the details page and watches GTK icon theme changes only
 while the page is mapped. It shows the theme used for icon lookup, or identifies
 custom icons and application image files. Global GTK and cursor settings are omitted.

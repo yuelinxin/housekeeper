@@ -4,7 +4,7 @@
   <name>Housekeeper</name>
   <summary>Understand and manage installed applications</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>MIT AND CC0-1.0 AND LGPL-3.0-only</project_license>
   <developer id="io.github.yuelinxin"><name>Yuelin Xin</name></developer>
   <description>
     <p>Housekeeper brings desktop applications from different installation sources into one native, searchable inventory.</p>

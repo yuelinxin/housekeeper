@@ -26,7 +26,9 @@ from housekeeper.ui.icons import icon_image, set_icon
 
 
 def sidebar_header(window, header):
-    toggle = Gtk.Button(icon_name="sidebar-show-symbolic", tooltip_text=_("Show Sources"))
+    toggle = Gtk.Button(
+        icon_name="housekeeper-sidebar-show-symbolic", tooltip_text=_("Show Sources")
+    )
     toggle.connect("clicked", lambda _b: window.split.set_show_sidebar(True))
     window.split.bind_property("collapsed", toggle, "visible", GObject.BindingFlags.SYNC_CREATE)
     window.split.bind_property(
@@ -125,7 +127,7 @@ class InstallPage(Adw.NavigationPage):
         overlay = Gtk.Overlay(child=scroll)
         toolbar.set_content(overlay)
         self.drop_zone = Adw.StatusPage(
-            icon_name="install-apps-symbolic",
+            icon_name="housekeeper-install-apps-symbolic",
             title=_("Drop to Install"),
             description=_("AppImages, packages and Flatpak files"),
             hexpand=True,
@@ -151,7 +153,7 @@ class InstallPage(Adw.NavigationPage):
         )
         self.website_row.add_css_class("install-result")
         self.website_row.add_prefix(icon_image("web-browser", 40))
-        self.website_row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+        self.website_row.add_suffix(Gtk.Image(icon_name="housekeeper-go-next-symbolic"))
         self.website_row.connect("activated", lambda _r: self.open_website(self.query))
         self.website_list.append(self.website_row)
         content.append(self.website_list)
@@ -233,16 +235,16 @@ class InstallPage(Adw.NavigationPage):
         title, icon, description = {
             "idle": (
                 _("Find Apps to Install"),
-                "install-apps-symbolic",
+                "housekeeper-install-apps-symbolic",
                 _("Search for an app, enter a website, or open or drop a downloaded file."),
             ),
             "searching": (_("Searching for Apps"), None, ""),
             "empty": (
                 _("No Results Found"),
-                "edit-find-symbolic",
+                "housekeeper-edit-find-symbolic",
                 _("Try a shorter name; the app may already be installed."),
             ),
-            "error": (_("Search Failed"), "dialog-warning-symbolic", detail),
+            "error": (_("Search Failed"), "housekeeper-dialog-warning-symbolic", detail),
         }[state]
         self.placeholder.set_title(title)
         # Clear the spinner first: libadwaita keeps its spinner style otherwise.
@@ -379,7 +381,7 @@ class InstallPage(Adw.NavigationPage):
         badge.add_css_class("dim-label")
         badge.add_css_class("caption")
         row.add_suffix(badge)
-        row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+        row.add_suffix(Gtk.Image(icon_name="housekeeper-go-next-symbolic"))
         row.choice = choice
         return row
 
@@ -583,6 +585,18 @@ class InstallDetailsPage(Adw.NavigationPage):
                 _("Already installed from this source. Choose another source to install it there.")
                 if others
                 else _("Already installed.")
+            )
+            return
+        if candidate.source == "pacman":
+            self.install_button.set_label(_("Use System Package Manager"))
+            self.install_button.set_sensitive(False)
+            self.install_button.remove_css_class("suggested-action")
+            self.group.set_description(
+                _(
+                    "Pacman installation is managed externally. On Arch Linux, use "
+                    "sudo pacman -Syu PACKAGE to upgrade the system and install the "
+                    "package together. Flatpak sources can be installed here."
+                )
             )
             return
         self.install_button.set_label(_("Open in Snap Store") if snap else _("Install"))
@@ -809,7 +823,7 @@ class InstallDetailsPage(Adw.NavigationPage):
         self.icon_row.set_title_lines(2)
         self.icon_row.set_subtitle_lines(1)
         self.icon_button = Gtk.Button(
-            icon_name="document-edit-symbolic",
+            icon_name="housekeeper-document-edit-symbolic",
             tooltip_text=_("Choose Icon"),
             valign=Gtk.Align.CENTER,
             css_classes=["flat"],
@@ -818,7 +832,7 @@ class InstallDetailsPage(Adw.NavigationPage):
         self.icon_row.add_suffix(self.icon_button)
         self.icon_row.set_activatable_widget(self.icon_button)
         self.icon_reset = Gtk.Button(
-            icon_name="edit-undo-symbolic",
+            icon_name="housekeeper-edit-undo-symbolic",
             tooltip_text=_("Use Default Icon"),
             valign=Gtk.Align.CENTER,
             sensitive=False,

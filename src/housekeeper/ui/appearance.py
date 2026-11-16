@@ -10,9 +10,9 @@ from housekeeper.i18n import _
 from housekeeper.ui.icons import FALLBACK_ICON, icon_image
 
 ICON_REFRESH_NOTICE = _(
-    "Custom icons apply to all launchers for this app and to its unique desktop icon names, "
-    "including those used by docks and task panels. Housekeeper adds an icon theme layer "
-    "that inherits your current theme. Shared icon names are left unchanged. "
+    "Custom icons apply to this app's desktop launchers. On GNOME, matching icons in "
+    "docks and task panels are updated too, while other icons keep your current theme. "
+    "Other desktops may keep separate panel icons. "
     "If a running window still shows the old icon, close and reopen the app. "
     "Windows must be associated with the correct app; some extensions keep their own icons."
 )
@@ -23,8 +23,7 @@ class AppearanceGroup(Adw.PreferencesGroup):
         super().__init__(
             title=_("Appearance"),
             description=_(
-                "Use the same icon in the app grid, dock and task panels. "
-                "Other icons keep your current theme."
+                "Customize this app's launcher icons. Other apps keep their current icons."
             ),
         )
         self.window = window
@@ -49,13 +48,13 @@ class AppearanceGroup(Adw.PreferencesGroup):
             entry = app.entries[0]
             row = Adw.ActionRow(
                 title=_("Application Icon"),
-                subtitle=_("App grid, dock and task panels"),
+                subtitle=_("Desktop launchers"),
                 use_markup=False,
             )
             row.set_subtitle_lines(0)
             row.add_prefix(icon_image(entry.icon, 32))
             change = Gtk.Button(
-                icon_name="document-edit-symbolic",
+                icon_name="housekeeper-document-edit-symbolic",
                 tooltip_text=_("Change Icon"),
                 valign=Gtk.Align.CENTER,
             )
@@ -63,7 +62,7 @@ class AppearanceGroup(Adw.PreferencesGroup):
             change.connect("clicked", lambda _b, e=entry: window.choose_icon(app, e))
             row.add_suffix(change)
             reset = Gtk.Button(
-                icon_name="edit-undo-symbolic",
+                icon_name="housekeeper-edit-undo-symbolic",
                 tooltip_text=_("Restore Original Icon"),
                 valign=Gtk.Align.CENTER,
             )

@@ -271,6 +271,13 @@ count. It reports elapsed time without a pass/fail latency threshold, since shar
 CI runners have variable CPU and rendering costs. Its peak RSS includes rendering
 screenshots and is not an idle-memory measurement.
 
+GTK smoke also resolves every symbolic icon referenced by the UI against the
+active theme, Adwaita, Breeze, Breeze Dark and an empty theme with no filesystem
+search path. It requires a real symbolic asset from Housekeeper's GResource at
+16/32 pixels in both LTR and RTL, including the expected directional variant.
+This catches missing sidebar icons and accidental dependence on a desktop's
+artwork while checking that the display's icon theme stays unchanged.
+
 `tests/stress_icons.py --runs 20` starts fresh GTK processes with generated SVG icons
 containing text. It checks themed and file icons, missing-icon fallbacks, resizing,
 theme refresh, and signal cleanup. It never reads the application inventory. Use the
@@ -368,7 +375,117 @@ instead of forcing all-cache mode when netlink sees no network interface. Contai
 still run with `--network none`; no external network is available and no production
 daemon configuration is changed.
 
+## Ubuntu and Debian packages
+
+`debian/` is standard debhelper packaging for Ubuntu 24.04 and Debian 13, using
+Meson and dh_python3 for the private Python module directory. The package declares
+GTK/libadwaita version floors and the SVG loader required for launcher icons.
+PackageKit, libflatpak and AppStream integration are recommended dependencies,
+not requirements for opening the application.
+
+For a native build, install `build-essential`, `devscripts` and `equivs`, then
+install build dependencies using `mk-build-deps` and run `dpkg-buildpackage`:
+
+```sh
+sudo mk-build-deps --install --remove --tool 'apt-get -y --no-install-recommends' debian/control
+dpkg-buildpackage --no-sign -b
+```
+
+Run the complete checks in disposable containers instead of installing development
+packages on the host. This example builds Ubuntu; use `debian:13` for Debian:
+
+```sh
+python3 build-aux/source_archive.py
+podman build --target build --build-arg BASE_IMAGE=docker.io/library/ubuntu:24.04 -t housekeeper-deb-test -f tests/Containerfile.debian .
+mkdir -p artifacts
+podman run --rm --network none -v "$PWD:/source:ro" -v "$PWD/artifacts:/artifacts" housekeeper-deb-test bash /source/build-aux/debian_check.sh
+for mode in allow deny; do
+  podman run --rm --network none -v "$PWD:/source:ro" -e HOUSEKEEPER_DISPOSABLE_TEST=1 -e PYTHONPATH=/source/src housekeeper-deb-test python3 /source/tests/integration_deb_install.py "$mode"
+done
+podman build --target runtime --build-arg BASE_IMAGE=docker.io/library/ubuntu:24.04 -t housekeeper-deb-runtime -f tests/Containerfile.debian .
+podman run --rm --network none housekeeper-deb-runtime
+```
+
+Use a separate checkout/output directory for each distribution: the runtime target
+installs `artifacts/*.deb` from the build context. On SELinux hosts, add
+`--security-opt label=disable` to the bind-mounted test runs. No host package
+database, D-Bus socket or home directory should be mounted into these containers.
+
+`debian_check.sh` validates a clean source build, the unit suite, GTK smoke with
+GNOME and KDE session identities, fresh SVG startup, installed resources and
+dpkg ownership, replacement and purge. It adds a distribution suffix to the DEB
+version so release assets remain distinct. The separate runtime image installs
+without Recommends and without build dependencies, then verifies the installed
+entry point, schema, resources, SVG decoding and self-installation detection.
+
+`integration_deb_install.py` builds tiny DEBs and a signed local APT repository.
+It disables the disposable container's external sources, starts PackageKit and
+Polkit, then searches and installs as an unprivileged user. The allowed fixture
+checks both application and dependency versions and DEB attribution; the denied
+fixture checks that neither package was installed. Network is disabled for both.
+These policies test authorization outcomes, not the desktop authentication dialog.
+Local `.deb` installation and native repository toggles remain desktop acceptance
+items on these distributions.
+
+## Arch packages
+
+`packaging/arch/PKGBUILD.in` is rendered by `build-aux/arch_package.py` using the
+current version and SHA256 of the clean source archive. The generated PKGBUILD and
+its adjacent `housekeeper-VERSION-arch.tar.gz` can be built with `makepkg -si`.
+The distinct archive name keeps the checksum paired with the Arch build when
+release artifacts from multiple distributions are collected. No AUR publication
+or repository configuration is performed.
+
+```sh
+python3 build-aux/source_archive.py
+podman build --target build -t housekeeper-arch-test -f tests/Containerfile.arch .
+mkdir -p artifacts/arch
+podman run --rm --init --network none -v "$PWD:/source:ro" -v "$PWD/artifacts/arch:/artifacts" housekeeper-arch-test bash /source/build-aux/arch_check.sh
+podman run --rm --init --network none -v "$PWD:/source:ro" -e HOUSEKEEPER_DISPOSABLE_TEST=1 -e PYTHONPATH=/source/src housekeeper-arch-test python /source/tests/integration_arch_install.py
+podman build --target runtime --build-arg PACKAGE_DIR=artifacts/arch -t housekeeper-arch-runtime -f tests/Containerfile.arch .
+podman run --rm --init --network none housekeeper-arch-runtime
+```
+
+On SELinux hosts, add `--security-opt label=disable` to the test runs, including
+the minimal runtime run: Arch's glycin SVG loader uses a nested bubblewrap sandbox
+that the host's default container label can block. Keep glycin's sandbox enabled;
+no application setting or host SELinux policy needs changing.
+The image uses a complete `pacman -Syu`, never a partial upgrade. Build images use
+the current official Arch repositories: record `arch-environment.txt` with each
+result instead of treating a rolling tag as a fixed platform version.
+
+`arch_check.sh` invokes makepkg as an unprivileged user, verifies the source
+checksum, runs unit and metadata checks, GTK smoke with GNOME and KDE session
+identities, and five fresh SVG startups. It installs/reinstalls/removes the pacman
+package and checks real ALPM attribution, size, installation date, ownership,
+resources, GSettings and external update instructions. A separate runtime image
+installs without build tools or optional PackageKit/Flatpak integrations. The
+package is `any`; only x86_64 has been exercised.
+
+`integration_arch_install.py` uses an unsigned, local fixture repository solely
+to check transaction scope. It installs version 1 of an unrelated fixture, then
+offers version 2 alongside a new application. AppStream search runs as an
+unprivileged user. A direct ALPM installation simulation includes both the
+requested package and the unrelated upgrade; Housekeeper's actual install entry
+point refuses the operation and leaves both package states unchanged. This is not
+a signature-validation or successful-installation test. GTK smoke checks the
+external-install explanation and switching to an installable Flatpak source.
+Desktop Polkit, repository toggles, and real Arch Plasma/GNOME sessions remain
+separate acceptance checks.
+
 ## Manual desktop checks
+
+Ubuntu 24.04, Debian 13 and KDE Plasma acceptance is tracked separately in
+[native desktop acceptance](desktop-acceptance.md). The DEB container jobs use
+Xvfb with both GNOME and KDE desktop identities; this exercises fallback behavior
+with GNOME schemas installed, but does not validate a Plasma shell or graphical
+authorization agent.
+
+The [real Plasma VM record](plasma-vm-validation.md) documents the independent
+Ubuntu 24.04.5 / Plasma 5.27 KVM environment, actual X11 installation and icon
+checks, native Wayland startup, artifact hashes, console access and outstanding
+acceptance items. Cloud images must give NetworkManager control of the guest
+Ethernet device before using its online state to validate PackageKit downloads.
 
 Before a public release, use Fedora Workstation virtual machines to check actual
 GNOME Polkit dialogs (accept, deny, and dismiss), Orca, keyboard-only navigation,
@@ -382,12 +499,13 @@ match the launcher's entry count. Unknown metadata must remain visibly unknown.
 
 ## Release process
 
-Keep the version consistent in the Python package, Meson, RPM spec, AppStream
+Keep the version consistent in the Python package, Meson, RPM spec, Debian changelog, AppStream
 release metadata, source archive script, and workflows. Update CHANGELOG and the
 validation record. Review generated screenshots for synthetic data only.
 
-The tag workflow builds and validates both Fedora versions and creates a **draft**
-GitHub Release with source, RPM, SRPM, and SHA-256 checksums. It does not publish
+The tag workflow builds and validates Fedora 43/44/45, Ubuntu 24.04, Debian 13 and
+current Arch Linux. It creates a **draft** GitHub Release with source, RPM, SRPM,
+DEB, pacman packages, the generated PKGBUILD and SHA-256 checksums. It does not publish
 automatically. Tags and repository changes must be pushed deliberately; merely
 building the app locally does not create a release.
 

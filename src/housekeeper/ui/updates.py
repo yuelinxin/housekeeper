@@ -51,7 +51,9 @@ class UpdatesPage(Adw.NavigationPage):
         toolbar = Adw.ToolbarView()
         self.set_child(toolbar)
         header = Adw.HeaderBar(show_back_button=False)
-        toggle = Gtk.Button(icon_name="sidebar-show-symbolic", tooltip_text=_("Show Sources"))
+        toggle = Gtk.Button(
+            icon_name="housekeeper-sidebar-show-symbolic", tooltip_text=_("Show Sources")
+        )
         toggle.connect("clicked", lambda _b: window.split.set_show_sidebar(True))
         window.split.bind_property("collapsed", toggle, "visible", GObject.BindingFlags.SYNC_CREATE)
         window.split.bind_property(
@@ -106,7 +108,7 @@ class UpdatesPage(Adw.NavigationPage):
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.list.add_css_class("boxed-list")
         self.list.set_valign(Gtk.Align.START)
-        self.empty = Adw.StatusPage(icon_name="software-update-available-symbolic")
+        self.empty = Adw.StatusPage(icon_name="housekeeper-software-update-available-symbolic")
         self.empty.add_css_class("page-status")
         empty_actions = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=12, halign=Gtk.Align.CENTER

@@ -10,3 +10,6 @@ install_data('icons/hicolor/scalable/apps/' + app_id + '.svg',
              install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps')
 install_data('icons/hicolor/symbolic/apps/' + app_id + '-symbolic.svg',
              install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps')
+install_data('icons/README.md', 'icons/adwaita/COPYING',
+             'icons/adwaita/COPYING_LGPL', 'icons/adwaita/COPYING_GPL',
+             install_dir: app_dir / 'icon-licenses')

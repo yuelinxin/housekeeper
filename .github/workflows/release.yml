@@ -35,8 +35,66 @@ jobs:
           path: release-files/*
           if-no-files-found: error
 
+  debian-packages:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:24.04
+            target: ubuntu24.04
+          - image: debian:13
+            target: debian13
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and validate native package
+        run: |
+          python3 build-aux/source_archive.py
+          podman build --target build --build-arg BASE_IMAGE=docker.io/library/${{ matrix.image }} -t housekeeper-deb-test -f tests/Containerfile.debian .
+          mkdir -p artifacts
+          podman run --rm --network none \
+            -v "$PWD:/source:ro" -v "$PWD/artifacts:/artifacts" \
+            housekeeper-deb-test bash /source/build-aux/debian_check.sh
+          for mode in allow deny; do
+            podman run --rm --network none -v "$PWD:/source:ro" \
+              -e HOUSEKEEPER_DISPOSABLE_TEST=1 -e PYTHONPATH=/source/src \
+              housekeeper-deb-test python3 /source/tests/integration_deb_install.py "$mode"
+          done
+          podman build --target runtime --build-arg BASE_IMAGE=docker.io/library/${{ matrix.image }} -t housekeeper-deb-runtime -f tests/Containerfile.debian .
+          podman run --rm --network none housekeeper-deb-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: artifacts/*.deb
+          if-no-files-found: error
+
+  arch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and validate pacman package
+        run: |
+          python3 build-aux/source_archive.py
+          podman build --target build -t housekeeper-arch-test -f tests/Containerfile.arch .
+          mkdir -p artifacts
+          podman run --rm --init --network none \
+            -v "$PWD:/source:ro" -v "$PWD/artifacts:/artifacts" \
+            housekeeper-arch-test bash /source/build-aux/arch_check.sh
+          podman run --rm --init --network none -v "$PWD:/source:ro" \
+            -e HOUSEKEEPER_DISPOSABLE_TEST=1 -e PYTHONPATH=/source/src \
+            housekeeper-arch-test python /source/tests/integration_arch_install.py
+          podman build --target runtime -t housekeeper-arch-runtime -f tests/Containerfile.arch .
+          podman run --rm --init --network none housekeeper-arch-runtime
+          mkdir -p release-files
+          cp artifacts/*.pkg.tar.zst artifacts/*-arch.tar.gz artifacts/PKGBUILD release-files/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-arch
+          path: release-files/*
+          if-no-files-found: error
+
   draft:
-    needs: packages
+    needs: [packages, debian-packages, arch]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -48,7 +106,7 @@ jobs:
           merge-multiple: true
       - name: Create checksums
         working-directory: release-assets
-        run: sha256sum *.rpm *.tar.gz > SHA256SUMS
+        run: sha256sum *.rpm *.deb *.pkg.tar.zst *.tar.gz PKGBUILD > SHA256SUMS
       - name: Create a draft for review
         env:
           GH_TOKEN: ${{ github.token }}

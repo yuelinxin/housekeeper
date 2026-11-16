@@ -52,6 +52,15 @@ def local_install(tmp_path, monkeypatch):
     return tmp_path, Installer()
 
 
+def test_pacman_install_never_starts_an_implicit_system_upgrade(monkeypatch):
+    client = Mock()
+    monkeypatch.setattr(backend, "package_client", client)
+    candidate = InstallCandidate("pacman", "example", "example;1.0;any;extra", "Example")
+    with pytest.raises(ManagementError, match="sudo pacman -Syu PACKAGE"):
+        Installer().install(InstallRequest("pacman", candidate=candidate), lambda *_: None)
+    client.assert_not_called()
+
+
 def test_web_url_default_name_and_inventory_classification(local_install):
     root, installer = local_install
     result = installer.install(InstallRequest("web", "example.org/notes"), lambda *_: None)

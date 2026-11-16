@@ -9,10 +9,10 @@ from housekeeper.i18n import _
 from housekeeper.models import Outcome
 
 OUTCOME_ICONS = {
-    Outcome.SUCCESS: ("object-select-symbolic", "success"),
-    Outcome.PARTIAL: ("dialog-warning-symbolic", "warning"),
-    Outcome.FAILED: ("dialog-error-symbolic", "error"),
-    Outcome.CANCELLED: ("process-stop-symbolic", "dim-label"),
+    Outcome.SUCCESS: ("housekeeper-object-select-symbolic", "success"),
+    Outcome.PARTIAL: ("housekeeper-dialog-warning-symbolic", "warning"),
+    Outcome.FAILED: ("housekeeper-dialog-error-symbolic", "error"),
+    Outcome.CANCELLED: ("housekeeper-process-stop-symbolic", "dim-label"),
 }
 
 
@@ -79,7 +79,9 @@ class StatusSpinner:
 
 def cancel_button():
     button = Gtk.Button(
-        icon_name="window-close-symbolic", tooltip_text=_("Cancel"), valign=Gtk.Align.CENTER
+        icon_name="housekeeper-window-close-symbolic",
+        tooltip_text=_("Cancel"),
+        valign=Gtk.Align.CENTER,
     )
     button.add_css_class("flat")
     button.add_css_class("circular")
@@ -100,7 +102,7 @@ class ActivityButton(Gtk.MenuButton):
         super().__init__(tooltip_text=_("Activity"), has_frame=False)
         self.log = log
         self.cancel = cancel
-        self.icon = Gtk.Image(icon_name="activity-symbolic")
+        self.icon = Gtk.Image(icon_name="housekeeper-activity-symbolic")
         # The same spinner as the pages' progress.
         self.spinner = spinner()
         self.set_child(self.icon)

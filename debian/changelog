@@ -1,0 +1,6 @@
+housekeeper (0.3.6-1) UNRELEASED; urgency=medium
+
+  * Add native packaging for Ubuntu 24.04 and Debian 13.
+  * Keep GNOME icon theme changes within GNOME sessions.
+
+ -- Yuelin Xin <yuelinxin@users.noreply.github.com>  Sun, 15 Nov 2026 17:00:00 -0800

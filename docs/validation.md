@@ -1,5 +1,119 @@
 # v0.3.6 validation
 
+## Arch native packaging — November 15, 2026
+
+- Current official Arch x86_64 containers pass 781 unit tests, with seven skips
+  for unavailable RPM bindings and dpkg-query. Both GNOME/KDE identity GTK runs,
+  all 35 bundled symbols, five fresh SVG startups, native makepkg build, package
+  installation/replacement/removal, and installed-runtime checks pass.
+- The environment uses Python 3.14.10, PyGObject 3.58.1, GTK 4.24.1, libadwaita
+  1.10.0, pacman 7.1.0.r9.g54d9411 and PackageKit 1.4.0. The starting official
+  image digest is `sha256:fcee73ea1b96e236248f53a213f71276cc9072d9025b58bce9915e32f19963ae`;
+  image construction performs a full upgrade. Exact package versions are saved
+  in `artifacts/arch/arch-environment.txt`.
+- Real ALPM records exposed fileless metapackages (`base`, `base-devel`, etc.)
+  whose empty `files` record and omitted size were treated as damaged metadata.
+  These now preserve ownership checks; regression tests still reject missing or
+  empty file lists for nonempty packages. Installed Housekeeper metadata matches
+  pacman ownership, version, installed size and installation date.
+- An offline AppStream/ALPM fixture confirms that requesting one package also
+  queues an unrelated installed package's upgrade. This matches PackageKit's
+  [ALPM implementation](https://github.com/PackageKit/PackageKit/blob/v1.4.0/backends/alpm/pk-alpm-sync.c).
+  Housekeeper now blocks this install before contacting PackageKit, with external
+  pacman guidance in the details page. Search still works; switching the source
+  to Flatpak restores the install action. The fixture checks simulation and
+  unchanged package state, not signed installation or graphical authentication.
+- A separate runtime image has no PackageKit, Flatpak, AppStream, Meson or pytest
+  and passes SVG, resources, schema, desktop entry, pacman inventory and self-source
+  detection as an unprivileged user. Fedora host SELinux labeling initially blocked
+  glycin's nested SVG sandbox; adding `--security-opt label=disable` to this test
+  container resolves it without disabling the decoder sandbox. PackageKit hook
+  connection warnings in the build container reflect its absent system bus.
+- The first removal check left bytecode created by the harness's root `--version`
+  invocation. Running the application as the fixture user resolves this test
+  contamination; the final complete run exits 0 and leaves no application directory.
+- Shared ownership/install regressions pass 133 tests each on Fedora 45 and Ubuntu
+  24.04. Ubuntu also passes the installation-page GTK smoke. Ruff, formatting,
+  strict mypy, shell syntax, workflow YAML and diff whitespace checks pass.
+- Local artifact: `artifacts/arch/housekeeper-0.3.6-1-any.pkg.tar.zst`, SHA256
+  `52e28464f3d5b1bd50cc761c67ebc0f62e666370cc2434a25179d924f4f0bdba`.
+  Its generated PKGBUILD and matching source archive accompany it. CI and draft
+  release definitions now include Arch; no workflow, release or AUR publication
+  was triggered. The package is architecture-independent, but only x86_64 has
+  been exercised. Real Arch Plasma/GNOME sessions, ARM and derivatives such as
+  Manjaro remain unvalidated. Native install/update/removal stay external.
+
+## KDE UI icon follow-up — November 15, 2026
+
+- The real Breeze theme was missing five sidebar/status symbols and used
+  different artwork for other controls. All 35 application-owned UI symbols are
+  now bundled with private names, with six directional variants. Application
+  artwork still uses the user's theme. Attribution and complete license texts
+  accompany the vendored Adwaita assets in both native packages.
+- The rebuilt Ubuntu DEB resolves every symbol from its GResource on the actual
+  Plasma Wayland desktop. Sidebar, toolbar and preference icons render correctly;
+  the system icon-theme setting remains `breeze`. The VM was shut down afterward.
+- GTK smoke checks actual icon resolution across the active theme, Adwaita,
+  Breeze, Breeze Dark and an empty theme, at two sizes and in both directions.
+  See the [VM follow-up record](plasma-vm-validation.md#follow-up-missing-and-inconsistent-ui-icons)
+  for the five missing names, tested artifact and screenshots.
+- Ubuntu 24.04 and Debian 13 each pass 776 unit tests with six RPM-only skips,
+  both GNOME/KDE identity smoke runs, SVG stress and DEB install/replacement/purge.
+  Fedora 45 passes its unit suite, GTK/SVG checks and RPM build/install/replacement/
+  removal. Ruff, formatting and strict mypy pass. The first Ubuntu container
+  returned SIGTERM after printing all successful checks; repeating with Podman's
+  `--init` completed the same checks with exit status 0.
+
+## Real Plasma VM — November 15, 2026
+
+- An independent Ubuntu 24.04.5 / Plasma 5.27 KVM guest passes X11 launch,
+  inventory, real APT installation with KDE Polkit cancellation and acceptance,
+  KDE portal icon selection, launcher icon refresh/restoration, and checks that
+  the GNOME theme stays unchanged. Native Wayland startup, inventory and list/grid
+  rendering pass in a separate SDDM login session.
+- This exposed a false warning for KDE's `Type=Service` desktop entry. Discovery
+  now skips non-application entries while preserving XDG precedence and genuine
+  parse errors. The rebuilt DEB clears the warning on the actual desktop.
+- After this fix, Ubuntu 24.04 and Debian 13 each pass 776 unit tests with six
+  RPM-only skips, plus the complete DEB and GTK checks. Ruff and strict mypy pass.
+- See the [VM record](plasma-vm-validation.md) for versions, artifact hashes,
+  evidence locations, environment corrections and limits. This is partial
+  acceptance of Ubuntu with Plasma, not complete Kubuntu/Plasma 6 certification.
+
+## Unreleased native Debian packaging — November 15, 2026
+
+- Ubuntu 24.04 and Debian 13 disposable x86_64 containers each pass 774 unit
+  tests; six RPM-binding tests skip because python3-rpm is not installed.
+  Fedora 45 passes 779 tests with its dpkg-query test skipped.
+- Both DEB targets pass a clean source build, desktop/AppStream metadata checks,
+  full GTK smoke under Xvfb with `XDG_CURRENT_DESKTOP=GNOME` and `KDE`, and five
+  fresh SVG icon startups. GTK emits layout/deprecation warnings, with no failed
+  smoke assertions. The KDE identity run is not a running Plasma desktop.
+- Native packages `0.3.6-1+ubuntu24.04` and `0.3.6-1+debian13` install, replace
+  themselves and purge successfully. Checks cover the installed entry point,
+  resources, compiled GSettings schema, desktop visibility, dpkg attribution and
+  external self-update instructions. Python bytecode is not shipped in the DEB.
+- Separate clean images install each DEB without Recommends or build tools and
+  pass the installed-runtime check, including SVG decoding. This exposed the
+  need to declare `librsvg2-common` explicitly in build and runtime dependencies.
+- Both distributions pass real PackageKit search and installation from a signed
+  offline APT fixture, including its dependency. Separate denied-authorization
+  fixtures leave both packages uninstalled. All transactions run in disposable
+  containers with networking disabled, as an unprivileged test user.
+- Non-GNOME icon regression cases cover KDE, Xfce, Cinnamon, MATE and an unknown
+  session with GNOME schemas available: launcher changes/restoration work without
+  changing the GNOME theme or its saved layer. Ubuntu's `ubuntu:GNOME` identity
+  continues to enable the GNOME layer.
+- Ruff lint/format, strict mypy, shell syntax, workflow YAML parsing and diff
+  whitespace checks pass. CI and draft-release definitions include both DEB
+  targets and the clean-runtime and APT fixtures; no GitHub run or release was
+  triggered in this session.
+- The subsequent [real Plasma VM run](plasma-vm-validation.md) adds specific X11
+  desktop/Polkit/icon and Wayland startup checks. Local DEB installation, native
+  repository toggles and the remaining desktop matrix are still pending.
+  See [desktop acceptance](desktop-acceptance.md).
+  DEB updates/removal remain external; no new native removal backend is enabled.
+
 ## v0.3.6 release checks — November 10, 2026
 
 - Python, Meson, RPM and AppStream metadata agree on 0.3.6 / RPM release 1.

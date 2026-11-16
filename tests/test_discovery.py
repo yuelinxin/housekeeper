@@ -65,6 +65,23 @@ def test_malformed_entry_does_not_abort_scan(desktop, tmp_path):
     assert len(errors) == 1
 
 
+def test_service_and_link_entries_are_not_scan_failures(desktop, tmp_path):
+    desktop()
+    desktop(filename="org.kde.kded5.desktop", Type="Service", NoDisplay="true", Exec="")
+    desktop(filename="website.desktop", Type="Link", URL="https://example.org", Exec="")
+    apps, errors = scan_entries([tmp_path], {"KDE"})
+    assert len(apps) == 1
+    assert not errors
+
+
+def test_non_application_override_does_not_expose_lower_priority_app(desktop, tmp_path):
+    desktop(root=tmp_path / "user", Type="Service")
+    desktop(root=tmp_path / "system")
+    apps, errors = scan_entries([tmp_path / "user", tmp_path / "system"], {"KDE"})
+    assert not apps
+    assert not errors
+
+
 def test_scan_never_executes_launcher(desktop, tmp_path):
     sentinel = tmp_path / "must-not-exist"
     desktop(Exec=f"sh -c 'touch {sentinel}'")

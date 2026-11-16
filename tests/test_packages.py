@@ -80,6 +80,35 @@ def test_pacman_corrupt_package_does_not_hide_good_package(pacman_db):
     assert len(packages.pacman_packages()) == 1
 
 
+@pytest.mark.parametrize("size", ["", "%SIZE%\n0\n"])
+def test_pacman_fileless_metapackage_preserves_ownership_queries(pacman_db, size):
+    from housekeeper.models import FileOwnershipState
+    from housekeeper.ownership import FileOwnershipIndex
+
+    meta = pacman_db.parent / "base-3-3"
+    meta.mkdir()
+    (meta / "desc").write_text("%NAME%\nbase\n\n%VERSION%\n3-3\n\n%ARCH%\nany\n\n" + size)
+    (meta / "files").write_text("")
+    assert len(packages.pacman_packages(strict=True)) == 2
+    index = FileOwnershipIndex()
+    assert index.pacman(Path("/usr/bin/editor")).state == FileOwnershipState.OWNED
+    assert index.pacman(Path("/tmp/unowned.desktop")).state == FileOwnershipState.UNOWNED
+
+
+@pytest.mark.parametrize("contents", [None, "", "%BACKUP%\netc/editor.conf\t12345\n"])
+def test_pacman_missing_file_list_still_refuses_negative_ownership(pacman_db, contents):
+    from housekeeper.models import FileOwnershipState
+    from housekeeper.ownership import FileOwnershipIndex
+
+    if contents is None:
+        (pacman_db / "files").unlink()
+    else:
+        (pacman_db / "files").write_text(contents)
+    index = FileOwnershipIndex()
+    index.queries = {"pacman": index.pacman}
+    assert index.query(Path("/tmp/unowned.desktop")).state == FileOwnershipState.ERROR
+
+
 def test_pacman_respects_configured_database_and_root(monkeypatch):
     calls = []
     monkeypatch.setattr(packages.shutil, "which", lambda _: "/usr/bin/pacman-conf")

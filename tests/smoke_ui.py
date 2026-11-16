@@ -1,6 +1,7 @@
 """Exercise the real GTK widgets using synthetic application data, never removal."""
 
 import os
+import re
 import resource
 import sys
 import tempfile
@@ -144,6 +145,44 @@ output = Path(os.environ.get("HOUSEKEEPER_SCREENSHOT_DIR", ROOT / "work/screensh
 output.mkdir(parents=True, exist_ok=True)
 
 
+def check_ui_icons():
+    """Check actual GTK resolution, including a theme with no installed icons."""
+    names = set()
+    for path in [*ROOT.glob("src/housekeeper/ui/*.py"), ROOT / "data/window.ui"]:
+        names.update(re.findall(r"[a-z][a-z0-9-]*-symbolic", path.read_text()))
+    assert names and all(name.startswith("housekeeper-") for name in names)
+    resource = "/io/github/yuelinxin/housekeeper/icons"
+    available = set(
+        Gio.resources_enumerate_children(
+            resource + "/scalable/actions", Gio.ResourceLookupFlags.NONE
+        )
+    )
+    display_theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+    original_theme = display_theme.get_theme_name()
+    themes = [display_theme]
+    for name in ("Adwaita", "breeze", "breeze-dark", "HousekeeperEmptyTest"):
+        theme = Gtk.IconTheme.new()
+        theme.set_theme_name(name)
+        if name == "HousekeeperEmptyTest":
+            theme.set_search_path([])
+        theme.add_resource_path(resource)
+        themes.append(theme)
+    for theme in themes:
+        for name in sorted(names):
+            assert theme.has_icon(name), (theme.get_theme_name(), name)
+            for direction in (Gtk.TextDirection.LTR, Gtk.TextDirection.RTL):
+                suffix = "-rtl" if direction == Gtk.TextDirection.RTL else "-ltr"
+                expected = name + suffix if name + suffix + ".svg" in available else name
+                for size in (16, 32):
+                    icon = theme.lookup_icon(name, None, size, 1, direction, Gtk.IconLookupFlags(0))
+                    assert icon.is_symbolic(), (theme.get_theme_name(), name)
+                    assert icon.get_file().get_uri() == (
+                        "resource://" + resource + "/scalable/actions/" + expected + ".svg"
+                    ), (theme.get_theme_name(), name, icon.get_file().get_uri())
+    assert display_theme.get_theme_name() == original_theme
+    print(f"UI icons: {len(names)} bundled symbols resolve across themes, sizes and directions")
+
+
 def capture(window, name):
     paintable = Gtk.WidgetPaintable.new(window)
     snapshot = Gtk.Snapshot()
@@ -164,6 +203,7 @@ def activate(app):
     Gtk.StyleContext.add_provider_for_display(
         Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
     )
+    check_ui_icons()
     window = HousekeeperWindow(app, Gio.Settings.new(APP_ID))
     window.toast = lambda _text: None
     window.present()
@@ -322,7 +362,17 @@ def activate(app):
         details.source_row.set_selected(2)
         assert details.candidate == install_fixture["native"]
         assert details.details_row.get_subtitle() == "firefox-esr 1 · x86_64"
+        if window.native_source == "pacman":
+            assert not details.install_button.get_sensitive()
+            assert "sudo pacman -Syu PACKAGE" in details.group.get_description()
+            with patch.object(window.service, "install") as install:
+                details.install_button.emit("clicked")
+                install.assert_not_called()
+            assert not window.operation_active
+            details.source_row.set_selected(0)
+            assert details.install_button.get_sensitive()
         assert details.install_button.get_label() == "Install"
+        install_fixture["selected"] = details.candidate
         install_fixture["details"] = details
 
     def start_install_details():
@@ -334,7 +384,7 @@ def activate(app):
         windows = list(Gtk.Window.get_toplevels())
         details.install_button.emit("clicked")
         request = install.call_args.args[0]
-        assert request.candidate == install_fixture["native"]
+        assert request.candidate == install_fixture["selected"]
         assert window.operation_active and window.operation_kind == "install"
         # Progress replaces the Install button inline; nothing covers the window.
         install.call_args.args[1]("Downloading packages\nfirefox-esr-1.x86_64", 0.4, True)

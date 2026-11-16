@@ -39,17 +39,17 @@ from housekeeper.ui.updates import UpdatesPage
 from housekeeper.updates import update_instructions
 
 SOURCES = {
-    "all": (_("All Apps"), "view-app-grid-symbolic"),
-    "rpm": (_("RPM"), "package-x-generic-symbolic"),
-    "deb": (_("DEB"), "package-x-generic-symbolic"),
-    "pacman": (_("Pacman"), "package-x-generic-symbolic"),
-    "apk": (_("APK"), "package-x-generic-symbolic"),
-    "snap": (_("Snap"), "application-x-addon-symbolic"),
-    "flatpak": (_("Flatpak"), "flatpak-symbolic"),
-    "web": (_("Web Apps"), "web-browser-symbolic"),
-    "appimage": (_("AppImage"), "application-x-executable-symbolic"),
-    "steam": (_("Steam"), "applications-games-symbolic"),
-    "other": (_("Other"), "folder-symbolic"),
+    "all": (_("All Apps"), "housekeeper-view-app-grid-symbolic"),
+    "rpm": (_("RPM"), "housekeeper-package-x-generic-symbolic"),
+    "deb": (_("DEB"), "housekeeper-package-x-generic-symbolic"),
+    "pacman": (_("Pacman"), "housekeeper-package-x-generic-symbolic"),
+    "apk": (_("APK"), "housekeeper-package-x-generic-symbolic"),
+    "snap": (_("Snap"), "housekeeper-application-x-addon-symbolic"),
+    "flatpak": (_("Flatpak"), "housekeeper-flatpak-symbolic"),
+    "web": (_("Web Apps"), "housekeeper-web-browser-symbolic"),
+    "appimage": (_("AppImage"), "housekeeper-application-x-executable-symbolic"),
+    "steam": (_("Steam"), "housekeeper-applications-games-symbolic"),
+    "other": (_("Other"), "housekeeper-folder-symbolic"),
 }
 AUTO_REFRESH_DELAY = 30
 # A burst of file events is one transaction; read its result only once it stops writing.
@@ -155,7 +155,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.native_source, native_title = native_package_source()
         self.sources = {
             "all": SOURCES["all"],
-            self.native_source: (native_title, "package-x-generic-symbolic"),
+            self.native_source: (native_title, "housekeeper-package-x-generic-symbolic"),
             **{
                 key: value
                 for key, value in SOURCES.items()
@@ -284,7 +284,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         self.empty = Adw.StatusPage(
             title=_("Finding Applications"),
             description=_("Installed applications will appear here."),
-            icon_name="view-app-grid-symbolic",
+            icon_name="housekeeper-view-app-grid-symbolic",
         )
         self.empty.add_css_class("page-status")
         self.views.add_named(self.empty, "empty")
@@ -294,8 +294,8 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         controls = self.view_controls = Gtk.Box()
         controls.add_css_class("linked")
         for mode, icon, title in (
-            ("list", "view-list-symbolic", _("List View")),
-            ("grid", "view-grid-symbolic", _("Grid View")),
+            ("list", "housekeeper-view-list-symbolic", _("List View")),
+            ("grid", "housekeeper-view-grid-symbolic", _("Grid View")),
         ):
             button = Gtk.ToggleButton(icon_name=icon, tooltip_text=title)
             if group:
@@ -338,7 +338,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         sort_menu.append(_("Size (Largest First)"), "win.sort-mode::size")
         sort_menu.append(_("Last Updated (Newest First)"), "win.sort-mode::installed")
         self.sort_button = Gtk.MenuButton(
-            icon_name="view-sort-ascending-symbolic", menu_model=sort_menu
+            icon_name="housekeeper-view-sort-ascending-symbolic", menu_model=sort_menu
         )
         self._sort_tooltip()
         menu = Gio.Menu()
@@ -347,7 +347,9 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         menu.append(_("About Housekeeper"), "win.about")
         self.sidebar_header.pack_end(
             Gtk.MenuButton(
-                icon_name="open-menu-symbolic", menu_model=menu, tooltip_text=_("Main Menu")
+                icon_name="housekeeper-open-menu-symbolic",
+                menu_model=menu,
+                tooltip_text=_("Main Menu"),
             )
         )
         self.activity_button = ActivityButton(self.activities, self.cancel_operation)
@@ -790,7 +792,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         row = Adw.ActionRow(title=title, subtitle=value)
         row.set_subtitle_lines(3)
         copy = Gtk.Button(
-            icon_name="edit-copy-symbolic",
+            icon_name="housekeeper-edit-copy-symbolic",
             valign=Gtk.Align.CENTER,
             tooltip_text=_("Copy %s") % title,
         )
@@ -799,7 +801,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         row.add_suffix(copy)
         if path and Path(value).exists():
             open_button = Gtk.Button(
-                icon_name="folder-open-symbolic",
+                icon_name="housekeeper-folder-open-symbolic",
                 valign=Gtk.Align.CENTER,
                 tooltip_text=_("Open File Location"),
             )
@@ -837,7 +839,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
         title.add_css_class("title-1")
         title_row.append(title)
         self.update_badge = Gtk.Image(
-            icon_name="software-update-available-symbolic",
+            icon_name="housekeeper-software-update-available-symbolic",
             pixel_size=16,
             halign=Gtk.Align.CENTER,
             valign=Gtk.Align.CENTER,
@@ -1065,7 +1067,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             )
             notice.connect(
                 "button-clicked",
-                lambda _toast: self.message(_("Refreshing GNOME Icons"), ICON_REFRESH_NOTICE),
+                lambda _toast: self.message(_("Refreshing Application Icons"), ICON_REFRESH_NOTICE),
             )
             self.toast_overlay.add_toast(notice)
             self.refresh()
@@ -1505,11 +1507,13 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             entry.add_css_class("monospace")
             entry.update_property([Gtk.AccessibleProperty.LABEL], [_("Command")])
             row.append(entry)
-            copy = Gtk.Button(icon_name="edit-copy-symbolic", tooltip_text=_("Copy Command"))
+            copy = Gtk.Button(
+                icon_name="housekeeper-edit-copy-symbolic", tooltip_text=_("Copy Command")
+            )
 
             def copy_command(button):
                 self._copy(command)
-                button.set_icon_name("object-select-symbolic")
+                button.set_icon_name("housekeeper-object-select-symbolic")
                 button.set_tooltip_text(_("Copied"))
 
             copy.connect("clicked", copy_command)
@@ -1558,7 +1562,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
 
         window = Adw.PreferencesWindow(transient_for=self, modal=True, title=_("Preferences"))
         page = Adw.PreferencesPage(
-            title=_("General"), icon_name="preferences-system-symbolic", name="general"
+            title=_("General"), icon_name="housekeeper-preferences-system-symbolic", name="general"
         )
         group = Adw.PreferencesGroup(title=_("Application Inventory"))
         row = Adw.SwitchRow(

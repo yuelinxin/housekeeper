@@ -273,6 +273,16 @@ def search_packages(worker, source, query):
 
 
 def install_package(worker, candidate, progress):
+    # ALPM's InstallPackages also queues alpm_sync_sysupgrade. Our app-specific
+    # confirmation does not authorize an unpreviewed system upgrade.
+    if candidate.source == "pacman":
+        raise ManagementError(
+            _(
+                "Install Pacman packages with your system package manager. "
+                "On Arch Linux, use sudo pacman -Syu PACKAGE to upgrade the system "
+                "and install the package together."
+            )
+        )
     client, pk = package_client(candidate.source)
     parts = candidate.target.split(";")
     if len(parts) != 4 or parts[0] != candidate.name:

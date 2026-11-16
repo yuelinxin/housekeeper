@@ -1,0 +1,22 @@
+ARG BASE_IMAGE=docker.io/library/archlinux:base
+FROM ${BASE_IMAGE} AS runtime-base
+RUN pacman -Syu --noconfirm --needed \
+        python python-gobject gtk4 libadwaita librsvg adwaita-icon-theme \
+    && pacman -Scc --noconfirm
+
+FROM runtime-base AS build
+RUN pacman -Syu --noconfirm --needed \
+        base-devel meson glib2-devel python-pytest desktop-file-utils appstream \
+        xorg-server-xvfb xorg-xauth dbus gsettings-desktop-schemas \
+        packagekit flatpak archlinux-appstream-data squashfs-tools \
+    && pacman -Scc --noconfirm \
+    && useradd --create-home hk-build
+
+FROM runtime-base AS runtime
+ARG PACKAGE_DIR=artifacts
+COPY ${PACKAGE_DIR}/*.pkg.tar.zst /tmp/packages/
+RUN pacman -U --noconfirm /tmp/packages/*.pkg.tar.zst \
+    && useradd --create-home hk-test
+COPY tests/integration_arch_runtime.py /tmp/integration_arch_runtime.py
+USER hk-test
+CMD ["python", "/tmp/integration_arch_runtime.py"]

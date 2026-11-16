@@ -14,6 +14,10 @@ from housekeeper.launch import parse_launch, resolve_executable
 from housekeeper.models import DesktopEntry
 
 
+class NonApplicationEntry(ValueError):
+    """A desktop file describes a service or link, not an application."""
+
+
 def application_roots(env=None, home=None) -> list[Path]:
     env = os.environ if env is None else env
     home = Path.home() if home is None else home
@@ -46,7 +50,7 @@ def read_entry(path: Path, root: Path, desktops: set[str] | None = None) -> Desk
             return False
 
     if string("Type", "Application") != "Application":
-        raise ValueError("Not an application entry")
+        raise NonApplicationEntry("Not an application entry")
     try:
         name = keyfile.get_locale_string("Desktop Entry", "Name", None)
     except GLib.Error:
@@ -124,6 +128,8 @@ def scan_entries(roots=None, desktops=None) -> tuple[list[DesktopEntry], list[st
             seen.add(desktop_id)
             try:
                 entries.append(read_entry(path, root, desktops))
+            except NonApplicationEntry:
+                continue
             except (GLib.Error, OSError, ValueError) as error:
                 warnings.append(f"Could not read {path.name}: {error}")
     return entries, warnings

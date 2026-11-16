@@ -14,7 +14,7 @@ class DetailsDisclosure(Gtk.Box):
         self.toggle = Gtk.ToggleButton(halign=Gtk.Align.CENTER)
         self.toggle.add_css_class("flat")
         title = Gtk.Box(spacing=4)
-        self.arrow = Gtk.Image(icon_name="pan-end-symbolic")
+        self.arrow = Gtk.Image(icon_name="housekeeper-pan-end-symbolic")
         title.append(self.arrow)
         title.append(Gtk.Label(label=_("Details")))
         self.toggle.set_child(title)
@@ -35,7 +35,9 @@ class DetailsDisclosure(Gtk.Box):
 
     def _toggled(self, *_args):
         expanded = self.toggle.get_active()
-        self.arrow.set_from_icon_name("pan-down-symbolic" if expanded else "pan-end-symbolic")
+        self.arrow.set_from_icon_name(
+            "housekeeper-pan-down-symbolic" if expanded else "housekeeper-pan-end-symbolic"
+        )
         self.revealer.set_reveal_child(expanded)
         # EXPANDED is a tristate GTK reads as an int; a Python bool fails its getter.
         self.toggle.update_state([Gtk.AccessibleState.EXPANDED], [1 if expanded else 0])
