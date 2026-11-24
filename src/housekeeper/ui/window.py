@@ -1062,7 +1062,7 @@ class HousekeeperWindow(Adw.ApplicationWindow):
             self._end_operation(Outcome.SUCCESS, saved)
             notice = Adw.Toast(
                 title=saved,
-                button_label=_("GNOME Tip"),
+                button_label=_("Learn More"),
                 timeout=8,
             )
             notice.connect(

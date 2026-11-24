@@ -33,6 +33,17 @@
   <provides><binary>housekeeper</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.4.0" date="2026-11-24" type="stable">
+      <description>
+        <p>Native packages for Ubuntu, Debian and Arch Linux, with consistent icons on every desktop.</p>
+        <ul>
+          <li>Ubuntu 24.04, Debian 13 and Arch Linux packages show DEB and Pacman package details.</li>
+          <li>Interface icons are bundled, so they match in KDE Plasma, Hyprland and other desktops.</li>
+          <li>The GNOME icon theme changes only in GNOME sessions, and icons restored elsewhere are also restored in GNOME.</li>
+          <li>Pacman packages are installed with the system package manager, which keeps Arch fully upgraded.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.6" date="2026-11-10" type="stable">
       <description>
         <p>Support Fedora 45.</p>

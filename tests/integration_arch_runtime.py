@@ -59,7 +59,13 @@ assert installation.method == InstallMethod.PACMAN and installation.package == "
 assert not installation.updatable and installation.command == "sudo pacman -Syu", installation
 assert VERSION in subprocess.check_output(["housekeeper", "--version"], text=True)
 files = subprocess.check_output(["pacman", "-Qlq", "housekeeper"], text=True).splitlines()
-assert not any(path.endswith(".pyc") or "__pycache__" in path for path in files)
+# Bytecode is packaged so pacman owns and removes it, and only for this module tree.
+bytecode = [path for path in files if path.endswith(".pyc")]
+assert bytecode and all(
+    path.startswith("/usr/share/housekeeper/housekeeper/")
+    and f".{sys.implementation.cache_tag}." in path
+    for path in bytecode
+), bytecode
 assert Path("/usr/share/housekeeper/icon-licenses/COPYING_LGPL").is_file()
 print(
     "PASS: Arch runtime, SVG, schema, desktop entry, pacman attribution/size/date and self-installation"

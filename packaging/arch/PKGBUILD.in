@@ -29,17 +29,19 @@ source=("${pkgname}-${pkgver}-arch.tar.gz")
 sha256sums=('@SOURCE_SHA256@')
 
 build() {
-  arch-meson "${pkgname}-${pkgver}" build
+  arch-meson "${pkgname}-${pkgver}" build -Dpackage_format=none
   meson compile -C build
 }
 
 check() {
   meson test -C build --print-errorlogs
-  desktop-file-validate "${pkgname}-${pkgver}/data/io.github.yuelinxin.housekeeper.desktop"
+  desktop-file-validate build/data/io.github.yuelinxin.housekeeper.desktop
   appstreamcli validate --no-net "${pkgname}-${pkgver}/data/io.github.yuelinxin.housekeeper.metainfo.xml"
 }
 
 package() {
   DESTDIR="$pkgdir" meson install -C build --no-rebuild
+  # Ship bytecode so pacman owns it; Python would otherwise write unowned caches.
+  python -m compileall -q -o 0 -o 1 -s "$pkgdir" -p / "$pkgdir/usr/share/housekeeper"
   install -Dm644 "${pkgname}-${pkgver}/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

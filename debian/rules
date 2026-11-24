@@ -3,6 +3,16 @@
 %:
 	dh $@ --with python3 --buildsystem=meson --builddirectory=build-deb
 
+override_dh_auto_configure:
+	dh_auto_configure -- -Dpackage_format=deb
+
+# The application is a private module directory, not a public Python package.
+# Registering it compiles bytecode on installation and removes it on purge.
+override_dh_python3:
+	dh_python3 /usr/share/housekeeper
+
 execute_after_dh_auto_test:
-	desktop-file-validate data/io.github.yuelinxin.housekeeper.desktop
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	desktop-file-validate build-deb/data/io.github.yuelinxin.housekeeper.desktop
 	appstreamcli validate --no-net data/io.github.yuelinxin.housekeeper.metainfo.xml
+endif

@@ -1,0 +1,2 @@
+option('package_format', type: 'combo', choices: ['all', 'rpm', 'deb', 'none'], value: 'all',
+       description: 'Native package files the desktop entry offers to open; distribution packages name their own family')

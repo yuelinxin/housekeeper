@@ -226,20 +226,28 @@ def test_unavailable_theme_setting_still_changes_launchers(
     changed = reread(app, root)
     assert changed.entries[0].icon.endswith(".png") and can_reset_icon(changed.entries[0])
     assert settings.theme == "Adwaita"
-    assert not (root / "housekeeper/app-icons.json").exists() and not (root / "icons").exists()
+    # The names are recorded for a later session with a writable setting, but no
+    # theme is generated or selected now.
+    assert has_app_icon(changed) and not (root / "icons").exists()
     save_app_icon(changed, None, [changed], settings=injected)
     assert not (root / "applications/example.desktop").exists()
+    assert not has_app_icon(changed) and settings.theme == "Adwaita"
 
 
-@pytest.mark.parametrize("desktop_name", ["KDE", "XFCE", "X-Cinnamon", "MATE", ""])
-def test_other_desktops_do_not_change_installed_gnome_settings(
-    desktop, setup_icons, monkeypatch, desktop_name
-):
+def test_unavailable_setting_without_overrides_creates_no_record(desktop, setup_icons):
+    root, _image, settings = setup_icons
+    app = app_for([desktop(Icon="original")])
+    settings.writable = False
+    save_app_icon(app, None, [app], settings=settings)
+    assert not (root / "housekeeper/app-icons.json").exists()
+
+
+@pytest.fixture
+def session(setup_icons, monkeypatch):
+    """Switch XDG_CURRENT_DESKTOP with the GNOME schema installed in every session."""
     from housekeeper import app_icons
 
-    root, image, settings = setup_icons
-    path = desktop(Icon="original")
-    app = app_for([path])
+    _root, _image, settings = setup_icons
 
     # Make the GNOME schema available even on minimal test systems. Its presence
     # must not cause another desktop to change the saved GNOME theme.
@@ -249,20 +257,87 @@ def test_other_desktops_do_not_change_installed_gnome_settings(
 
     monkeypatch.setattr(app_icons.Gio.SettingsSchemaSource, "get_default", SchemaSource)
     monkeypatch.setattr(app_icons.Gio.Settings, "new_full", lambda *_args: settings)
-    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME")
-    save_app_icon(app, image, [app])
-    state = (root / "housekeeper/app-icons.json").read_bytes()
-    saved_theme = settings.theme
+    return lambda name: monkeypatch.setenv("XDG_CURRENT_DESKTOP", name)
 
-    monkeypatch.setenv("XDG_CURRENT_DESKTOP", desktop_name)
+
+OTHER_DESKTOPS = ["KDE", "XFCE", "X-Cinnamon", "MATE", "Hyprland", "sway", ""]
+
+
+@pytest.mark.parametrize("desktop_name", OTHER_DESKTOPS)
+def test_other_desktops_do_not_change_installed_gnome_settings(
+    desktop, setup_icons, session, desktop_name
+):
+    root, image, settings = setup_icons
+    app = app_for([desktop(Icon="original")])
+    session("ubuntu:GNOME")
+    save_app_icon(app, image, [app])
+    saved_theme = settings.theme
+    assert (root / "icons" / saved_theme).is_dir()
+
+    session(desktop_name)
     refresh_icon_theme()
     changed = reread(app, root)
     save_app_icon(changed, None, [changed])
     assert not (root / "applications/example.desktop").exists()
+    # Reset is complete here, but GNOME's selection and theme stay until GNOME.
+    assert not has_app_icon(changed)
+    assert settings.theme == saved_theme and (root / "icons" / saved_theme).is_dir()
     save_app_icon(app, image, [app])
     assert can_reset_icon(reread(app, root).entries[0])
     assert settings.theme == saved_theme
-    assert (root / "housekeeper/app-icons.json").read_bytes() == state
+
+
+@pytest.mark.parametrize("desktop_name", ["KDE", "Hyprland"])
+def test_reset_in_another_desktop_removes_the_gnome_override(
+    desktop, setup_icons, session, desktop_name, tmp_path, monkeypatch
+):
+    root, image, settings = setup_icons
+    # A system launcher stays installed, so its record is not pruned as uninstalled.
+    system = tmp_path / "system"
+    monkeypatch.setenv("XDG_DATA_DIRS", str(system))
+    app = app_for([desktop(Icon="original", root=system / "applications")])
+    session("GNOME")
+    save_app_icon(app, image, [app])
+    stale = settings.theme
+
+    session(desktop_name)
+    changed = reread(app, root)
+    save_app_icon(changed, None, [changed])
+
+    session("GNOME")
+    refresh_icon_theme()
+    assert settings.theme == "Adwaita"
+    assert not (root / "icons" / stale).exists()
+    assert not has_app_icon(app)
+    # Once applied, later activations are unchanged.
+    refresh_icon_theme()
+    assert settings.theme == "Adwaita"
+
+
+def test_change_in_another_desktop_updates_the_gnome_override(
+    desktop, setup_icons, session, tmp_path
+):
+    root, image, settings = setup_icons
+    app = app_for([desktop(Icon="original")])
+    session("GNOME")
+    save_app_icon(app, image, [app])
+    stale = settings.theme
+    first = (theme_icons(root, settings) / "original.png").resolve()
+
+    second_image = tmp_path / "second.svg"
+    second_image.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="blue"/></svg>'
+    )
+    session("KDE")
+    save_app_icon(reread(app, root), second_image, [app])
+    assert settings.theme == stale
+
+    session("GNOME")
+    refresh_icon_theme()
+    assert settings.theme not in {stale, "Adwaita"}
+    assert not (root / "icons" / stale).exists()
+    second = (theme_icons(root, settings) / "original.png").resolve()
+    assert second != first and second == Path(reread(app, root).entries[0].icon)
 
 
 def test_corrupt_state_leaves_launchers_unchanged(desktop, setup_icons):

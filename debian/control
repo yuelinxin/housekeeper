@@ -11,12 +11,12 @@ Build-Depends:
  libglib2.0-dev,
  python3 (>= 3.10),
  python3-gi,
- python3-pytest,
+ python3-pytest <!nocheck>,
  gir1.2-gtk-4.0 (>= 4.12),
  gir1.2-adw-1 (>= 1.4),
  librsvg2-common,
- desktop-file-utils,
- appstream,
+ desktop-file-utils <!nocheck>,
+ appstream <!nocheck>,
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://github.com/yuelinxin/housekeeper

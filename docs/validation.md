@@ -1,4 +1,32 @@
-# v0.3.6 validation
+# Validation record
+
+## v0.4.0 release checks — November 24, 2026
+
+- Python, Meson, the RPM spec and its changelog, the Debian changelog, AppStream and
+  CHANGELOG agree on 0.4.0; `tests/test_release_tools.py` now enforces this. The
+  Debian changelog is no longer UNRELEASED.
+- One reproducible source archive built all four local packages: two fresh clones
+  checked out at different times produce byte-identical archives, with timestamps
+  from the last commit and normalized ownership, permissions and gzip header.
+- Fedora 45 (rebuilt image with `python3-devel`), Ubuntu 24.04, Debian 13 and current
+  Arch pass their full package checks from that archive: build, unit tests (804 in
+  the Fedora 45 suite run; 798 with seven skips on Ubuntu/Debian), GNOME/KDE
+  session-identity GTK smoke, icon stress, install, replacement and removal.
+- Fedora and Arch packages now ship bytecode owned by the package; the RPM check
+  verifies it and that removal leaves no `/usr/share/housekeeper`. The DEB registers
+  its private module directory with dh_python3, which compiles on installation and
+  cleans up on purge. Desktop entries offer `.rpm` on Fedora, `.deb` on Ubuntu/Debian
+  and neither on Arch.
+- `build-aux/release_assets.py` accepted the actual Fedora 45, DEB and Arch outputs
+  collected as the release workflow does, with placeholder Fedora 43/44 names, and
+  confirmed the Arch source copy is identical to the release source and matches the
+  PKGBUILD checksum. Without the 43/44 packages it reported them as missing.
+- Icon resets and changes made outside GNOME are recorded and applied at the next
+  GNOME activation; new tests fail on the previous implementation.
+- Ruff 0.17.6 lint/format and mypy 2.4.1 pass; CI pins these versions and every
+  GitHub Action to a commit SHA. Fedora 43/44, the runtime floor, the release draft
+  and COPR builds run in GitHub Actions for the tag. Real desktop sessions remain as
+  listed in [desktop acceptance](desktop-acceptance.md).
 
 ## Arch native packaging — November 15, 2026
 
@@ -92,7 +120,8 @@
 - Native packages `0.3.6-1+ubuntu24.04` and `0.3.6-1+debian13` install, replace
   themselves and purge successfully. Checks cover the installed entry point,
   resources, compiled GSettings schema, desktop visibility, dpkg attribution and
-  external self-update instructions. Python bytecode is not shipped in the DEB.
+  external self-update instructions. Python bytecode is not shipped in the DEB;
+  dh_python3 compiles it on installation and removes it on purge.
 - Separate clean images install each DEB without Recommends or build tools and
   pass the installed-runtime check, including SVG decoding. This exposed the
   need to declare `librsvg2-common` explicitly in build and runtime dependencies.

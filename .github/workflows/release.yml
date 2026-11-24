@@ -13,7 +13,7 @@ jobs:
         fedora: [43, 44, 45]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Check tag and application version
         run: |
           version=$(PYTHONPATH=src python3 -c 'from housekeeper import VERSION; print(VERSION)')
@@ -28,8 +28,12 @@ jobs:
           podman run --rm --network none -v "$PWD:/source:ro" -w /source \
             -e HOUSEKEEPER_DISPOSABLE_TEST=1 housekeeper-test python3 tests/integration_host.py
           mkdir -p release-files
-          cp artifacts/*.rpm dist/sources/*.tar.gz release-files/
-      - uses: actions/upload-artifact@v4
+          cp artifacts/*.rpm release-files/
+          # The source archive is reproducible; attach one copy, not one per Fedora job.
+          if [ "${{ matrix.fedora }}" = 45 ]; then
+            cp dist/sources/*.tar.gz release-files/
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-fedora-${{ matrix.fedora }}
           path: release-files/*
@@ -46,7 +50,7 @@ jobs:
             target: debian13
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build and validate native package
         run: |
           python3 build-aux/source_archive.py
@@ -62,7 +66,7 @@ jobs:
           done
           podman build --target runtime --build-arg BASE_IMAGE=docker.io/library/${{ matrix.image }} -t housekeeper-deb-runtime -f tests/Containerfile.debian .
           podman run --rm --network none housekeeper-deb-runtime
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ matrix.target }}
           path: artifacts/*.deb
@@ -71,7 +75,7 @@ jobs:
   arch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build and validate pacman package
         run: |
           python3 build-aux/source_archive.py
@@ -87,7 +91,7 @@ jobs:
           podman run --rm --init --network none housekeeper-arch-runtime
           mkdir -p release-files
           cp artifacts/*.pkg.tar.zst artifacts/*-arch.tar.gz artifacts/PKGBUILD release-files/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-arch
           path: release-files/*
@@ -99,17 +103,21 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: release-assets
           merge-multiple: true
+      - name: Check the release packages
+        run: python3 build-aux/release_assets.py release-assets "${GITHUB_REF_NAME#v}"
       - name: Create checksums
         working-directory: release-assets
         run: sha256sum *.rpm *.deb *.pkg.tar.zst *.tar.gz PKGBUILD > SHA256SUMS
+      - name: Write release notes
+        run: python3 build-aux/release_notes.py "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
       - name: Create a draft for review
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" release-assets/* --draft \
-            --title "Housekeeper $GITHUB_REF_NAME" --notes-file CHANGELOG.md
+            --title "Housekeeper $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"

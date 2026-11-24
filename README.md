@@ -69,6 +69,14 @@ Fedora backends; Housekeeper provides guidance instead. See
 
 - Python 3.10+ with PyGObject, GTK 4.12+, and libadwaita 1.4+
 - A graphical desktop session; GNOME Shell itself is not required
+- A running Polkit authentication agent for system package and Flatpak operations.
+  GNOME and KDE Plasma start one; on Hyprland or Sway, start one such as
+  `hyprpolkitagent` or `polkit-gnome`
+
+GNOME and KDE Plasma are the main desktop targets. Hyprland, Sway and other Wayland
+compositors run the same GTK interface with its own bundled icons, but have not had
+desktop acceptance testing. Outside GNOME, custom app icons change desktop launchers
+only; docks and panels may keep their own icons.
 - Optional RPM, PackageKit, and Flatpak integrations for their respective sources
 - Optional AppStream bindings and distribution catalogues for application search metadata
 - Optional `squashfs-tools` for reading AppImage desktop identities without executing them
@@ -90,16 +98,17 @@ To uninstall Housekeeper, run `sudo dnf remove housekeeper`.
 
 ## Install on Ubuntu or Debian
 
-Native DEB build targets are Ubuntu 24.04 and Debian 13. Install the matching
-distribution's `housekeeper_*_all.deb` release or CI artifact with APT so its
-dependencies are installed too:
+Native DEB packages are built for Ubuntu 24.04 and Debian 13. Download the one for
+your distribution from the [latest release](https://github.com/yuelinxin/housekeeper/releases/latest),
+for example `housekeeper_VERSION-1+ubuntu24.04_all.deb` or
+`housekeeper_VERSION-1+debian13_all.deb`, and install it with APT so its dependencies
+are installed too:
 
 ```sh
-sudo apt install ./housekeeper_*_all.deb
+sudo apt install ./housekeeper_*+ubuntu24.04_all.deb
 ```
 
-Keep only the intended package in the current directory when using this wildcard.
-To update, install a newer DEB the same way. These standalone packages do not add
+Use `debian13` instead of `ubuntu24.04` on Debian. To update, install a newer DEB the same way. These standalone packages do not add
 an APT repository or provide automatic Housekeeper updates. Remove Housekeeper
 with `sudo apt remove housekeeper`.
 
@@ -114,16 +123,18 @@ floor. See [compatibility](docs/compatibility.md) for operation-specific support
 
 ## Install on Arch Linux
 
-Current Arch Linux has native `PKGBUILD` packaging and an isolated build/runtime
-test target. A local or CI build produces `housekeeper-0.3.6-1-any.pkg.tar.zst`.
-Bring the system up to date, then install the package:
+Each [release](https://github.com/yuelinxin/housekeeper/releases/latest) includes
+`housekeeper-VERSION-1-any.pkg.tar.zst` for current Arch Linux, with the `PKGBUILD`
+and `housekeeper-VERSION-arch.tar.gz` it was built from. Bring the system up to date,
+then install the package:
 
 ```sh
 sudo pacman -Syu
-sudo pacman -U ./housekeeper-0.3.6-1-any.pkg.tar.zst
+sudo pacman -U ./housekeeper-*-1-any.pkg.tar.zst
 ```
 
-To build from this checkout, install the build tools and let `makepkg` resolve
+To rebuild it instead, put the `PKGBUILD` and `-arch.tar.gz` in one directory and run
+`makepkg -si`. To build from this checkout, install the build tools and let `makepkg` resolve
 the remaining dependencies:
 
 ```sh
@@ -136,8 +147,8 @@ makepkg -si
 
 The generated PKGBUILD includes the exact source archive checksum. These standalone
 packages do not register a repository: install a newer package the same way to
-update Housekeeper, and use `sudo pacman -R housekeeper` to remove it. No AUR
-submission is provided by this change.
+update Housekeeper, and use `sudo pacman -R housekeeper` to remove it. There is no
+AUR package yet.
 
 Pacman inventory includes package ownership, version, installed size and installation
 date, including AUR-built packages already installed with pacman. Optional `flatpak`
@@ -170,7 +181,9 @@ sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 librsvg2-common adwaita-
 sudo apt install packagekit gir1.2-packagekitglib-1.0 flatpak gir1.2-flatpak-1.0 appstream gir1.2-appstream-1.0 squashfs-tools
 ```
 
-Then use the same Meson commands above. The development launcher rebuilds
+Then use the same Meson commands above. Distribution packages pass
+`-Dpackage_format=rpm`, `deb` or `none` so the desktop entry only offers to open
+package files of the host's own family; the default `all` keeps both. The development launcher rebuilds
 changed resources before starting. Use `GSETTINGS_BACKEND=memory` to try it without
 saving preferences.
 

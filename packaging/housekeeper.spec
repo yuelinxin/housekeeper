@@ -1,5 +1,5 @@
 Name:           housekeeper
-Version:        0.3.6
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Understand and manage installed desktop applications
 License:        MIT AND CC0-1.0 AND LGPL-3.0-only
@@ -9,6 +9,7 @@ BuildArch:      noarch
 
 BuildRequires:  meson >= 0.63
 BuildRequires:  python3
+BuildRequires:  python3-devel
 BuildRequires:  python3-gobject
 BuildRequires:  gobject-introspection
 BuildRequires:  python3-pytest
@@ -51,11 +52,13 @@ Housekeeper itself, which installs its update and restarts from the sidebar.
 %autosetup
 
 %build
-%meson
+%meson -Dpackage_format=rpm
 %meson_build
 
 %install
 %meson_install
+# The modules are private, outside site-packages, so they are not compiled automatically.
+%py_byte_compile %{python3} %{buildroot}%{_datadir}/housekeeper/housekeeper
 
 %check
 %meson_test
@@ -74,6 +77,14 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/io.github.yuelin
 %{_datadir}/icons/hicolor/symbolic/apps/io.github.yuelinxin.housekeeper-symbolic.svg
 
 %changelog
+* Tue Nov 24 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.4.0-1
+- Add native packages for Ubuntu 24.04, Debian 13 and Arch Linux.
+- Bundle the interface's symbolic icons so they match on every desktop.
+- Change the GNOME icon theme only in GNOME sessions, and apply icon resets made
+  in other desktops the next time Housekeeper starts in GNOME.
+- Offer to open only this system's native package type from the file manager.
+- Byte-compile the application's Python modules.
+
 * Tue Nov 10 2026 Yuelin Xin <yuelinxin@users.noreply.github.com> - 0.3.6-1
 - Support system package management on Fedora 45.
 - Notice dnf5 software source changes between an update preview and the update.

@@ -17,6 +17,7 @@ GTK smoke run tests the application's fallback, not a running KDE desktop.
 | Ubuntu 24.04 / GNOME | Wayland | Pending desktop acceptance |
 | Arch Linux / Plasma 6 | Wayland | Container build/runtime passes; real session pending |
 | Arch Linux / GNOME | Wayland | Container build/runtime passes; real session pending |
+| Arch Linux / Hyprland | Wayland | Pending; needs a running Polkit agent such as `hyprpolkitagent` |
 
 Record the commit, package filename and SHA256, distribution version, desktop version,
 session type, PackageKit backend/version, Flatpak version, and each result below.

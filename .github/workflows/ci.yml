@@ -15,7 +15,7 @@ jobs:
         fedora: [43, 44, 45]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build test environment
         run: podman build --build-arg FEDORA_VERSION=${{ matrix.fedora }} -t housekeeper-test -f tests/Containerfile .
       - name: Create clean source archive
@@ -31,7 +31,7 @@ jobs:
           podman run --rm --network none -v "$PWD:/source:ro" -w /source \
             -e HOUSEKEEPER_DISPOSABLE_TEST=1 \
             housekeeper-test python3 tests/integration_host.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fedora-${{ matrix.fedora }}-packages
           path: artifacts/*.rpm
@@ -40,11 +40,11 @@ jobs:
   static:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.10'
-      - run: python -m pip install ruff mypy
+      - run: python -m pip install ruff==0.17.6 mypy==2.4.1
       - run: ruff check src tests build-aux
       - run: ruff format --check src tests build-aux
       - run: mypy
@@ -60,7 +60,7 @@ jobs:
             target: debian13
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build distribution test environment
         run: podman build --target build --build-arg BASE_IMAGE=docker.io/library/${{ matrix.image }} -t housekeeper-deb-test -f tests/Containerfile.debian .
       - name: Build and validate native package
@@ -81,7 +81,7 @@ jobs:
         run: |
           podman build --target runtime --build-arg BASE_IMAGE=docker.io/library/${{ matrix.image }} -t housekeeper-deb-runtime -f tests/Containerfile.debian .
           podman run --rm --network none housekeeper-deb-runtime
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.target }}-packages
           path: artifacts/*
@@ -90,7 +90,7 @@ jobs:
   arch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build current Arch environment
         run: podman build --target build -t housekeeper-arch-test -f tests/Containerfile.arch .
       - name: Build and validate pacman package
@@ -109,7 +109,7 @@ jobs:
         run: |
           podman build --target runtime -t housekeeper-arch-runtime -f tests/Containerfile.arch .
           podman run --rm --init --network none housekeeper-arch-runtime
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: arch-packages
           path: artifacts/*
@@ -119,7 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ubuntu:24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install a conservative GTK runtime
         run: |
           apt-get update

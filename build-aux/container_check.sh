@@ -30,8 +30,11 @@ housekeeper --version
 # Replacing the same version exercises installation scripts and retained preferences.
 rpm -U --nosignature --replacepkgs "$package"
 housekeeper --version
+# Packaged bytecode is owned by the RPM, so running as root adds no stray caches.
+rpm -qlp --nosignature "$package" | grep -q '^/usr/share/housekeeper/housekeeper/__pycache__/.*\.pyc$'
 rpm -e housekeeper
 test ! -e /usr/bin/housekeeper
+test ! -e /usr/share/housekeeper
 if [[ -d /artifacts ]]; then
     cp /tmp/housekeeper-rpm/RPMS/noarch/*.rpm /artifacts/
     cp /tmp/housekeeper-rpm/SRPMS/*.rpm /artifacts/

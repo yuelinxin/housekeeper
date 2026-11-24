@@ -147,8 +147,11 @@ Application icon changes are independent of installation source: native packages
 Flatpak, Snap, web apps, AppImages and other desktop apps use the same all-launcher
 and named-icon override path. Named overrides need a GNOME session (identified by
 `XDG_CURRENT_DESKTOP`) and a writable GNOME `icon-theme` setting. In KDE Plasma,
-Xfce, Cinnamon, MATE and unknown sessions, only launchers change, even if GNOME
-schemas are installed. Locked or missing GNOME settings use the same fallback.
+Xfce, Cinnamon, MATE, Hyprland, Sway and unknown sessions, only launchers change,
+even if GNOME schemas are installed. Locked or missing GNOME settings use the same
+fallback. Changes and resets made there are still recorded, and the next Housekeeper
+launch in a GNOME session applies them, so a reset elsewhere does not leave a custom
+named icon behind in GNOME.
 The generated theme inherits the current theme and never changes installed icons.
 Shared and generic names are deliberately excluded. Changing themes while Housekeeper
 is closed suspends named overrides until its next launch; desktop-file overrides

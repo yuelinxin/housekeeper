@@ -4,7 +4,10 @@ gnome.compile_resources('housekeeper', 'housekeeper.gresource.xml',
 configure_file(input: app_id + '.gschema.xml', output: app_id + '.gschema.xml', copy: true)
 gnome.compile_schemas(build_by_default: true, depend_files: files(app_id + '.gschema.xml'))
 install_data(app_id + '.gschema.xml', install_dir: get_option('datadir') / 'glib-2.0/schemas')
-install_data(app_id + '.desktop', install_dir: get_option('datadir') / 'applications')
+custom_target('desktop-file', input: app_id + '.desktop', output: app_id + '.desktop',
+              command: [python, files('../build-aux/desktop_mime.py'), '@INPUT@', '@OUTPUT@',
+                        get_option('package_format')],
+              install: true, install_dir: get_option('datadir') / 'applications')
 install_data(app_id + '.metainfo.xml', install_dir: get_option('datadir') / 'metainfo')
 install_data('icons/hicolor/scalable/apps/' + app_id + '.svg',
              install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps')

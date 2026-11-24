@@ -499,14 +499,20 @@ match the launcher's entry count. Unknown metadata must remain visibly unknown.
 
 ## Release process
 
-Keep the version consistent in the Python package, Meson, RPM spec, Debian changelog, AppStream
-release metadata, source archive script, and workflows. Update CHANGELOG and the
-validation record. Review generated screenshots for synthetic data only.
+Keep the version consistent in the Python package, Meson, RPM spec, Debian changelog,
+AppStream release metadata and CHANGELOG; `tests/test_release_tools.py` fails when
+they differ. Update the validation record. Review generated screenshots for synthetic
+data only.
 
 The tag workflow builds and validates Fedora 43/44/45, Ubuntu 24.04, Debian 13 and
-current Arch Linux. It creates a **draft** GitHub Release with source, RPM, SRPM,
-DEB, pacman packages, the generated PKGBUILD and SHA-256 checksums. It does not publish
-automatically. Tags and repository changes must be pushed deliberately; merely
+current Arch Linux. Before creating the release, `build-aux/release_assets.py` checks
+that the assets are exactly the source archive, three RPMs and SRPMs, the
+`+ubuntu24.04` and `+debian13` DEBs, the Arch package, its PKGBUILD and source copy,
+for the tagged version. The source archive is reproducible, so the Arch copy must be
+byte-identical to the release source and match the PKGBUILD checksum. It then creates
+a **draft** GitHub Release with those files and `SHA256SUMS`. Its notes are the
+version's CHANGELOG section plus installation instructions from
+`build-aux/release_notes.py`. It does not publish automatically. Tags and repository changes must be pushed deliberately; merely
 building the app locally does not create a release.
 
 Review installation instructions, platform claims, known limitations, and attached

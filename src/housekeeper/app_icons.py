@@ -165,6 +165,24 @@ def _aliases(app, missing_ok=False):
     return names | {name for name in variants if NAME.fullmatch(name)}
 
 
+def _theme_payload(base, apps):
+    return json.dumps({"base": base, "apps": apps}, sort_keys=True).encode()
+
+
+def _theme_name(payload):
+    return THEME_PREFIX + hashlib.sha256(payload).hexdigest()[:24]
+
+
+def _theme_matches(state):
+    """Whether the recorded theme was generated from the recorded overrides.
+
+    Another desktop session can change the overrides without applying them.
+    """
+    if not state["apps"]:
+        return not state["theme"]
+    return state["theme"] == _theme_name(_theme_payload(state["base"], state["apps"]))
+
+
 def _make_theme(state, current):
     """Publish an immutable theme so Shell/GTK invalidate old named-icon caches."""
     base = state["base"] if current == state["theme"] else current
@@ -177,8 +195,8 @@ def _make_theme(state, current):
     if not state["apps"]:
         state["theme"] = ""
         return base, None
-    payload = json.dumps({"base": base, "apps": state["apps"]}, sort_keys=True).encode()
-    name = THEME_PREFIX + hashlib.sha256(payload).hexdigest()[:24]
+    payload = _theme_payload(base, state["apps"])
+    name = _theme_name(payload)
     root = data_home() / "icons"
     root.mkdir(parents=True, exist_ok=True)
     target = root / name
@@ -242,21 +260,22 @@ def _save_app_icon(app, image, inventory, *, settings=None):
     if not app.entries:
         raise ManagementError(_("No desktop launcher is available to edit."))
     settings = _settings() if settings is None else settings
-    # Without a writable theme setting (no schema, or locked by an administrator),
-    # still change the launchers; only the named-icon layer is unavailable.
+    # Without a writable theme setting (another desktop, no schema, or locked by an
+    # administrator), still change the launchers and record the named icons. The
+    # record is applied the next time Housekeeper starts with a writable setting,
+    # so a reset elsewhere does not leave a stale override in the GNOME theme.
     layer = settings is not None and settings.is_writable("icon-theme")
     if layer:
         current = settings.get_string("icon-theme")
-        state = _read_state()
-        previous_theme = state["theme"]
-        _prune_removed(state)
+    state = _read_state()
+    previous_theme = state["theme"]
+    _prune_removed(state)
     ids = sorted({entry.desktop_id for entry in app.entries})
-    if layer:
-        # Desktop IDs survive provider reclassification and icon-only user overrides.
-        owner = hashlib.sha256("\n".join(ids).encode()).hexdigest()
-        for key, value in list(state["apps"].items()):
-            if set(value["ids"]) & set(ids):
-                del state["apps"][key]
+    # Desktop IDs survive provider reclassification and icon-only user overrides.
+    owner = hashlib.sha256("\n".join(ids).encode()).hexdigest()
+    for key, value in list(state["apps"].items()):
+        if set(value["ids"]) & set(ids):
+            del state["apps"][key]
     if image is not None:
         icon = store_icon_image(image)
     targets = {}
@@ -275,7 +294,7 @@ def _save_app_icon(app, image, inventory, *, settings=None):
                 save_icon(entry, icon if image is not None else None)
                 target = _target_path(entry)
                 changed[target] = target.read_bytes() if target.exists() else None
-        if layer and image is not None:
+        if image is not None:
             saved = replace(app, entries=[replace(e, path=_target_path(e)) for e in app.entries])
             aliases = _aliases(saved)
             shared = set()
@@ -301,6 +320,9 @@ def _save_app_icon(app, image, inventory, *, settings=None):
             _atomic_write(state_path, json.dumps(state, sort_keys=True).encode())
             if not settings.set_string("icon-theme", theme):
                 raise ManagementError(_("The desktop icon theme could not be updated."))
+        elif before_state is not None or state["apps"]:
+            # Keep the applied theme and base; a later activation rebuilds from them.
+            _atomic_write(state_path, json.dumps(state, sort_keys=True).encode())
     except Exception:
         for target in reversed(changed):
             actual = target.read_bytes() if target.exists() else None
@@ -345,8 +367,13 @@ def refresh_icon_theme(settings=None):
         current = settings.get_string("icon-theme")
         before = _state_path().read_bytes()
         previous_theme = state["theme"]
-        # Uninstalled apps release their names at the next activation.
-        if not _prune_removed(state) and (not state["apps"] or current == state["theme"]):
+        # Uninstalled apps release their names at the next activation. Overrides
+        # changed in another session no longer match the recorded theme.
+        if (
+            not _prune_removed(state)
+            and _theme_matches(state)
+            and (not state["apps"] or current == state["theme"])
+        ):
             return
         theme, generated = _make_theme(state, current)
         try:
