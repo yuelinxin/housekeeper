@@ -31,7 +31,9 @@ housekeeper --version
 rpm -U --nosignature --replacepkgs "$package"
 housekeeper --version
 # Packaged bytecode is owned by the RPM, so running as root adds no stray caches.
-rpm -qlp --nosignature "$package" | grep -q '^/usr/share/housekeeper/housekeeper/__pycache__/.*\.pyc$'
+# Save the listing first: grep -q would close the pipe early and fail under pipefail.
+rpm -qlp --nosignature "$package" > /tmp/housekeeper-files.txt
+grep -q '^/usr/share/housekeeper/housekeeper/__pycache__/.*\.pyc$' /tmp/housekeeper-files.txt
 rpm -e housekeeper
 test ! -e /usr/bin/housekeeper
 test ! -e /usr/share/housekeeper
